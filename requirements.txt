@@ -5,4 +5,4 @@ openpyxl
 plotly
 reportlab
 gspread
-oauth24client
+oauth2client
