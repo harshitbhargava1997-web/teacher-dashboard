@@ -4,3 +4,5 @@ pyarrow
 openpyxl
 plotly
 reportlab
+gspread
+oauth24client
