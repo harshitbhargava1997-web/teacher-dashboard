@@ -130,7 +130,7 @@ def load_or_update_master_db(new_upload_dfs=None):
 
 # 2. Sidebar Data Upload Manager
 st.sidebar.header("📁 Data Upload & Database Sync")
-uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)
+uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True, key="user_metrics_uploader")
 
 new_processed_dfs = []
 if uploaded_files:
@@ -176,7 +176,7 @@ if uploaded_files:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
             # Optional Qualitative Link Columns
-            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
+            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
 
@@ -190,6 +190,48 @@ if new_processed_dfs:
     st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Master Parquet DB!")
 else:
     df = load_or_update_master_db()
+
+# --- Microsoft Forms Qualitative Data Sync Integration ---
+st.sidebar.markdown("---")
+st.sidebar.header("📋 Microsoft Forms Sync")
+forms_file = st.sidebar.file_uploader("Upload MS Forms Responses (.xlsx)", type=["xlsx"], key="forms_uploader")
+
+if forms_file and not df.empty:
+    try:
+        temp_forms = pd.read_excel(forms_file)
+        
+        # Dynamically find the teacher name column
+        name_col = next((c for c in temp_forms.columns if 'name' in c.lower() or 'teacher' in c.lower()), None)
+        
+        if name_col:
+            temp_forms['FullName'] = temp_forms[name_col].fillna('').astype(str).str.strip()
+            
+            # Map MS Form options to qualitative artifact columns
+            column_mapping = {}
+            for col in temp_forms.columns:
+                col_lower = col.lower()
+                if 'voice note' in col_lower:
+                    column_mapping[col] = 'Voice_Note_Link'
+                elif 'classroom activity' in col_lower or 'video' in col_lower:
+                    column_mapping[col] = 'Video_Evidence_1'
+                elif 'writing' in col_lower:
+                    column_mapping[col] = 'Writing_Sample_Link'
+                elif 'phonics' in col_lower:
+                    column_mapping[col] = 'Video_Evidence_2'
+            
+            temp_forms = temp_forms.rename(columns=column_mapping)
+            
+            # Merge forms qualitative columns into the master dataframe matching by FullName
+            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link']:
+                if qual_col in temp_forms.columns:
+                    # Map the latest non-null submissions back to the main dataframe
+                    valid_subs = temp_forms[['FullName', qual_col]].dropna(subset=[qual_col])
+                    for _, row_sub in valid_subs.iterrows():
+                        df.loc[df['FullName'] == row_sub['FullName'], qual_col] = row_sub[qual_col]
+            
+            st.sidebar.success(f"Successfully synced MS Forms responses for {len(temp_forms)} submission(s)!")
+    except Exception as e:
+        st.sidebar.error(f"Error reading MS Forms file: {e}")
 
 # 3. Database Status & Storage Controls
 st.sidebar.markdown("---")
@@ -674,55 +716,62 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB (NEW)
+            # SECTION 3: QUALITATIVE EVIDENCE HUB
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-            st.caption("Review authentic teacher pre-class voice notes, in-class classroom activity videos, and student writing samples.")
+            st.caption("Review authentic teacher pre-class voice notes, in-class classroom activity videos, phonics updates, and student writing samples.")
 
-            v_cols = st.columns(3)
+            v_cols = st.columns(4)
             
             # Check for Voice Note Links
             voice_links = teacher_date_data['Voice_Note_Link'].dropna().unique().tolist() if 'Voice_Note_Link' in teacher_date_data.columns else []
-            v_cols[0].metric("🎧 Voice Notes Submitted", len(voice_links))
+            v_cols[0].metric("🎧 Voice Notes", len(voice_links))
             
-            # Check for Video Evidences (#3, #4, #5)
-            video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in teacher_date_data.columns]
-            video_count = 0
-            if video_cols_exist:
-                video_count = teacher_date_data[video_cols_exist].notna().sum().sum()
-            v_cols[1].metric("🎥 Classroom Videos Uploaded", video_count)
+            # Check for Video Evidences (Classroom Activities)
+            video_links_1 = teacher_date_data['Video_Evidence_1'].dropna().unique().tolist() if 'Video_Evidence_1' in teacher_date_data.columns else []
+            v_cols[1].metric("🎥 Class Activities", len(video_links_1))
+
+            # Check for Phonics Practice Links (Video Evidence 2)
+            video_links_2 = teacher_date_data['Video_Evidence_2'].dropna().unique().tolist() if 'Video_Evidence_2' in teacher_date_data.columns else []
+            v_cols[2].metric("🗣️ Phonics Practice", len(video_links_2))
 
             # Check for Writing Sample Links
             writing_links = teacher_date_data['Writing_Sample_Link'].dropna().unique().tolist() if 'Writing_Sample_Link' in teacher_date_data.columns else []
-            v_cols[2].metric("📝 Student Writing Artifacts", len(writing_links))
+            v_cols[3].metric("📝 Writing Samples", len(writing_links))
 
             with st.expander("🔍 View & Audit Submitted Artifact Links"):
-                q_cols1, q_cols2, q_cols3 = st.columns(3)
+                q_cols1, q_cols2, q_cols3, q_cols4 = st.columns(4)
                 
                 with q_cols1:
-                    st.markdown("##### 🎧 Daily Voice Notes")
+                    st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
                         for idx, link in enumerate(voice_links, 1):
-                            st.markdown(f"• [Listen to Voice Note #{idx}]({link})")
+                            st.markdown(f"• [Voice Note #{idx}]({link})")
                     else:
-                        st.caption("No voice notes uploaded for this period.")
+                        st.caption("No voice notes uploaded.")
 
                 with q_cols2:
-                    st.markdown("##### 🎥 Classroom Activity Videos")
-                    if video_count > 0:
-                        for col in video_cols_exist:
-                            v_list = teacher_date_data[col].dropna().unique().tolist()
-                            for idx, link in enumerate(v_list, 1):
-                                st.markdown(f"• [{col.replace('_', ' ')} #{idx}]({link})")
+                    st.markdown("##### 🎥 Classroom Activities")
+                    if video_links_1:
+                        for idx, link in enumerate(video_links_1, 1):
+                            st.markdown(f"• [Activity Video #{idx}]({link})")
                     else:
-                        st.caption("No classroom videos uploaded for this period.")
+                        st.caption("No activity videos uploaded.")
 
                 with q_cols3:
+                    st.markdown("##### 🗣️ Phonics Practice")
+                    if video_links_2:
+                        for idx, link in enumerate(video_links_2, 1):
+                            st.markdown(f"• [Phonics Video #{idx}]({link})")
+                    else:
+                        st.caption("No phonics videos uploaded.")
+
+                with q_cols4:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
                         for idx, link in enumerate(writing_links, 1):
-                            st.markdown(f"• [View Writing Sample #{idx}]({link})")
+                            st.markdown(f"• [Writing Artifact #{idx}]({link})")
                     else:
-                        st.caption("No writing samples uploaded for this period.")
+                        st.caption("No writing samples uploaded.")
 
             st.markdown("---")
 
@@ -932,7 +981,6 @@ else:
             t6_teachers = school_t6_roster.merge(t6_ld.rename(columns={'Duration_Min': 'Lesson_Mins'}), on='FullName', how='left').fillna(0.0)
             t6_teachers = t6_teachers.merge(t6_lib.rename(columns={'Duration_Min': 'Library_Mins'}), on='FullName', how='left').fillna(0.0)
 
-            # Execution Tier thresholds: 40% / 100% logic
             def tier_teacher(row):
                 ld_pct = (row['Lesson_Mins'] / calc_ld_kpi) if calc_ld_kpi > 0 else 1.0
                 lib_pct = (row['Library_Mins'] / calc_lib_kpi) if calc_lib_kpi > 0 else 1.0
@@ -1010,7 +1058,7 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT (NEW TAB)
+    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT
     with tab7:
         st.header("📊 Student Assessment Outcomes & Impact Analysis")
         st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
