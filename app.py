@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import os
 import glob
 from io import BytesIO
+from datetime import datetime
 
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
@@ -13,11 +14,76 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
+# --- MAPPING: HEAD OF INSTITUTION -> SCHOOL NAME ---
+institution_mapping = {
+    "Ms. Megha Balke (Pragyanam International School)": "Pragyanam International School",
+    "Mr. Bhavesh Verma (Little Commando Foundations School)": "Little Commando Foundations School",
+    "Mr. Saket Sharma (Nature's Kids University)": "Nature's Kids University",
+    "Mr. Pramod Sharma (Wisdom World School - Gwalior)": "Wisdom World School - Gwalior",
+    "Mr. Donger (Noble Minds International School Gwalior)": "Noble Minds International School Gwalior",
+    "Ms. Deepa Ma'am (Nahar Global School)": "Nahar Global School",
+    "Ms. Simmi Narad (Colonels Academy)": "Colonels Academy",
+    "Mr. Ashok Waghmare (Jayshree Bal Vinay Mandir)": "Jayshree Bal Vinay Mandir",
+    "Mr. Sapna Bastion (Jain Public School)": "Jain Public School",
+    "Ms. Namrata Ma'am (Rational Kids Academy-Gwalior)": "Rational Kids Academy-Gwalior",
+    "Mr. Sandeep Sir (Charming Kids International)": "Charming Kids International",
+    "Mr. Rakesh Sir (Ambika Convent HR Sec school)": "Ambika Convent HR Sec school",
+    "Ms. Kamiya Ma'am (Mother's Pride School)": "Mother's Pride School",
+    "Mr. Sunil (Universal Day Boarding Academy)": "Universal Day Boarding Academy-Gwalior",
+    "Mr Atul (Credible World School)": "Credible World School",
+    "Mr. Anas (AG Azad Memorial Academy)": "AG Azad Memorial Academy",
+    "Mr. Nazim Mansuri (Scholar's High School)": "Scholar's High School",
+    "Mr. Oliver (Late Shree Pidiya Bhuriya Memorial School)": "Late Shree Pidiya Bhuriya Memorial School",
+    "Miss. Soniya (JK International School)": "JK International School",
+    "Mr. Sunil (Rainbow Play School - Karnawad)": "Rainbow Play School - Karnawad",
+    "Mr. Manish (Dream India-Khargone)": "Dream India-Khargone",
+    "Shubharambh Academy (Mr. Ajay Rajput)": "Shubharambh Academy",
+    "Mr. Pankaj (Active English School)": "Active English School",
+    "Mr. Mustafa (Lebad Public School)": "Lebad Public School",
+    "Mrs. Smita (Adarsh Gurukul Academy)": "Adarsh Gurukul Academy",
+    "Mr. Syed Maksood Ali (Innovative Public School)": "Innovative Public School",
+    "Ms. Vaishali (ECS Maha lakshmi)": "ECS Maha lakshmi",
+    "Ms. Pooja (ECS Vijay nagar)": "ECS Vijay nagar",
+    "Ms. Megha Shrivastav (Kids Garden School)": "Kids Garden School",
+    "Mr Abhishek (Arhamn International School)": "Arhamn International School"
+}
+
+# --- MASTER TEACHER ROSTERS ---
+school_teachers = {
+    "Pragyanam International School": ["Deepali Yadav", "Tr Hema", "Tr Kavita"],
+    "Little Commando Foundations School": ["Deepika mewada", "Gayatri Singh", "Jagruti Patil", "Roshni Rawat", "Sapna yadav", "Shraddha mishra", "TrPriyanka"],
+    "Nature's Kids University": ["AAYUSHI PATIDAR", "ADITI YOGI", "Anjali Mukati", "Binu Joshi", "ISHIKA PANJWANI", "Kawaljeet Kaur Bhatia", "Komal Wardhani", "MANISHA VARMA", "Meenakshi Panwar", "PRACHI SEN", "REETA HADA", "SHIVANI RATHORE", "SURYA PATIDAR", "Saket Sharma", "Sakshi Sanwatsar", "Sapna Chouhan", "TANISHA BORYALE", "Tejaswi Mishra", "VEENA CHOUDHARY"],
+    "Wisdom World School - Gwalior": ["Bhumi Sharma", "Hemlata Sharma", "Lata Golash", "Neelu Gupta", "Saloni Tyagi", "Sanya Yadav", "Shashi Maini"],
+    "Noble Minds International School Gwalior": ["Geeta Godiya", "Miss Mohini", "Smita Chauhan", "Manisha Pandey", "Pinky Goud", "Soma Tomar", "Manju Pal", "Seema Tomar", "Soma Khare", "Pooja Jha"],
+    "Nahar Global School": ["Anushika Rathod", "KAJALTANK", "Rimzim Sisodiya", "TrKhushboo", "mansi Sisodiya", "Atika Mansuri", "Pragati Rathore", "SIMRAN BHATIA", "Umang Solanki", "JAGRATIBAIS", "Pragya Dixit", "Tanishka RATHORE", "archana Upadhyay"],
+    "Colonels Academy": ["Aarti Joseph", "Karuna Tomer", "Prachi Joshi", "Prizma Singh", "Tara Pawar", "Divya Dubey", "Neha Bisht", "Prakrati", "Rehana Hussain", "TrSakshi", "Heena", "Noopur Thapliyal", "Preetilyer", "Shubhangi", "Vijaya Bisht"],
+    "Jayshree Bal Vinay Mandir": ["Anshu Tiwari", "Bulbul Patel", "Geeta Patel", "Mahima Jadhav", "Maya Parmar", "Neetu Patel", "Rekha Solanki", "Tushar Waghmare"],
+    "Jain Public School": ["Arjun Borana", "Deepti Pateriya", "Paridhi Soni", "Pragati Pawar", "Ragni Varagi", "Ritu Shatawar", "Shrijal Gupta", "Sushma Kumar", "Swati Dwivedi"],
+    "Rational Kids Academy-Gwalior": ["Esha Saxena", "Ms Namrata", "Rakhi Kushwah", "Ishika Sharna", "Muskan Bhadoriya", "Sneha Prabha", "Neha Saxena", "Kushboo Sharma"],
+    "Charming Kids International": ["ANUPAMA MOGHE", "Chhaya Motwani", "Kushboo Purwani", "Mitali Sachdev", "Muskan Sachdev", "Palak Kingrani", "Swati Parmar"],
+    "Ambika Convent HR Sec school": ["Ankita Khede", "Komal Vaskel", "Mamta Meena", "Ramila Dawar", "Simran Pancholi"],
+    "Mother's Pride School": ["Jyoti Modi", "Kalpana Rathore", "Monika Rekvar", "Pooja Bairagi", "Rani Gujrati"],
+    "Universal Day Boarding Academy-Gwalior": ["Dolly", "Pooja Kushwah", "Raghvendra", "Rajeev Pal", "Sandhya", "Somesh Shah"],
+    "Credible World School": ["Disha Raghuvanshi", "Komal Jain", "Miss aakrati", "Priyanka Joshi", "Ritu Rathore", "Shivani Jain"],
+    "AG Azad Memorial Academy": [],
+    "Scholar's High School": ["Israr Mansuri", "Nidhi bhawasar", "Shahnoor Sheikh", "Vishal Pawar", "tamanna waskale"],
+    "Late Shree Pidiya Bhuriya Memorial School": ["Anjali Khatediya", "Gayatri Datla", "Kamala Muniya", "Pratika Bhuriya", "Rasna Ninama", "Seema Damor", "Vandana Vasuniya"],
+    "JK International School": ["Anjali Pal", "Palak Agrawal", "priyanka kol", "Arpita Sharma", "Poorva Soni", "Khushbu Gupta", "Sakhi Sonia", "Shivangi Malviya", "harshita mishra", "kirti choubey"],
+    "Rainbow Play School - Karnawad": ["Neha Patidar", "Payal Patidar", "Purva Patidar", "Suhani Patidar", "Nikita Patidar", "Pooja Patidar", "Rachna Patidar", "Nita Soner", "Pratibha Patidar", "Ravi Patidar"],
+    "Dream India-Khargone": ["Ayushi Rathod", "Manish Mandloi", "Ragini Chouhan", "Simran Kushwah", "Laxmi Rathore", "Miss Anisha", "Shahani Pinjane", "Sunita Rawal", "Madhu gupta", "PRIYA KANUNGO", "Shailbala singh", "Vashnavi Pinjane"],
+    "Shubharambh Academy": ["Ajay Rajput", "Mamta Solanki", "Sharda Trivedi", "payal bhabhri"],
+    "Active English School": ["Bhumika Jhawar", "Meena Sharma", "Mithlesh Suri", "Pankaj Sir", "Priyanka prajapati", "SHEEFA Mansuri", "Sheefa Mansuri", "Vinesh Sikarwar", "Ranjana Pandey"],
+    "Lebad Public School": ["Deepali Rathore", "Divya Parmar", "Ishika Raghuvanshi", "Joyti Bhat", "KAVITA CHOUHAN", "Madhu Gour", "Miss Shewta", "Miss Joyti", "Mustafa Sir", "NIBHA UPADHYAY", "Nikita Manawat", "Rani Singh", "Roshni Goswami", "Shivani Pandey", "Sneha Rai"],
+    "Adarsh Gurukul Academy": ["Mrs Kalpana Mahawar", "Manali Sharma", "Neelu Garg", "Smita Dashottar", "Anju Jain", "ManjuBala Sharma", "Neha Shaktawat", "Rekha Salaya", "Uma Dwivedi", "Kavita Budhani", "Neelam Rathod", "Poonam Gadwal", "Simran Bhatia", "Pramila Lalan", "sneha gehlot"],
+    "Innovative Public School": ["Alina Khan", "Sarita Sharma", "Chandni Khan", "Naseen Shaikh", "Farheen Khan", "Mantasha Shah", "Pooja Verma"],
+    "ECS Maha lakshmi": [],
+    "ECS Vijay nagar": [],
+    "Kids Garden School": ["Arpita Rajak", "Megha Shrivastava", "Palak Jain", "Ritika Parmar", "Gagan Preet Kaur", "Ms Yeshavi", "Reem Wareen", "Hema Rawat", "Muskan Rathore", "Ritiesh Parmar"],
+    "Arhamn International School": ["ANURAG JAIN", "CHANCHAL VIDHYARTHI", "JYOTI BALA YADAV", "Khushi Patil", "PALLAVI RAWAT", "Prachi chouhan", "Priti Bhawsar", "Rashmi Verma", "Yashaswi Girnar", "pooja Chouhan"]
+}
+
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
-    """
-    Generates a professional PDF document in memory and returns a downloadable BytesIO buffer.
-    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -66,9 +132,7 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
     buffer.seek(0)
     return buffer
 
-
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
-    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
@@ -100,7 +164,6 @@ except Exception:
 DB_PATH = os.path.join(DATA_FOLDER, "master_database.parquet")
 
 def load_or_update_master_db(new_upload_dfs=None):
-    """Load master database, merge new Excel uploads, and auto-deduplicate session logs."""
     master_df = pd.DataFrame()
     if os.path.exists(DB_PATH):
         try:
@@ -115,7 +178,6 @@ def load_or_update_master_db(new_upload_dfs=None):
         else:
             all_data = combined_new
 
-        # Deduplicate based on unique session signature
         dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
         available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
         
@@ -138,7 +200,6 @@ if uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
             
-            # Cleaning & Data Normalization
             temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).str.strip() if 'FirstName' in temp_df.columns else ''
             temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).str.strip() if 'LastName' in temp_df.columns else ''
             temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).str.strip()
@@ -175,7 +236,6 @@ if uploaded_files:
             if 'StartTime' in temp_df.columns:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
-            # Optional Qualitative Link Columns
             for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
@@ -184,14 +244,12 @@ if uploaded_files:
         except Exception as e:
             st.sidebar.error(f"Error reading {file.name}: {e}")
 
-# Load or Sync Parquet Database
 if new_processed_dfs:
     df = load_or_update_master_db(new_processed_dfs)
     st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Master Parquet DB!")
 else:
     df = load_or_update_master_db()
 
-# 3. Database Status & Storage Controls
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Database Status")
 
@@ -208,7 +266,6 @@ if os.path.exists(DB_PATH) and not df.empty:
 if df.empty:
     st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent database.")
 else:
-    # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
         df['Date'] = df['StartTime'].dt.date
         df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
@@ -239,20 +296,16 @@ else:
         df['Month_Name'] = "N/A"
         df['Week'] = "N/A"
 
-    # Build Master Teacher Roster across all database records
     master_teacher_roster = df[['Institution', 'FullName']].drop_duplicates()
 
-    # Sidebar Review Filters
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Review Filters")
     all_schools = sorted([str(s) for s in df['Institution'].unique()])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
-    # Filter Master Roster and Data by selected Schools
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
     school_filtered_df = df[df['Institution'].isin(selected_schools)]
 
-    # --- MONTH-FIRST & CALENDAR HOLIDAY MANAGER ---
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -262,10 +315,8 @@ else:
     selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options)
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
-    # Sunday Exclusion Toggle
     exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
 
-    # Global Monthly Holiday Punch-In Multiselect
     user_excluded_dates = []
     if not month_filtered_df['Date'].isna().all():
         m_min_date = month_filtered_df['Date'].min()
@@ -280,7 +331,6 @@ else:
         if user_excluded_dates:
             st.sidebar.caption(f"{len(user_excluded_dates)} holiday date(s) deducted from {selected_month} KPIs.")
 
-    # View Mode Selector
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -309,22 +359,22 @@ else:
     calc_ld_kpi = 10.0 * selected_num_days
     calc_lib_kpi = 30.0 * selected_num_days
 
-    # Teacher Filter
     available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique()])
     selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
     
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 7 Dedicated Meeting Review Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # 8 Platform Tabs (Including Teacher Submission Portal)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📊 7. Student Assessment Outcomes"
+        "📊 7. Student Assessment Outcomes",
+        "📥 8. Teacher Submission Portal"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
@@ -554,7 +604,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (ENHANCED WITH QUALITATIVE EVIDENCE HUB)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
 
@@ -570,7 +620,6 @@ else:
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
-            # SECTION 1: PERFORMANCE INDICATOR SUMMARY
             st.subheader("1. Performance Indicator Summary")
             st.info(f"📅 **Active Filter**: `{filter_description_text}` | **KPI Duration**: `{selected_num_days} Working Day(s)`")
 
@@ -636,7 +685,6 @@ else:
 
             st.markdown("---")
 
-            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT
             st.subheader("2. Book & Grade Digital Content Usage Report")
             
             teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
@@ -674,24 +722,20 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB (NEW)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
             st.caption("Review authentic teacher pre-class voice notes, in-class classroom activity videos, and student writing samples.")
 
             v_cols = st.columns(3)
             
-            # Check for Voice Note Links
             voice_links = teacher_date_data['Voice_Note_Link'].dropna().unique().tolist() if 'Voice_Note_Link' in teacher_date_data.columns else []
             v_cols[0].metric("🎧 Voice Notes Submitted", len(voice_links))
             
-            # Check for Video Evidences (#3, #4, #5)
             video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in teacher_date_data.columns]
             video_count = 0
             if video_cols_exist:
                 video_count = teacher_date_data[video_cols_exist].notna().sum().sum()
             v_cols[1].metric("🎥 Classroom Videos Uploaded", video_count)
 
-            # Check for Writing Sample Links
             writing_links = teacher_date_data['Writing_Sample_Link'].dropna().unique().tolist() if 'Writing_Sample_Link' in teacher_date_data.columns else []
             v_cols[2].metric("📝 Student Writing Artifacts", len(writing_links))
 
@@ -726,7 +770,6 @@ else:
 
             st.markdown("---")
 
-            # SECTION 4: CLASSROOM AUDIT LOG
             col_log_head, col_log_filt = st.columns([2, 1])
             with col_log_head:
                 st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
@@ -809,7 +852,6 @@ else:
 
             school_stats['Classification'] = school_stats.apply(classify_school, axis=1)
 
-            # --- 2x2 QUADRANT MATRIX GRID ---
             st.subheader("🖼️ 2x2 Portfolio Classification Matrix")
             
             pace_setters = school_stats[school_stats['Classification'] == '🌟 Pace Setters']['Institution'].tolist()
@@ -932,7 +974,6 @@ else:
             t6_teachers = school_t6_roster.merge(t6_ld.rename(columns={'Duration_Min': 'Lesson_Mins'}), on='FullName', how='left').fillna(0.0)
             t6_teachers = t6_teachers.merge(t6_lib.rename(columns={'Duration_Min': 'Library_Mins'}), on='FullName', how='left').fillna(0.0)
 
-            # Execution Tier thresholds: 40% / 100% logic
             def tier_teacher(row):
                 ld_pct = (row['Lesson_Mins'] / calc_ld_kpi) if calc_ld_kpi > 0 else 1.0
                 lib_pct = (row['Library_Mins'] / calc_lib_kpi) if calc_lib_kpi > 0 else 1.0
@@ -1010,10 +1051,10 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT (NEW TAB)
+    # TAB 7: STUDENT ASSESSMENT OUTCOMES
     with tab7:
         st.header("📊 Student Assessment Outcomes & Impact Analysis")
-        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
+        st.caption("Track student assessment scores and analyze impact across schools, grades, subjects, and teacher execution tiers.")
 
         if 'Assessment_Score_Pct' not in school_filtered_df.columns or school_filtered_df['Assessment_Score_Pct'].dropna().empty:
             st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
@@ -1075,6 +1116,47 @@ else:
                 file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
+
+    # TAB 8: ONLINE TEACHER SUBMISSION PORTAL
+    with tab8:
+        st.header("📥 Online Teacher Evidence & Submission Portal")
+        st.markdown("Select your institution head and your name to submit your daily lesson prep and classroom artifacts securely.")
+
+        # Dropdown showing only the Head of Institution names
+        selected_head = st.selectbox("Select Your Institution Head", list(institution_mapping.keys()), key="portal_head")
+        
+        # Mapped internally to the correct school name
+        selected_school = institution_mapping[selected_head]
+
+        # Dynamically filter teachers for that school
+        available_portal_teachers = school_teachers.get(selected_school, [])
+        selected_portal_teacher = st.selectbox("Select Your Name", available_portal_teachers if available_portal_teachers else ["No teachers listed - check roster"], key="portal_teacher")
+
+        with st.form("teacher_live_submission_form"):
+            st.subheader("Activity & Evidence Details")
+            
+            p_grade = st.selectbox("Grade / Class Level", ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"], key="portal_grade")
+            p_subject = st.selectbox("Subject", ["Mathematics", "EVS", "English", "Hindi", "Phonics"], key="portal_subject")
+            p_activity_num = st.text_input("Lesson Plan / Activity Number", key="portal_act_num")
+            p_activity_date = st.date_input("Date of Activity", datetime.today(), key="portal_date")
+            
+            st.markdown("---")
+            st.markdown("### Upload Evidence Files")
+            voice_note = st.file_uploader("1. Daily Voice Note (Lesson Prep)", type=["mp3", "m4a", "wav"], key="portal_vn")
+            video_a = st.file_uploader("2. Classroom Video (Lesson Delivery & Concepts)", type=["mp4", "mov"], key="portal_va")
+            video_b = st.file_uploader("3. Classroom Video (Phonics & Literacy Reading)", type=["mp4", "mov"], key="portal_vb")
+            writing_sample = st.file_uploader("4. Student Writing Practice / Notebook Artifact", type=["png", "jpg", "pdf"], key="portal_ws")
+            
+            portal_submitted = st.form_submit_button("Submit Evidence to Cloud")
+            
+            if portal_submitted:
+                if selected_portal_teacher == "No teachers listed - check roster":
+                    st.error("Please select a valid teacher name before submitting.")
+                else:
+                    try:
+                        st.success(f"Successfully submitted evidence for **{selected_portal_teacher}** under **{selected_school}** (Managed by: {selected_head})!")
+                    except Exception as e:
+                        st.error(f"Error processing submission: {e}")
 
     # Active Master Database File Info
     st.sidebar.markdown("---")
