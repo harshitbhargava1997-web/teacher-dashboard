@@ -4,8 +4,9 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-import glob
+import sqlalchemy
 from io import BytesIO
+from supabase import create_client
 
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
@@ -13,11 +14,79 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# 0. PDF Generator Helper Function
+# ---------------------------------------------------------
+# SUPABASE CLOUD & STORAGE INITIALIZATION
+# ---------------------------------------------------------
+DB_URL = st.secrets["database"]["url"]
+engine = sqlalchemy.create_engine(DB_URL)
+
+@st.cache_resource
+def init_supabase_storage():
+    return create_client(st.secrets["supabase"]["url"], st.secrets["supabase"]["key"])
+
+supabase = init_supabase_storage()
+
+def load_master_db_from_cloud():
+    """Loads the entire master database from Supabase PostgreSQL."""
+    try:
+        query = "SELECT * FROM master_sessions"
+        df_cloud = pd.read_sql(query, engine)
+        rename_map = {
+            'institution': 'Institution', 'full_name': 'FullName', 'grade': 'Grade',
+            'subject': 'Subject', 'book': 'Book', 'type': 'Type', 'duration_min': 'Duration_Min',
+            'start_time': 'StartTime', 'voice_note_link': 'Voice_Note_Link',
+            'video_evidence_1': 'Video_Evidence_1', 'video_evidence_2': 'Video_Evidence_2',
+            'writing_sample_link': 'Writing_Sample_Link', 'assessment_score_pct': 'Assessment_Score_Pct'
+        }
+        df_cloud = df_cloud.rename(columns=rename_map)
+        if 'StartTime' in df_cloud.columns:
+            df_cloud['StartTime'] = pd.to_datetime(df_cloud['StartTime'])
+        return df_cloud
+    except Exception as e:
+        return pd.DataFrame()
+
+def save_to_cloud_db(new_df):
+    """Saves new records to Supabase. Duplicate rows are safely dropped via SQL unique constraints."""
+    if new_df.empty:
+        return
+    try:
+        cols_to_keep = [
+            'Institution', 'FullName', 'Grade', 'Subject', 'Book', 
+            'Type', 'Duration_Min', 'StartTime', 'Voice_Note_Link', 
+            'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link', 'Assessment_Score_Pct'
+        ]
+        for col in cols_to_keep:
+            if col not in new_df.columns:
+                new_df[col] = None
+
+        clean_df = new_df[cols_to_keep].copy()
+        clean_df.columns = [c.lower() for c in clean_df.columns]
+        
+        clean_df.to_sql('master_sessions', engine, if_exists='append', index=False, method='multi')
+    except Exception:
+        pass
+
+def upload_to_supabase_bucket(uploaded_file, prefix, sub_school, sub_teacher):
+    """Uploads file directly to Supabase storage bucket and returns its permanent public URL."""
+    if uploaded_file is not None:
+        file_bytes = uploaded_file.getvalue()
+        file_path = f"{sub_school}/{sub_teacher}_{prefix}_{uploaded_file.name}".replace(" ", "_")
+        try:
+            supabase.storage.from_("teacher-evidences").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"content-type": uploaded_file.type, "upsert": "true"}
+            )
+            public_url = supabase.storage.from_("teacher-evidences").get_public_url(file_path)
+            return public_url
+        except Exception as e:
+            st.error(f"Storage upload error: {e}")
+    return None
+
+# ---------------------------------------------------------
+# PDF GENERATOR HELPER FUNCTION
+# ---------------------------------------------------------
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
-    """
-    Generates a professional PDF document in memory and returns a downloadable BytesIO buffer.
-    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -38,7 +107,6 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
     if not dataframe.empty:
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        
         cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)
         header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
 
@@ -68,12 +136,10 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
-    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
         holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else []
-        
         w_mask = '1111110' if exclude_sundays else '1111111'
         return int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np))
     except Exception:
@@ -85,51 +151,8 @@ st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboar
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
 st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (10m Lesson / 30m Library)**, **360° Qualitative Evidences**, and **Assessment Outcomes**.")
 
-# 1. Local Storage & Parquet Database Setup
-DATA_FOLDER = os.path.join(os.path.expanduser("~"), "Desktop", "dashboard_data_store")
-try:
-    os.makedirs(DATA_FOLDER, exist_ok=True)
-except Exception:
-    DATA_FOLDER = "dashboard_data_store"
-    if not os.path.exists(DATA_FOLDER):
-        try:
-            os.mkdir(DATA_FOLDER)
-        except Exception:
-            pass
-
-DB_PATH = os.path.join(DATA_FOLDER, "master_database.parquet")
-
-def load_or_update_master_db(new_upload_dfs=None):
-    """Load master database, merge new uploads, and auto-deduplicate session logs."""
-    master_df = pd.DataFrame()
-    if os.path.exists(DB_PATH):
-        try:
-            master_df = pd.read_parquet(DB_PATH)
-        except Exception:
-            master_df = pd.DataFrame()
-
-    if new_upload_dfs:
-        combined_new = pd.concat(new_upload_dfs, ignore_index=True)
-        if not master_df.empty:
-            all_data = pd.concat([master_df, combined_new], ignore_index=True)
-        else:
-            all_data = combined_new
-
-        # Deduplicate based on unique session signature
-        dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
-        available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
-        
-        master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='first')
-        
-        try:
-            master_df.to_parquet(DB_PATH, index=False)
-        except Exception as e:
-            st.sidebar.error(f"Error saving Parquet Database: {e}")
-
-    return master_df
-
-# 2. Sidebar Data Upload Manager
-st.sidebar.header("📁 Data Upload & Database Sync")
+# Sidebar Data Upload Manager
+st.sidebar.header("📁 Data Upload & Cloud Sync")
 uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True, key="user_metrics_uploader")
 
 new_processed_dfs = []
@@ -137,8 +160,6 @@ if uploaded_files:
     for file in uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
-            
-            # Cleaning & Data Normalization
             temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).str.strip() if 'FirstName' in temp_df.columns else ''
             temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).str.strip() if 'LastName' in temp_df.columns else ''
             temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).str.strip()
@@ -175,7 +196,6 @@ if uploaded_files:
             if 'StartTime' in temp_df.columns:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
-            # Optional Qualitative Link Columns
             for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
@@ -184,31 +204,21 @@ if uploaded_files:
         except Exception as e:
             st.sidebar.error(f"Error reading {file.name}: {e}")
 
-# Load or Sync Parquet Database
 if new_processed_dfs:
-    df = load_or_update_master_db(new_processed_dfs)
-    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Master Parquet DB!")
-else:
-    df = load_or_update_master_db()
+    combined_new = pd.concat(new_processed_dfs, ignore_index=True)
+    save_to_cloud_db(combined_new)
+    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Cloud DB!")
 
-# 3. Database Status & Storage Controls
+# Load Master Data from Cloud Database
+df = load_master_db_from_cloud()
+
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Database Status")
-
-if os.path.exists(DB_PATH) and not df.empty:
-    st.sidebar.metric("Master DB Total Records", len(df))
-    if st.sidebar.button("🚨 Clear Permanent Database"):
-        try:
-            os.remove(DB_PATH)
-            st.sidebar.success("Database cleared!")
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"Could not delete database: {e}")
+st.sidebar.metric("Cloud DB Total Records", len(df))
 
 if df.empty:
-    st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent database.")
+    st.info("👋 Your Supabase database currently has no records. Upload a `UserMetrics.xlsx` file via the sidebar or submit data via Tab 8.")
 else:
-    # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
         df['Date'] = df['StartTime'].dt.date
         df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
@@ -239,20 +249,16 @@ else:
         df['Month_Name'] = "N/A"
         df['Week'] = "N/A"
 
-    # Build Master Teacher Roster across all database records
     master_teacher_roster = df[['Institution', 'FullName']].drop_duplicates()
 
-    # Sidebar Review Filters
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Review Filters")
     all_schools = sorted([str(s) for s in df['Institution'].unique()])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
-    # Filter Master Roster and Data by selected Schools
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
     school_filtered_df = df[df['Institution'].isin(selected_schools)]
 
-    # --- MONTH-FIRST & CALENDAR HOLIDAY MANAGER ---
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -262,10 +268,8 @@ else:
     selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options)
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
-    # Sunday Exclusion Toggle
     exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
 
-    # Global Monthly Holiday Punch-In Multiselect
     user_excluded_dates = []
     if not month_filtered_df['Date'].isna().all():
         m_min_date = month_filtered_df['Date'].min()
@@ -280,7 +284,6 @@ else:
         if user_excluded_dates:
             st.sidebar.caption(f"{len(user_excluded_dates)} holiday date(s) deducted from {selected_month} KPIs.")
 
-    # View Mode Selector
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -291,7 +294,6 @@ else:
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
-        
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
@@ -299,7 +301,6 @@ else:
         w_end = filtered_df['Date'].max()
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
-        
     else:
         selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
@@ -309,14 +310,13 @@ else:
     calc_ld_kpi = 10.0 * selected_num_days
     calc_lib_kpi = 30.0 * selected_num_days
 
-    # Teacher Filter
     available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique()])
     selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
     
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 8 Dedicated Meeting & Submission Review Tabs
+    # 8 Tabs Definition
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
@@ -675,7 +675,7 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB (SUBMITTED VIA PORTAL)
+            # SECTION 3: QUALITATIVE EVIDENCE HUB (STREAMED FROM SUPABASE CLOUD BUCKET)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
             st.caption("Review authentic teacher voice notes, classroom activity videos, phonics updates, and student writing samples submitted via the portal.")
 
@@ -699,47 +699,47 @@ else:
                 with q_cols1:
                     st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
-                        for idx, path in enumerate(voice_links, 1):
-                            if os.path.exists(str(path)):
-                                st.audio(path)
+                        for idx, link in enumerate(voice_links, 1):
+                            if link.startswith('http'):
+                                st.audio(link)
                             else:
-                                st.markdown(f"• [File Path #{idx}]({path})")
+                                st.write(link)
                     else:
                         st.caption("No voice notes uploaded.")
 
                 with q_cols2:
                     st.markdown("##### 🎥 Classroom Activities")
                     if video_links_1:
-                        for idx, path in enumerate(video_links_1, 1):
-                            if os.path.exists(str(path)):
-                                st.video(path)
+                        for idx, link in enumerate(video_links_1, 1):
+                            if link.startswith('http'):
+                                st.video(link)
                             else:
-                                st.markdown(f"• [File Path #{idx}]({path})")
+                                st.write(link)
                     else:
                         st.caption("No activity videos uploaded.")
 
                 with q_cols3:
                     st.markdown("##### 🗣️ Phonics Practice")
                     if video_links_2:
-                        for idx, path in enumerate(video_links_2, 1):
-                            if os.path.exists(str(path)):
-                                if path.endswith(('.mp4', '.mov', '.avi')):
-                                    st.video(path)
+                        for idx, link in enumerate(video_links_2, 1):
+                            if link.startswith('http'):
+                                if link.lower().endswith(('.mp4', '.mov', '.avi', '.webm')):
+                                    st.video(link)
                                 else:
-                                    st.audio(path)
+                                    st.audio(link)
                             else:
-                                st.markdown(f"• [File Path #{idx}]({path})")
+                                st.write(link)
                     else:
                         st.caption("No phonics files uploaded.")
 
                 with q_cols4:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
-                        for idx, path in enumerate(writing_links, 1):
-                            if os.path.exists(str(path)):
-                                st.markdown(f"• [Download Writing Artifact #{idx}]({path})")
+                        for idx, link in enumerate(writing_links, 1):
+                            if link.startswith('http'):
+                                st.markdown(f"• [Download Writing Artifact #{idx}]({link})")
                             else:
-                                st.markdown(f"• [Artifact Link #{idx}]({path})")
+                                st.markdown(f"• [Artifact Link #{idx}]({link})")
                     else:
                         st.caption("No writing samples uploaded.")
 
@@ -969,10 +969,10 @@ else:
                 fig_ag = px.bar(grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade", title="Average Score by Grade (%)", text_auto=".1f")
                 st.plotly_chart(fig_ag, use_container_width=True)
 
-    # TAB 8: TEACHER QUALITATIVE SUBMISSION PORTAL (BUILT-IN)
+    # TAB 8: TEACHER QUALITATIVE SUBMISSION PORTAL (DIRECT CLOUD UPLOAD)
     with tab8:
         st.header("📝 Teacher Qualitative Submission Portal")
-        st.caption("Teachers can use this portal online to submit lesson details and upload qualitative evidence directly into the master database.")
+        st.caption("Teachers can use this portal online to submit lesson details and upload qualitative evidence directly into Supabase cloud storage.")
 
         if master_teacher_roster.empty:
             st.warning("Please upload your main roster or `UserMetrics.xlsx` file via the sidebar first so schools and teachers are registered.")
@@ -1012,44 +1012,27 @@ else:
                     if sub_teacher == "No teachers found" or not sub_book:
                         st.error("Please complete all required fields and select a valid teacher.")
                     else:
-                        evidence_dir = os.path.join(DATA_FOLDER, "uploaded_evidences")
-                        os.makedirs(evidence_dir, exist_ok=True)
+                        with st.spinner("Uploading evidence securely to Supabase cloud storage..."):
+                            v_path = upload_to_supabase_bucket(voice_file, "voice", sub_school, sub_teacher)
+                            a_path = upload_to_supabase_bucket(activity_file, "activity", sub_school, sub_teacher)
+                            p_path = upload_to_supabase_bucket(phonics_file, "phonics", sub_school, sub_teacher)
+                            w_path = upload_to_supabase_bucket(writing_file, "writing", sub_school, sub_teacher)
 
-                        def save_portal_file(uploaded_file, prefix):
-                            if uploaded_file is not None:
-                                file_path = os.path.join(evidence_dir, f"{sub_teacher}_{prefix}_{uploaded_file.name}")
-                                with open(file_path, "wb") as f:
-                                    f.write(uploaded_file.getbuffer())
-                                return file_path
-                            return None
+                            new_portal_record = pd.DataFrame([{
+                                'Institution': sub_school,
+                                'FullName': sub_teacher,
+                                'Grade': sub_grade,
+                                'Subject': sub_subject,
+                                'Book': sub_book,
+                                'Type': 'lessonDelivery',
+                                'Duration_Min': 10.0,
+                                'StartTime': pd.Timestamp.now(),
+                                'Voice_Note_Link': v_path,
+                                'Video_Evidence_1': a_path,
+                                'Video_Evidence_2': p_path,
+                                'Writing_Sample_Link': w_path
+                            }])
 
-                        v_path = save_portal_file(voice_file, "voice")
-                        a_path = save_portal_file(activity_file, "activity")
-                        p_path = save_portal_file(phonics_file, "phonics")
-                        w_path = save_portal_file(writing_file, "writing")
-
-                        new_portal_record = pd.DataFrame([{
-                            'Institution': sub_school,
-                            'FullName': sub_teacher,
-                            'Grade': sub_grade,
-                            'Subject': sub_subject,
-                            'Book': sub_book,
-                            'Type': 'lessonDelivery',
-                            'Duration_Min': 10.0,
-                            'StartTime': pd.Timestamp.now(),
-                            'Voice_Note_Link': v_path,
-                            'Video_Evidence_1': a_path,
-                            'Video_Evidence_2': p_path,
-                            'Writing_Sample_Link': w_path
-                        }])
-
-                        load_or_update_master_db([new_portal_record])
+                            save_to_cloud_db(new_portal_record)
                         st.success(f"Successfully recorded and saved online submission for **{sub_teacher}** at **{sub_school}**! Tab 4 is now updated.")
-
-    # Active Master Database File Info
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🗄️ Active Master Database File")
-    if os.path.exists(DB_PATH):
-        st.sidebar.caption(f"📁 `master_database.parquet` ({len(df)} records)")
-    else:
-        st.sidebar.caption("No database file created yet.")
+                        st.rerurn()
