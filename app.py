@@ -1,4 +1,19 @@
-import streamlit as st
+# 0. Initialize Supabase Connection
+@st.cache_resource
+def init_supabase() -> Client:
+    try:
+        url = st.secrets.get("SUPABASE_URL")
+        key = st.secrets.get("SUPABASE_KEY")
+        if not url or not key:
+            return None
+        return create_client(url, key)
+    except Exception as e:
+        return None
+
+supabase = init_supabase()
+
+if not supabase:
+    st.error("⚠️ Supabase credentials (`SUPABASE_URL` and `SUPABASE_KEY`) are missing from your Streamlit secrets. Please configure them in `.streamlit/secrets.toml` or your Streamlit Cloud settings.")import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
