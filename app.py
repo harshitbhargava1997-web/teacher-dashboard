@@ -100,7 +100,7 @@ except Exception:
 DB_PATH = os.path.join(DATA_FOLDER, "master_database.parquet")
 
 def load_or_update_master_db(new_upload_dfs=None):
-    """Load master database, merge new Excel uploads, and auto-deduplicate session logs."""
+    """Load master database, merge new uploads, and auto-deduplicate session logs."""
     master_df = pd.DataFrame()
     if os.path.exists(DB_PATH):
         try:
@@ -190,48 +190,6 @@ if new_processed_dfs:
     st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Master Parquet DB!")
 else:
     df = load_or_update_master_db()
-
-# --- Microsoft Forms Qualitative Data Sync Integration ---
-st.sidebar.markdown("---")
-st.sidebar.header("📋 Microsoft Forms Sync")
-forms_file = st.sidebar.file_uploader("Upload MS Forms Responses (.xlsx)", type=["xlsx"], key="forms_uploader")
-
-if forms_file and not df.empty:
-    try:
-        temp_forms = pd.read_excel(forms_file)
-        
-        # Dynamically find the teacher name column
-        name_col = next((c for c in temp_forms.columns if 'name' in c.lower() or 'teacher' in c.lower()), None)
-        
-        if name_col:
-            temp_forms['FullName'] = temp_forms[name_col].fillna('').astype(str).str.strip()
-            
-            # Map MS Form options to qualitative artifact columns
-            column_mapping = {}
-            for col in temp_forms.columns:
-                col_lower = col.lower()
-                if 'voice note' in col_lower:
-                    column_mapping[col] = 'Voice_Note_Link'
-                elif 'classroom activity' in col_lower or 'video' in col_lower:
-                    column_mapping[col] = 'Video_Evidence_1'
-                elif 'writing' in col_lower:
-                    column_mapping[col] = 'Writing_Sample_Link'
-                elif 'phonics' in col_lower:
-                    column_mapping[col] = 'Video_Evidence_2'
-            
-            temp_forms = temp_forms.rename(columns=column_mapping)
-            
-            # Merge forms qualitative columns into the master dataframe matching by FullName
-            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link']:
-                if qual_col in temp_forms.columns:
-                    # Map the latest non-null submissions back to the main dataframe
-                    valid_subs = temp_forms[['FullName', qual_col]].dropna(subset=[qual_col])
-                    for _, row_sub in valid_subs.iterrows():
-                        df.loc[df['FullName'] == row_sub['FullName'], qual_col] = row_sub[qual_col]
-            
-            st.sidebar.success(f"Successfully synced MS Forms responses for {len(temp_forms)} submission(s)!")
-    except Exception as e:
-        st.sidebar.error(f"Error reading MS Forms file: {e}")
 
 # 3. Database Status & Storage Controls
 st.sidebar.markdown("---")
@@ -358,15 +316,16 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 7 Dedicated Meeting Review Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # 8 Dedicated Meeting & Submission Review Tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📊 7. Student Assessment Outcomes"
+        "📊 7. Student Assessment Outcomes",
+        "📝 8. Teacher Submission Portal"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
@@ -596,7 +555,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (ENHANCED WITH QUALITATIVE EVIDENCE HUB)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH DIRECT ARTIFACT HUB)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
 
@@ -716,60 +675,71 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB
+            # SECTION 3: QUALITATIVE EVIDENCE HUB (SUBMITTED VIA PORTAL)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-            st.caption("Review authentic teacher pre-class voice notes, in-class classroom activity videos, phonics updates, and student writing samples.")
+            st.caption("Review authentic teacher voice notes, classroom activity videos, phonics updates, and student writing samples submitted via the portal.")
 
             v_cols = st.columns(4)
             
-            # Check for Voice Note Links
             voice_links = teacher_date_data['Voice_Note_Link'].dropna().unique().tolist() if 'Voice_Note_Link' in teacher_date_data.columns else []
             v_cols[0].metric("🎧 Voice Notes", len(voice_links))
             
-            # Check for Video Evidences (Classroom Activities)
             video_links_1 = teacher_date_data['Video_Evidence_1'].dropna().unique().tolist() if 'Video_Evidence_1' in teacher_date_data.columns else []
             v_cols[1].metric("🎥 Class Activities", len(video_links_1))
 
-            # Check for Phonics Practice Links (Video Evidence 2)
             video_links_2 = teacher_date_data['Video_Evidence_2'].dropna().unique().tolist() if 'Video_Evidence_2' in teacher_date_data.columns else []
             v_cols[2].metric("🗣️ Phonics Practice", len(video_links_2))
 
-            # Check for Writing Sample Links
             writing_links = teacher_date_data['Writing_Sample_Link'].dropna().unique().tolist() if 'Writing_Sample_Link' in teacher_date_data.columns else []
             v_cols[3].metric("📝 Writing Samples", len(writing_links))
 
-            with st.expander("🔍 View & Audit Submitted Artifact Links"):
+            with st.expander("🔍 View & Play Uploaded Artifact Files"):
                 q_cols1, q_cols2, q_cols3, q_cols4 = st.columns(4)
                 
                 with q_cols1:
                     st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
-                        for idx, link in enumerate(voice_links, 1):
-                            st.markdown(f"• [Voice Note #{idx}]({link})")
+                        for idx, path in enumerate(voice_links, 1):
+                            if os.path.exists(str(path)):
+                                st.audio(path)
+                            else:
+                                st.markdown(f"• [File Path #{idx}]({path})")
                     else:
                         st.caption("No voice notes uploaded.")
 
                 with q_cols2:
                     st.markdown("##### 🎥 Classroom Activities")
                     if video_links_1:
-                        for idx, link in enumerate(video_links_1, 1):
-                            st.markdown(f"• [Activity Video #{idx}]({link})")
+                        for idx, path in enumerate(video_links_1, 1):
+                            if os.path.exists(str(path)):
+                                st.video(path)
+                            else:
+                                st.markdown(f"• [File Path #{idx}]({path})")
                     else:
                         st.caption("No activity videos uploaded.")
 
                 with q_cols3:
                     st.markdown("##### 🗣️ Phonics Practice")
                     if video_links_2:
-                        for idx, link in enumerate(video_links_2, 1):
-                            st.markdown(f"• [Phonics Video #{idx}]({link})")
+                        for idx, path in enumerate(video_links_2, 1):
+                            if os.path.exists(str(path)):
+                                if path.endswith(('.mp4', '.mov', '.avi')):
+                                    st.video(path)
+                                else:
+                                    st.audio(path)
+                            else:
+                                st.markdown(f"• [File Path #{idx}]({path})")
                     else:
-                        st.caption("No phonics videos uploaded.")
+                        st.caption("No phonics files uploaded.")
 
                 with q_cols4:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
-                        for idx, link in enumerate(writing_links, 1):
-                            st.markdown(f"• [Writing Artifact #{idx}]({link})")
+                        for idx, path in enumerate(writing_links, 1):
+                            if os.path.exists(str(path)):
+                                st.markdown(f"• [Download Writing Artifact #{idx}]({path})")
+                            else:
+                                st.markdown(f"• [Artifact Link #{idx}]({path})")
                     else:
                         st.caption("No writing samples uploaded.")
 
@@ -906,60 +876,10 @@ else:
                 mime="application/pdf"
             )
 
-            st.markdown("---")
-
-            st.subheader("🚀 Week-on-Week (WoW) Portfolio Velocity")
-            
-            if 'Week' in school_filtered_df.columns and school_filtered_df['Week'].nunique() >= 2:
-                weeks_sorted = sorted(school_filtered_df['Week'].unique())
-                latest_week = weeks_sorted[-1]
-                prev_week = weeks_sorted[-2]
-
-                st.caption(f"Comparing `{latest_week}` vs. `{prev_week}`")
-
-                weekly_school = school_filtered_df.groupby(['Week', 'Institution'])['Duration_Min'].sum().unstack(level=0, fill_value=0.0).reset_index()
-                
-                if latest_week in weekly_school.columns and prev_week in weekly_school.columns:
-                    weekly_school['WoW_Growth_Mins'] = weekly_school[latest_week] - weekly_school[prev_week]
-                    weekly_school['WoW_Growth_Pct'] = np.where(
-                        weekly_school[prev_week] > 0, 
-                        (weekly_school['WoW_Growth_Mins'] / weekly_school[prev_week]) * 100, 
-                        100.0
-                    )
-
-                    col_v1, col_v2 = st.columns(2)
-
-                    with col_v1:
-                        st.success("🔥 Top 5 Most Improved Schools (Highest WoW Growth)")
-                        top_improved = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=False).head(5)
-                        fig_top = px.bar(
-                            top_improved, x="WoW_Growth_Mins", y="Institution", orientation="h",
-                            title="Top Accelerated Schools (+Mins)",
-                            labels={"WoW_Growth_Mins": "Added Minutes Logged", "Institution": "School"},
-                            color_discrete_sequence=['#2CA02C'], text_auto=".1f"
-                        )
-                        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_top, use_container_width=True)
-
-                    with col_v2:
-                        st.error("🚨 Top 5 Priority Intervention Schools (Highest Usage Drop)")
-                        top_declining = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=True).head(5)
-                        fig_bot = px.bar(
-                            top_declining, x="WoW_Growth_Mins", y="Institution", orientation="h",
-                            title="Highest Usage Drop Schools (-Mins)",
-                            labels={"WoW_Growth_Mins": "Dropped Minutes Logged", "Institution": "School"},
-                            color_discrete_sequence=['#D62728'], text_auto=".1f"
-                        )
-                        fig_bot.update_layout(yaxis={'categoryorder':'total descending'})
-                        st.plotly_chart(fig_bot, use_container_width=True)
-
-            else:
-                st.info("Upload data covering at least 2 weeks to unlock Week-on-Week Velocity rankings.")
-
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
         st.header("🏫 School-Level Teacher Progression & Execution Tiers")
-        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards (🌟 Achiever >= 100%, ⚠️ Fluctuating 40%-99%, ❌ Inactive < 40%).")
+        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards.")
 
         all_schools_list_t6 = sorted(school_master_roster['Institution'].unique())
         
@@ -1015,56 +935,13 @@ else:
             display_t6_table = t6_teachers.rename(columns={'FullName': 'Teacher Name', 'Lesson_Mins': 'Lesson Prep (m)', 'Library_Mins': 'Library Usage (m)', 'Execution_Tier': 'Execution Tier'})
             st.dataframe(display_t6_table, use_container_width=True)
 
-            pdf_tab6 = generate_pdf_report(
-                title_text=f"🏫 School Inspection Report: {target_school_t6}",
-                subtitle_text=f"Period: {filter_description_text} | Total Roster: {len(school_t6_roster)} Teachers",
-                summary_metrics={
-                    "Consistent Achievers": num_ach,
-                    "Fluctuating/Partial": num_fluc,
-                    "Persistent Inactive": num_inact
-                },
-                dataframe=display_t6_table[['Teacher Name', 'Lesson Prep (m)', 'Library Usage (m)', 'Execution Tier']]
-            )
-            st.download_button(
-                label=f"📄 Download {target_school_t6} Inspection Report (PDF)",
-                data=pdf_tab6,
-                file_name=f"{target_school_t6.replace(' ', '_')}_Execution_Report.pdf",
-                mime="application/pdf"
-            )
-
-            st.markdown("---")
-
-            st.subheader("2. Grade & Subject Digital Content Coverage")
-
-            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:
-                st.info("No chapter or book usage logs recorded for this school.")
-            else:
-                col_t6_g1, col_t6_g2 = st.columns(2)
-
-                with col_t6_g1:
-                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()
-                    fig_g6 = px.bar(
-                        grade_t6, x="Grade", y="Duration_Min", color="Grade",
-                        title="Digital Classroom Time by Grade Level (Mins)",
-                        text_auto=".1f"
-                    )
-                    st.plotly_chart(fig_g6, use_container_width=True)
-
-                with col_t6_g2:
-                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()
-                    fig_s6 = px.pie(
-                        subj_t6, names="Subject", values="Duration_Min",
-                        title="Subject / Module Distribution in School"
-                    )
-                    st.plotly_chart(fig_s6, use_container_width=True)
-
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT
+    # TAB 7: STUDENT ASSESSMENT OUTCOMES
     with tab7:
         st.header("📊 Student Assessment Outcomes & Impact Analysis")
-        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
+        st.caption("Track student assessment scores and analyze impact across schools, grades, and subjects.")
 
         if 'Assessment_Score_Pct' not in school_filtered_df.columns or school_filtered_df['Assessment_Score_Pct'].dropna().empty:
-            st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
+            st.info("👋 No student assessment score data uploaded yet.")
         else:
             assess_df = school_filtered_df.dropna(subset=['Assessment_Score_Pct'])
 
@@ -1078,51 +955,96 @@ else:
             a_col3.metric("High Performers (>= 75%)", f"{high_rate:.1f}%")
 
             st.markdown("---")
-
             col_a1, col_a2 = st.columns(2)
 
             with col_a1:
                 st.subheader("📚 Subject-Wise Assessment Scores")
                 subj_score = assess_df.groupby('Subject')['Assessment_Score_Pct'].mean().reset_index()
-                fig_as = px.bar(
-                    subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject",
-                    title="Average Assessment Score by Subject (%)", text_auto=".1f"
-                )
-                fig_as.add_hline(y=75.0, line_dash="dash", line_color="green", annotation_text="Distinction Goal (75%)")
+                fig_as = px.bar(subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject", title="Average Score by Subject (%)", text_auto=".1f")
                 st.plotly_chart(fig_as, use_container_width=True)
 
             with col_a2:
                 st.subheader("🏫 Grade-Level Performance Impact")
                 grade_score = assess_df.groupby('Grade')['Assessment_Score_Pct'].mean().reset_index()
-                fig_ag = px.bar(
-                    grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade",
-                    title="Average Assessment Score by Grade Level (%)", text_auto=".1f"
-                )
+                fig_ag = px.bar(grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade", title="Average Score by Grade (%)", text_auto=".1f")
                 st.plotly_chart(fig_ag, use_container_width=True)
 
-            st.markdown("---")
-            st.subheader("📋 Granular Assessment Leaderboard")
-            display_assess_table = assess_df[['Institution', 'FullName', 'Grade', 'Subject', 'Assessment_Score_Pct']].rename(columns={
-                'Institution': 'School', 'FullName': 'Teacher Name', 'Assessment_Score_Pct': 'Average Score (%)'
-            })
-            st.dataframe(display_assess_table, use_container_width=True)
+    # TAB 8: TEACHER QUALITATIVE SUBMISSION PORTAL (BUILT-IN)
+    with tab8:
+        st.header("📝 Teacher Qualitative Submission Portal")
+        st.caption("Teachers can use this portal online to submit lesson details and upload qualitative evidence directly into the master database.")
 
-            pdf_tab7 = generate_pdf_report(
-                title_text="📊 Student Assessment Outcomes Report",
-                subtitle_text=f"Period: {filter_description_text} | Total Evaluated Records: {len(assess_df)}",
-                summary_metrics={
-                    "Average Score": f"{avg_score:.1f}%",
-                    "Pass Rate": f"{pass_rate:.1f}%",
-                    "High Performers": f"{high_rate:.1f}%"
-                },
-                dataframe=display_assess_table
-            )
-            st.download_button(
-                label="📄 Download Assessment Outcomes Report (PDF)",
-                data=pdf_tab7,
-                file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
-                mime="application/pdf"
-            )
+        if master_teacher_roster.empty:
+            st.warning("Please upload your main roster or `UserMetrics.xlsx` file via the sidebar first so schools and teachers are registered.")
+        else:
+            with st.form("teacher_portal_form"):
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    portal_schools = sorted(master_teacher_roster['Institution'].unique().tolist())
+                    sub_school = st.selectbox("Select School:", options=portal_schools)
+                with col_p2:
+                    school_teachers = sorted(master_teacher_roster[master_teacher_roster['Institution'] == sub_school]['FullName'].unique().tolist())
+                    sub_teacher = st.selectbox("Select Teacher Name:", options=school_teachers if school_teachers else ["No teachers found"])
+
+                st.markdown("---")
+                col_p3, col_p4, col_p5 = st.columns(3)
+                with col_p3:
+                    sub_grade = st.selectbox("Select Grade:", options=["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6"])
+                with col_p4:
+                    sub_subject = st.selectbox("Select Subject:", options=["Mathematics", "English", "EVS", "Science", "Hindi"])
+                with col_p5:
+                    sub_book = st.text_input("Lesson Plan Number / Chapter Name:")
+
+                st.markdown("---")
+                st.subheader("📁 Qualitative Evidence Direct Uploads")
+                
+                up_c1, up_c2 = st.columns(2)
+                with up_c1:
+                    voice_file = st.file_uploader("Upload Voice Note (Audio)", type=["mp3", "wav", "m4a"])
+                    activity_file = st.file_uploader("Upload Classroom Activity Video", type=["mp4", "mov", "avi"])
+                with up_c2:
+                    phonics_file = st.file_uploader("Upload Phonics Practice File", type=["mp3", "wav", "mp4", "m4a"])
+                    writing_file = st.file_uploader("Upload Student Writing Artifact", type=["pdf", "png", "jpg", "jpeg"])
+
+                submitted_portal = st.form_submit_button("🚀 Submit Data & Evidence Online")
+
+                if submitted_portal:
+                    if sub_teacher == "No teachers found" or not sub_book:
+                        st.error("Please complete all required fields and select a valid teacher.")
+                    else:
+                        evidence_dir = os.path.join(DATA_FOLDER, "uploaded_evidences")
+                        os.makedirs(evidence_dir, exist_ok=True)
+
+                        def save_portal_file(uploaded_file, prefix):
+                            if uploaded_file is not None:
+                                file_path = os.path.join(evidence_dir, f"{sub_teacher}_{prefix}_{uploaded_file.name}")
+                                with open(file_path, "wb") as f:
+                                    f.write(uploaded_file.getbuffer())
+                                return file_path
+                            return None
+
+                        v_path = save_portal_file(voice_file, "voice")
+                        a_path = save_portal_file(activity_file, "activity")
+                        p_path = save_portal_file(phonics_file, "phonics")
+                        w_path = save_portal_file(writing_file, "writing")
+
+                        new_portal_record = pd.DataFrame([{
+                            'Institution': sub_school,
+                            'FullName': sub_teacher,
+                            'Grade': sub_grade,
+                            'Subject': sub_subject,
+                            'Book': sub_book,
+                            'Type': 'lessonDelivery',
+                            'Duration_Min': 10.0,
+                            'StartTime': pd.Timestamp.now(),
+                            'Voice_Note_Link': v_path,
+                            'Video_Evidence_1': a_path,
+                            'Video_Evidence_2': p_path,
+                            'Writing_Sample_Link': w_path
+                        }])
+
+                        load_or_update_master_db([new_portal_record])
+                        st.success(f"Successfully recorded and saved online submission for **{sub_teacher}** at **{sub_school}**! Tab 4 is now updated.")
 
     # Active Master Database File Info
     st.sidebar.markdown("---")
