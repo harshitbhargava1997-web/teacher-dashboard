@@ -16,14 +16,14 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout MUST be the very first Streamlit command
-st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboard", layout="wide")
+st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review Dashboard", layout="wide")
 
 # 0. Initialize Supabase Connection Safely
 @st.cache_resource
 def init_supabase() -> Client:
     try:
-        url = st.secrets.get("SUPABASE_URL")
-        key = st.secrets.get("SUPABASE_KEY")
+        url = st.secrets.get("SUPABASE_URL") or st.secrets.get("url")
+        key = st.secrets.get("SUPABASE_KEY") or st.secrets.get("key")
         if not url or not key:
             return None
         return create_client(url, key)
@@ -32,9 +32,8 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# Check Supabase Credentials Config
 if not supabase:
-    st.error("⚠️ Supabase credentials (`SUPABASE_URL` and `SUPABASE_KEY`) are missing from your Streamlit secrets. Please configure them in your `.streamlit/secrets.toml` or Streamlit Cloud settings.")
+    st.error("⚠️ Supabase credentials (`SUPABASE_URL` / `url` and `SUPABASE_KEY` / `key`) are missing from your Streamlit secrets. Please configure them in your `.streamlit/secrets.toml` or Streamlit Cloud settings.")
 
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
@@ -113,9 +112,8 @@ def load_supabase_data():
         return pd.DataFrame()
     try:
         response = supabase.table("user_metrics").select("*").execute()
-        data = response.data
-        if data:
-            return pd.DataFrame(data)
+        if response.data:
+            return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception:
         return pd.DataFrame()
@@ -323,7 +321,7 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)] if not filtered_df.empty else filtered_df
 
-    # 8 Dedicated Meeting Review Tabs (Including Tab 8 Teacher Submission Portal)
+    # 8 Dedicated Review Tabs (Tabs 1-7 from reference code + Tab 8 Cloud Submission Portal)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
@@ -544,7 +542,7 @@ else:
                         label="📥 Download Content Log (CSV)",
                         data=csv_t3,
                         file_name=f"Content_Log_{selected_month.replace(' ', '_')}.csv",
-                        mime="text/csv"
+                        mime="application/csv"
                     )
                 with col_d2:
                     pdf_tab3 = generate_pdf_report(
@@ -564,7 +562,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (ENHANCED WITH QUALITATIVE EVIDENCE HUB)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH QUALITATIVE EVIDENCE HUB)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
 
@@ -766,7 +764,7 @@ else:
                         label=f"📥 Download Audit CSV for {target_teacher}",
                         data=csv_profile,
                         file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.csv",
-                        mime="text/csv"
+                        mime="application/csv"
                     )
                 with col_p2:
                     pdf_tab4 = generate_pdf_report(
