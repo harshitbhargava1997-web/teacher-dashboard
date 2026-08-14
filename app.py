@@ -15,7 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ---------------------------------------------------------
-# SUPABASE CLOUD & STORAGE INITIALIZATION
+# SUPABASE CLOUD DATABASE & STORAGE INITIALIZATION
 # ---------------------------------------------------------
 DB_URL = st.secrets["database"]["url"]
 engine = sqlalchemy.create_engine(DB_URL)
@@ -31,6 +31,11 @@ def load_master_db_from_cloud():
     try:
         query = "SELECT * FROM master_sessions"
         df_cloud = pd.read_sql(query, engine)
+        
+        if df_cloud.empty:
+            return pd.DataFrame()
+
+        # Standardize column mapping back to app expectations
         rename_map = {
             'institution': 'Institution', 'full_name': 'FullName', 'grade': 'Grade',
             'subject': 'Subject', 'book': 'Book', 'type': 'Type', 'duration_min': 'Duration_Min',
@@ -39,14 +44,16 @@ def load_master_db_from_cloud():
             'writing_sample_link': 'Writing_Sample_Link', 'assessment_score_pct': 'Assessment_Score_Pct'
         }
         df_cloud = df_cloud.rename(columns=rename_map)
+        
         if 'StartTime' in df_cloud.columns:
-            df_cloud['StartTime'] = pd.to_datetime(df_cloud['StartTime'])
+            df_cloud['StartTime'] = pd.to_datetime(df_cloud['StartTime'], errors='coerce')
+            
         return df_cloud
     except Exception as e:
         return pd.DataFrame()
 
 def save_to_cloud_db(new_df):
-    """Saves new records to Supabase. Duplicate rows are safely dropped via SQL unique constraints."""
+    """Saves new records to Supabase. Duplicates are handled safely via SQL unique constraint."""
     if new_df.empty:
         return
     try:
@@ -63,11 +70,11 @@ def save_to_cloud_db(new_df):
         clean_df.columns = [c.lower() for c in clean_df.columns]
         
         clean_df.to_sql('master_sessions', engine, if_exists='append', index=False, method='multi')
-    except Exception:
-        pass
+    except Exception as e:
+        st.sidebar.error(f"Database write error: {e}")
 
 def upload_to_supabase_bucket(uploaded_file, prefix, sub_school, sub_teacher):
-    """Uploads file directly to Supabase storage bucket and returns its permanent public URL."""
+    """Uploads file directly to Supabase public storage bucket and returns public link."""
     if uploaded_file is not None:
         file_bytes = uploaded_file.getvalue()
         file_path = f"{sub_school}/{sub_teacher}_{prefix}_{uploaded_file.name}".replace(" ", "_")
@@ -83,10 +90,11 @@ def upload_to_supabase_bucket(uploaded_file, prefix, sub_school, sub_teacher):
             st.error(f"Storage upload error: {e}")
     return None
 
-# ---------------------------------------------------------
-# PDF GENERATOR HELPER FUNCTION
-# ---------------------------------------------------------
+# 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
+    """
+    Generates a professional PDF document in memory and returns a downloadable BytesIO buffer.
+    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -107,6 +115,7 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
     if not dataframe.empty:
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
+        
         cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)
         header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
 
@@ -136,10 +145,12 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
+    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
         holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else []
+        
         w_mask = '1111110' if exclude_sundays else '1111111'
         return int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np))
     except Exception:
@@ -151,15 +162,17 @@ st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboar
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
 st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (10m Lesson / 30m Library)**, **360° Qualitative Evidences**, and **Assessment Outcomes**.")
 
-# Sidebar Data Upload Manager
+# 2. Sidebar Data Upload Manager (Cloud Synced)
 st.sidebar.header("📁 Data Upload & Cloud Sync")
-uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True, key="user_metrics_uploader")
+uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)
 
 new_processed_dfs = []
 if uploaded_files:
     for file in uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
+            
+            # Cleaning & Data Normalization
             temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).str.strip() if 'FirstName' in temp_df.columns else ''
             temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).str.strip() if 'LastName' in temp_df.columns else ''
             temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).str.strip()
@@ -196,7 +209,8 @@ if uploaded_files:
             if 'StartTime' in temp_df.columns:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
-            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
+            # Optional Qualitative Link Columns
+            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
 
@@ -204,21 +218,26 @@ if uploaded_files:
         except Exception as e:
             st.sidebar.error(f"Error reading {file.name}: {e}")
 
+# Save uploaded files into Supabase Cloud Database
 if new_processed_dfs:
     combined_new = pd.concat(new_processed_dfs, ignore_index=True)
     save_to_cloud_db(combined_new)
     st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Cloud DB!")
 
-# Load Master Data from Cloud Database
+# Load Master Data from Supabase Cloud
 df = load_master_db_from_cloud()
 
+# 3. Database Status Controls
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Database Status")
-st.sidebar.metric("Cloud DB Total Records", len(df))
 
-if df.empty:
-    st.info("👋 Your Supabase database currently has no records. Upload a `UserMetrics.xlsx` file via the sidebar or submit data via Tab 8.")
+if not df.empty:
+    st.sidebar.metric("Supabase Master DB Total Records", len(df))
 else:
+    st.info("👋 Your Supabase database currently has no records. Upload a `UserMetrics.xlsx` file via the sidebar or submit data via Tab 8.")
+
+if not df.empty:
+    # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
         df['Date'] = df['StartTime'].dt.date
         df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
@@ -249,16 +268,20 @@ else:
         df['Month_Name'] = "N/A"
         df['Week'] = "N/A"
 
+    # Build Master Teacher Roster across all database records
     master_teacher_roster = df[['Institution', 'FullName']].drop_duplicates()
 
+    # Sidebar Review Filters
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Review Filters")
     all_schools = sorted([str(s) for s in df['Institution'].unique()])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
+    # Filter Master Roster and Data by selected Schools
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
     school_filtered_df = df[df['Institution'].isin(selected_schools)]
 
+    # --- MONTH-FIRST & CALENDAR HOLIDAY MANAGER ---
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -268,8 +291,10 @@ else:
     selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options)
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
+    # Sunday Exclusion Toggle
     exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
 
+    # Global Monthly Holiday Punch-In Multiselect
     user_excluded_dates = []
     if not month_filtered_df['Date'].isna().all():
         m_min_date = month_filtered_df['Date'].min()
@@ -284,6 +309,7 @@ else:
         if user_excluded_dates:
             st.sidebar.caption(f"{len(user_excluded_dates)} holiday date(s) deducted from {selected_month} KPIs.")
 
+    # View Mode Selector
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -294,6 +320,7 @@ else:
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
+        
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
@@ -301,6 +328,7 @@ else:
         w_end = filtered_df['Date'].max()
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
+        
     else:
         selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
@@ -310,13 +338,14 @@ else:
     calc_ld_kpi = 10.0 * selected_num_days
     calc_lib_kpi = 30.0 * selected_num_days
 
+    # Teacher Filter
     available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique()])
     selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
     
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 8 Tabs Definition
+    # 8 Dedicated Meeting & Portal Submission Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
@@ -555,7 +584,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH DIRECT ARTIFACT HUB)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH QUALITATIVE EVIDENCE HUB)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
 
@@ -675,9 +704,9 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB (STREAMED FROM SUPABASE CLOUD BUCKET)
+            # SECTION 3: QUALITATIVE EVIDENCE HUB (STREAMED DIRECTLY FROM SUPABASE STORAGE)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-            st.caption("Review authentic teacher voice notes, classroom activity videos, phonics updates, and student writing samples submitted via the portal.")
+            st.caption("Review authentic teacher voice notes, classroom activity videos, phonics practice, and student writing samples.")
 
             v_cols = st.columns(4)
             
@@ -700,7 +729,7 @@ else:
                     st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
                         for idx, link in enumerate(voice_links, 1):
-                            if link.startswith('http'):
+                            if str(link).startswith('http'):
                                 st.audio(link)
                             else:
                                 st.write(link)
@@ -711,7 +740,7 @@ else:
                     st.markdown("##### 🎥 Classroom Activities")
                     if video_links_1:
                         for idx, link in enumerate(video_links_1, 1):
-                            if link.startswith('http'):
+                            if str(link).startswith('http'):
                                 st.video(link)
                             else:
                                 st.write(link)
@@ -722,8 +751,8 @@ else:
                     st.markdown("##### 🗣️ Phonics Practice")
                     if video_links_2:
                         for idx, link in enumerate(video_links_2, 1):
-                            if link.startswith('http'):
-                                if link.lower().endswith(('.mp4', '.mov', '.avi', '.webm')):
+                            if str(link).startswith('http'):
+                                if str(link).lower().endswith(('.mp4', '.mov', '.avi', '.webm')):
                                     st.video(link)
                                 else:
                                     st.audio(link)
@@ -736,7 +765,7 @@ else:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
                         for idx, link in enumerate(writing_links, 1):
-                            if link.startswith('http'):
+                            if str(link).startswith('http'):
                                 st.markdown(f"• [Download Writing Artifact #{idx}]({link})")
                             else:
                                 st.markdown(f"• [Artifact Link #{idx}]({link})")
@@ -876,10 +905,60 @@ else:
                 mime="application/pdf"
             )
 
+            st.markdown("---")
+
+            st.subheader("🚀 Week-on-Week (WoW) Portfolio Velocity")
+            
+            if 'Week' in school_filtered_df.columns and school_filtered_df['Week'].nunique() >= 2:
+                weeks_sorted = sorted(school_filtered_df['Week'].unique())
+                latest_week = weeks_sorted[-1]
+                prev_week = weeks_sorted[-2]
+
+                st.caption(f"Comparing `{latest_week}` vs. `{prev_week}`")
+
+                weekly_school = school_filtered_df.groupby(['Week', 'Institution'])['Duration_Min'].sum().unstack(level=0, fill_value=0.0).reset_index()
+                
+                if latest_week in weekly_school.columns and prev_week in weekly_school.columns:
+                    weekly_school['WoW_Growth_Mins'] = weekly_school[latest_week] - weekly_school[prev_week]
+                    weekly_school['WoW_Growth_Pct'] = np.where(
+                        weekly_school[prev_week] > 0, 
+                        (weekly_school['WoW_Growth_Mins'] / weekly_school[prev_week]) * 100, 
+                        100.0
+                    )
+
+                    col_v1, col_v2 = st.columns(2)
+
+                    with col_v1:
+                        st.success("🔥 Top 5 Most Improved Schools (Highest WoW Growth)")
+                        top_improved = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=False).head(5)
+                        fig_top = px.bar(
+                            top_improved, x="WoW_Growth_Mins", y="Institution", orientation="h",
+                            title="Top Accelerated Schools (+Mins)",
+                            labels={"WoW_Growth_Mins": "Added Minutes Logged", "Institution": "School"},
+                            color_discrete_sequence=['#2CA02C'], text_auto=".1f"
+                        )
+                        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
+                        st.plotly_chart(fig_top, use_container_width=True)
+
+                    with col_v2:
+                        st.error("🚨 Top 5 Priority Intervention Schools (Highest Usage Drop)")
+                        top_declining = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=True).head(5)
+                        fig_bot = px.bar(
+                            top_declining, x="WoW_Growth_Mins", y="Institution", orientation="h",
+                            title="Highest Usage Drop Schools (-Mins)",
+                            labels={"WoW_Growth_Mins": "Dropped Minutes Logged", "Institution": "School"},
+                            color_discrete_sequence=['#D62728'], text_auto=".1f"
+                        )
+                        fig_bot.update_layout(yaxis={'categoryorder':'total descending'})
+                        st.plotly_chart(fig_bot, use_container_width=True)
+
+            else:
+                st.info("Upload data covering at least 2 weeks to unlock Week-on-Week Velocity rankings.")
+
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
         st.header("🏫 School-Level Teacher Progression & Execution Tiers")
-        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards.")
+        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards (🌟 Achiever >= 100%, ⚠️ Fluctuating 40%-99%, ❌ Inactive < 40%).")
 
         all_schools_list_t6 = sorted(school_master_roster['Institution'].unique())
         
@@ -901,6 +980,7 @@ else:
             t6_teachers = school_t6_roster.merge(t6_ld.rename(columns={'Duration_Min': 'Lesson_Mins'}), on='FullName', how='left').fillna(0.0)
             t6_teachers = t6_teachers.merge(t6_lib.rename(columns={'Duration_Min': 'Library_Mins'}), on='FullName', how='left').fillna(0.0)
 
+            # Execution Tier thresholds: 40% / 100% logic
             def tier_teacher(row):
                 ld_pct = (row['Lesson_Mins'] / calc_ld_kpi) if calc_ld_kpi > 0 else 1.0
                 lib_pct = (row['Library_Mins'] / calc_lib_kpi) if calc_lib_kpi > 0 else 1.0
@@ -935,13 +1015,56 @@ else:
             display_t6_table = t6_teachers.rename(columns={'FullName': 'Teacher Name', 'Lesson_Mins': 'Lesson Prep (m)', 'Library_Mins': 'Library Usage (m)', 'Execution_Tier': 'Execution Tier'})
             st.dataframe(display_t6_table, use_container_width=True)
 
+            pdf_tab6 = generate_pdf_report(
+                title_text=f"🏫 School Inspection Report: {target_school_t6}",
+                subtitle_text=f"Period: {filter_description_text} | Total Roster: {len(school_t6_roster)} Teachers",
+                summary_metrics={
+                    "Consistent Achievers": num_ach,
+                    "Fluctuating/Partial": num_fluc,
+                    "Persistent Inactive": num_inact
+                },
+                dataframe=display_t6_table[['Teacher Name', 'Lesson Prep (m)', 'Library Usage (m)', 'Execution Tier']]
+            )
+            st.download_button(
+                label=f"📄 Download {target_school_t6} Inspection Report (PDF)",
+                data=pdf_tab6,
+                file_name=f"{target_school_t6.replace(' ', '_')}_Execution_Report.pdf",
+                mime="application/pdf"
+            )
+
+            st.markdown("---")
+
+            st.subheader("2. Grade & Subject Digital Content Coverage")
+
+            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:
+                st.info("No chapter or book usage logs recorded for this school.")
+            else:
+                col_t6_g1, col_t6_g2 = st.columns(2)
+
+                with col_t6_g1:
+                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()
+                    fig_g6 = px.bar(
+                        grade_t6, x="Grade", y="Duration_Min", color="Grade",
+                        title="Digital Classroom Time by Grade Level (Mins)",
+                        text_auto=".1f"
+                    )
+                    st.plotly_chart(fig_g6, use_container_width=True)
+
+                with col_t6_g2:
+                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()
+                    fig_s6 = px.pie(
+                        subj_t6, names="Subject", values="Duration_Min",
+                        title="Subject / Module Distribution in School"
+                    )
+                    st.plotly_chart(fig_s6, use_container_width=True)
+
     # TAB 7: STUDENT ASSESSMENT OUTCOMES
     with tab7:
         st.header("📊 Student Assessment Outcomes & Impact Analysis")
-        st.caption("Track student assessment scores and analyze impact across schools, grades, and subjects.")
+        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
 
         if 'Assessment_Score_Pct' not in school_filtered_df.columns or school_filtered_df['Assessment_Score_Pct'].dropna().empty:
-            st.info("👋 No student assessment score data uploaded yet.")
+            st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
         else:
             assess_df = school_filtered_df.dropna(subset=['Assessment_Score_Pct'])
 
@@ -955,24 +1078,56 @@ else:
             a_col3.metric("High Performers (>= 75%)", f"{high_rate:.1f}%")
 
             st.markdown("---")
+
             col_a1, col_a2 = st.columns(2)
 
             with col_a1:
                 st.subheader("📚 Subject-Wise Assessment Scores")
                 subj_score = assess_df.groupby('Subject')['Assessment_Score_Pct'].mean().reset_index()
-                fig_as = px.bar(subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject", title="Average Score by Subject (%)", text_auto=".1f")
+                fig_as = px.bar(
+                    subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject",
+                    title="Average Assessment Score by Subject (%)", text_auto=".1f"
+                )
+                fig_as.add_hline(y=75.0, line_dash="dash", line_color="green", annotation_text="Distinction Goal (75%)")
                 st.plotly_chart(fig_as, use_container_width=True)
 
             with col_a2:
                 st.subheader("🏫 Grade-Level Performance Impact")
                 grade_score = assess_df.groupby('Grade')['Assessment_Score_Pct'].mean().reset_index()
-                fig_ag = px.bar(grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade", title="Average Score by Grade (%)", text_auto=".1f")
+                fig_ag = px.bar(
+                    grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade",
+                    title="Average Assessment Score by Grade Level (%)", text_auto=".1f"
+                )
                 st.plotly_chart(fig_ag, use_container_width=True)
 
-    # TAB 8: TEACHER QUALITATIVE SUBMISSION PORTAL (DIRECT CLOUD UPLOAD)
+            st.markdown("---")
+            st.subheader("📋 Granular Assessment Leaderboard")
+            display_assess_table = assess_df[['Institution', 'FullName', 'Grade', 'Subject', 'Assessment_Score_Pct']].rename(columns={
+                'Institution': 'School', 'FullName': 'Teacher Name', 'Assessment_Score_Pct': 'Average Score (%)'
+            })
+            st.dataframe(display_assess_table, use_container_width=True)
+
+            pdf_tab7 = generate_pdf_report(
+                title_text="📊 Student Assessment Outcomes Report",
+                subtitle_text=f"Period: {filter_description_text} | Total Evaluated Records: {len(assess_df)}",
+                summary_metrics={
+                    "Average Score": f"{avg_score:.1f}%",
+                    "Pass Rate": f"{pass_rate:.1f}%",
+                    "High Performers": f"{high_rate:.1f}%"
+                },
+                dataframe=display_assess_table
+            )
+            st.download_button(
+                label="📄 Download Assessment Outcomes Report (PDF)",
+                data=pdf_tab7,
+                file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
+
+    # TAB 8: TEACHER QUALITATIVE SUBMISSION PORTAL (DIRECT SUPABASE CLOUD SYNC)
     with tab8:
         st.header("📝 Teacher Qualitative Submission Portal")
-        st.caption("Teachers can use this portal online to submit lesson details and upload qualitative evidence directly into Supabase cloud storage.")
+        st.caption("Teachers can use this portal online to submit lesson details and upload qualitative evidence directly into the Supabase database & storage bucket.")
 
         if master_teacher_roster.empty:
             st.warning("Please upload your main roster or `UserMetrics.xlsx` file via the sidebar first so schools and teachers are registered.")
@@ -1035,4 +1190,4 @@ else:
 
                             save_to_cloud_db(new_portal_record)
                         st.success(f"Successfully recorded and saved online submission for **{sub_teacher}** at **{sub_school}**! Tab 4 is now updated.")
-                        st.rerurn()
+                        st.rerun()
