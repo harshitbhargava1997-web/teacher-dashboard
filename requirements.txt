@@ -1,8 +1,8 @@
 streamlit
 pandas
-pyarrow
-openpyxl
+numpy
 plotly
 reportlab
-gspread
-oauth2client
+psycopg2-binary
+sqlalchemy
+supabase
