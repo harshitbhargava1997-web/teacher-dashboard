@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import json
+import uuid
 from io import BytesIO
 from supabase import create_client
 
@@ -21,7 +23,7 @@ except Exception as e:
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
-    """Fetches the existing master parquet file from Supabase storage."""
+    """Fetches the existing master parquet file to populate rosters."""
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
@@ -54,49 +56,21 @@ def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
         st.error(f"Error uploading {uploaded_file.name}: {e}")
         return None
 
-def append_teacher_submission(new_df):
-    """Downloads current master DB, aligns schemas, appends new submission, and saves back to Supabase."""
-    master_df = fetch_master_db_from_supabase()
-
-    expected_cols = [
-        'Institution', 'Center', 'FirstName', 'LastName', 'Role', 'Type', 
-        'Grade', 'Subject', 'Book', 'StartTime', 'EndTime', 
-        'Duration (Minutes)', 'Duration (HH:MM:SS)', 'FullName', 'Duration_Min',
-        'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 
-        'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct'
-    ]
-
-    for col in expected_cols:
-        if col not in new_df.columns:
-            new_df[col] = None
-        if not master_df.empty and col not in master_df.columns:
-            master_df[col] = None
-
-    if not master_df.empty:
-        all_data = pd.concat([master_df, new_df], ignore_index=True)
-    else:
-        all_data = new_df
-
-    all_data['FirstName'] = all_data['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
-    all_data['LastName'] = all_data['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
-    all_data['FullName'] = (all_data['FirstName'] + " " + all_data['LastName']).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
-    all_data.loc[all_data['FullName'] == '', 'FullName'] = 'Unknown Teacher'
-    all_data['Institution'] = all_data['Institution'].fillna('Unknown School').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
-
-    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
-    available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
-    master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
-
-    parquet_buffer = BytesIO()
-    master_df.to_parquet(parquet_buffer, index=False)
-    parquet_buffer.seek(0)
+def save_isolated_submission(entry_dict):
+    """Saves this submission as a standalone JSON file in Supabase Storage.
+    Completely eliminates race conditions and file collisions.
+    """
+    clean_teacher = re.sub(r'[^a-zA-Z0-9]', '_', entry_dict.get('FullName', 'teacher'))
+    unique_id = uuid.uuid4().hex[:6]
+    file_path = f"submissions/sub_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}_{clean_teacher}_{unique_id}.json"
+    
+    json_payload = json.dumps(entry_dict, default=str).encode('utf-8')
 
     supabase.storage.from_(BUCKET_NAME).upload(
-        path=PARQUET_FILE_NAME,
-        file=parquet_buffer.getvalue(),
-        file_options={"upsert": "true", "content-type": "application/octet-stream"}
+        path=file_path,
+        file=json_payload,
+        file_options={"upsert": "true", "content-type": "application/json"}
     )
-    fetch_master_db_from_supabase.clear()
 
 # --- DATABASE & ROSTER LOADER ---
 master_df = fetch_master_db_from_supabase()
@@ -185,7 +159,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                 f_name = name_parts[0]
                 l_name = name_parts[1] if len(name_parts) > 1 else ""
 
-                new_entry = pd.DataFrame([{
+                entry_dict = {
                     'Institution': sub_school,
                     'Center': sub_school,
                     'FirstName': f_name,
@@ -195,8 +169,8 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                     'Grade': sub_grade,
                     'Subject': sub_subject,
                     'Book': f"Lesson Plan #{sub_lesson_num.strip()}",
-                    'StartTime': pd.to_datetime(sub_date),
-                    'EndTime': pd.to_datetime(sub_date),
+                    'StartTime': str(pd.to_datetime(sub_date)),
+                    'EndTime': str(pd.to_datetime(sub_date)),
                     'Duration (Minutes)': 0.0,
                     'Duration (HH:MM:SS)': "00:00:00",
                     'FullName': sub_teacher_name,
@@ -208,10 +182,10 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                     'Video_Evidence_3': vid3_url if vid3_url else None,
                     'Writing_Sample_Link': writing_url if writing_url else None,
                     'Assessment_Score_Pct': None
-                }])
+                }
 
-                append_teacher_submission(new_entry)
-                st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced.")
+                save_isolated_submission(entry_dict)
+                st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded.")
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
 
@@ -223,4 +197,3 @@ with st.expander("🛠️ Real-Time Roster Debugger"):
         st.write("Unique Roster Names:", master_df['FullName'].unique().tolist() if 'FullName' in master_df.columns else "No FullName")
     else:
         st.write("Cloud database is currently empty.")
-        
