@@ -1044,7 +1044,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & ACTION STEPS)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (FILTER-AWARE & DATE-AWARE WHATSAPP UPDATE)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1052,18 +1052,26 @@ else:
         if school_filtered_df.empty:
             st.warning("No data available for the selected school filter.")
         else:
-            school_stats = school_filtered_df.groupby(['Institution', 'Type'])['Duration_Min'].sum().unstack(fill_value=0.0).reset_index()
+            # FIX: Aggregate school stats using filtered_df (respecting date/granularity/teacher filters) instead of school_filtered_df
+            school_stats = filtered_df.groupby(['Institution', 'Type'])['Duration_Min'].sum().unstack(fill_value=0.0).reset_index()
             
             if 'lessonDelivery' not in school_stats.columns: school_stats['lessonDelivery'] = 0.0
             if 'library' not in school_stats.columns: school_stats['library'] = 0.0
             
+            # Ensure all selected schools from school_filtered_df are present in school_stats even with 0 activity
+            all_active_schools = school_filtered_df['Institution'].unique()
+            for s_name in all_active_schools:
+                if s_name not in school_stats['Institution'].values:
+                    new_row = pd.DataFrame({'Institution': [s_name], 'lessonDelivery': [0.0], 'library': [0.0]})
+                    school_stats = pd.concat([school_stats, new_row], ignore_index=True)
+
             school_roster_count = school_master_roster.groupby('Institution')['FullName'].nunique().reset_index().rename(columns={'FullName': 'Roster_Teachers'})
             school_stats = school_stats.merge(school_roster_count, on='Institution', how='left').fillna(1)
 
             school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
             school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
 
-            # Compute Qualitative Artifact Counts per School
+            # Compute Qualitative Artifact Counts per School honoring global filters/dates
             qual_agg = []
             for s_name in school_stats['Institution'].unique():
                 s_data = filtered_df[filtered_df['Institution'] == s_name]
@@ -1211,7 +1219,7 @@ else:
                 with st.expander(f"🤖 View Generated Talking Script for {selected_call_school}", expanded=True):
                     st.markdown(f"""
                     **Phase 1 & 2: Data-Driven Talking Points ({filter_description_text})**
-                    1. **Opening:** *"Hi [Principal/Owner Name], I was reviewing our portfolio dashboard for {selected_call_school} this week. Overall status is currently classified as **{sch_class}**."*
+                    1. **Opening:** *"Hi [Principal/Owner Name], I was reviewing our portfolio dashboard for {selected_call_school} during {filter_description_text}. Overall status is currently classified as **{sch_class}**."*
                     2. **Lesson Prep Review:** *"Teachers averaged **{sch_prep:.1f} mins/day** in lesson preparation. {'Great consistency!' if sch_prep >= daily_ld_target else 'Let us discuss how we can support teachers in locking in prep times.'}"*
                     3. **Library Usage Review:** *"Library engagement stands at **{sch_lib:.1f} mins/day**."*
                     4. **Lesson Plans & Voice Notes:** *"{sch_lp} verified pre-class voice reflections and lesson plan pictures have been logged."*
@@ -1262,11 +1270,11 @@ else:
                     else:
                         st.warning("Please enter discussion notes before saving.")
 
-                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR ---
-                st.markdown("##### 📱 Send Consolidated Weekly School WhatsApp Update")
+                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR (FILTER & DATE AWARE) ---
+                st.markdown("##### 📱 Send Consolidated School WhatsApp Update")
                 consolidated_wa_text = (
-                    f"🏫 *WEEKLY ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
-                    f"📅 *Observation Period:* {filter_description_text}\n\n"
+                    f"🏫 *ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
+                    f"📅 *Observation Period:* {filter_description_text} (Call Date: {str(punched_date)})\n\n"
                     f"📊 *1. Quantitative Execution:*\n"
                     f"• Lesson Prep Average: {sch_prep:.1f} Mins/Day\n"
                     f"• Library Usage Average: {sch_lib:.1f} Mins/Day\n\n"
@@ -1283,9 +1291,9 @@ else:
                 encoded_rep_msg = urllib.parse.quote(consolidated_wa_text)
                 
                 with st.expander("📋 Preview & Copy Consolidated WhatsApp Message"):
-                    st.text_area("WhatsApp Weekly Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
+                    st.text_area("WhatsApp Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
                     if owner_phone and owner_phone != "Not Provided":
-                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated Weekly WhatsApp Update</button></a>', unsafe_allow_html=True)
+                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated WhatsApp Update</button></a>', unsafe_allow_html=True)
 
             if st.session_state["school_call_logs_store"]:
                 st.markdown(f"##### 📋 Discussion Logs & Commitments (`{filter_description_text}`)")
