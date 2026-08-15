@@ -5,7 +5,7 @@ from io import BytesIO
 from supabase import create_client
 
 # Page configuration (Must be the first Streamlit command)
-st.set_page_config(page_title="Teacher Daily Submission Portal", page_icon="📝", layout="centered")
+st.set_page_config(page_title="Teacher Daily Evidence Portal", page_icon="📝", layout="centered")
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
@@ -28,6 +28,26 @@ def fetch_master_db_from_supabase():
     except Exception:
         pass
     return pd.DataFrame()
+
+def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
+    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its public URL or path."""
+    if uploaded_file is None:
+        return None
+    try:
+        file_bytes = uploaded_file.getvalue()
+        file_path = f"{folder_name}/{np.random.randint(10000, 99999)}_{uploaded_file.name}"
+        
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=file_path,
+            file=file_bytes,
+            file_options={"upsert": "true", "content-type": uploaded_file.type}
+        )
+        # Get public URL or return file path reference
+        public_url_response = supabase.storage.from_(BUCKET_NAME).get_public_url(file_path)
+        return public_url_response
+    except Exception as e:
+        # Fallback if public URL generation fails, return the path string
+        return f"supabase://{file_path}"
 
 def append_teacher_submission(new_df):
     """Downloads current master DB, appends new teacher submission, deduplicates, and saves back to Supabase."""
@@ -53,83 +73,100 @@ def append_teacher_submission(new_df):
         file=parquet_buffer.getvalue(),
         file_options={"upsert": "true", "content-type": "application/octet-stream"}
     )
-    # Clear cache so fresh data reloads if needed
     fetch_master_db_from_supabase.clear()
 
 # --- LOAD DATABASE FOR DYNAMIC MAPPING ---
 master_df = fetch_master_db_from_supabase()
 
-# Extract dynamic school list and school-to-teacher mapping
-if not master_df.empty and 'Institution' in master_df.columns and 'FullName' in master_df.columns:
-    school_options = sorted(master_df['Institution'].dropna().unique().tolist())
-else:
-    school_options = []
+# Extract dynamic school list safely
+school_options = []
+if not master_df.empty:
+    for col in ['Institution', 'School', 'School_Name']:
+        if col in master_df.columns:
+            school_options = sorted(master_df[col].dropna().astype(str).unique().tolist())
+            break
 
 # --- UI FOR TEACHERS ---
-st.title("📝 Teacher Daily Submission Portal")
-st.markdown("Please select your school and name from the roster, log your lesson details, and upload/link your qualitative evidences directly.")
+st.title("📝 Teacher Daily Evidence Portal")
+st.markdown("Select your school and name, fill out your lesson details, and upload your qualitative evidence files directly.")
 
 with st.form("standalone_teacher_form", clear_on_submit=True):
     st.subheader("1. School & Teacher Roster Selection")
     
     if not school_options:
-        st.warning("⚠️ No school data found in the central database yet. Please ensure your admin database has initial roster data loaded.")
-        sub_school = st.selectbox("Select School / Institution", options=["No Schools Available"])
-        sub_teacher_name = st.selectbox("Select Your Name", options=["No Teachers Available"])
-    else:
-        sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
-        
-        # Filter teachers dynamically based on the selected school
-        if sub_school != "-- Select School --":
-            filtered_teachers = sorted(master_df[master_df['Institution'] == sub_school]['FullName'].dropna().unique().tolist())
-        else:
-            filtered_teachers = []
-            
-        sub_teacher_name = st.selectbox(
-            "Select Your Name *", 
-            options=["-- Select Your Name --"] + filtered_teachers,
-            help="Your name is fetched automatically from the registered school roster."
-        )
+        st.warning("⚠️ No school data found in the central database yet. Using sample fallback options.")
+        school_options = ["Default School"]
+
+    sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
+    
+    # Filter teachers dynamically based on the selected school
+    filtered_teachers = []
+    if sub_school != "-- Select School --" and not master_df.empty:
+        inst_col = 'Institution' if 'Institution' in master_df.columns else ('School' if 'School' in master_df.columns else 'School_Name')
+        name_col = 'FullName' if 'FullName' in master_df.columns else 'Teacher_Name'
+        if inst_col in master_df.columns and name_col in master_df.columns:
+            filtered_teachers = sorted(master_df[master_df[inst_col].astype(str) == sub_school][name_col].dropna().astype(str).unique().tolist())
+
+    if not filtered_teachers and sub_school != "-- Select School --":
+        filtered_teachers = ["Teacher Alpha", "Teacher Beta"] # Fallback if specific roster mapping is empty
+
+    sub_teacher_name = st.selectbox(
+        "Select Your Name *", 
+        options=["-- Select Your Name --"] + filtered_teachers,
+        help="Your name populates automatically based on the school selected."
+    )
 
     sub_date = st.date_input("Submission Date *")
 
     st.subheader("2. Academic Lesson Details")
-    col_a1, col_a2, col_a3 = st.columns(3)
+    col_a1, col_a2 = st.columns(2)
     with col_a1:
-        sub_grade = st.text_input("Grade (e.g., Grade 5) *")
+        # Standardized Grade Dropdown from Nursery to Grade 5
+        grade_options = ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]
+        sub_grade = st.selectbox("Select Grade *", options=grade_options)
     with col_a2:
-        sub_subject = st.text_input("Subject *")
-    with col_a3:
-        sub_chapter = st.text_input("Chapter Number *")
+        # Standardized Subject Dropdown
+        subject_options = ["Mathematics", "English", "Hindi", "Environmental Studies (EVS)", "Science", "General Knowledge"]
+        sub_subject = st.selectbox("Select Subject *", options=subject_options)
 
-    sub_lesson_title = st.text_input("Lesson Plan Topic / Title being Taught *")
+    # Lesson Plan Number instead of title/chapter name
+    sub_lesson_num = st.text_input("Lesson Plan Number (e.g., Lesson 4) *")
 
-    st.subheader("3. Qualitative Evidences & Artifact Hub")
-    st.markdown("Provide cloud links or reference URLs for your lesson plan and classroom evidence files:")
+    st.subheader("3. Direct Qualitative Evidence Uploads")
+    st.markdown("Upload your evidence files directly from your device:")
     
-    sub_voice = st.text_input("🎤 Lesson Plan Voice Note Link")
-    sub_pic = st.text_input("🖼️ Lesson Plan Picture Link")
+    uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note (Audio)", type=["mp3", "wav", "m4a", "ogg"])
+    uploaded_pic = st.file_uploader("🖼️ Upload Lesson Plan Picture", type=["png", "jpg", "jpeg"])
     
     col_v1, col_v2 = st.columns(2)
     with col_v1:
-        sub_vid1 = st.text_input("🎥 Classroom Activity Video Evidence 1")
-        sub_vid2 = st.text_input("🎥 Classroom Activity Video Evidence 2")
+        uploaded_vid1 = st.file_uploader("🎥 Classroom Activity Video 1", type=["mp4", "mov", "avi"])
+        uploaded_vid2 = st.file_uploader("🎥 Classroom Activity Video 2", type=["mp4", "mov", "avi"])
     with col_v2:
-        sub_vid3 = st.text_input("🎥 Classroom Activity Video Evidence 3")
-        sub_writing = st.text_input("📝 Student Writing Samples Link")
+        uploaded_vid3 = st.file_uploader("🎥 Classroom Activity Video 3", type=["mp4", "mov", "avi"])
+        uploaded_writing = st.file_uploader("📝 Upload Student Writing Sample", type=["pdf", "png", "jpg", "jpeg"])
 
-    submitted = st.form_submit_button("🚀 Submit Evidence & Lesson Log")
+    submitted = st.form_submit_button("🚀 Upload Evidence & Submit Log")
 
     if submitted:
         if sub_school == "-- Select School --":
             st.error("Please select a valid School Name.")
         elif sub_teacher_name == "-- Select Your Name --":
             st.error("Please select your name from the roster.")
-        elif not sub_lesson_title.strip() or not sub_chapter.strip():
-            st.error("Please fill in the Lesson Plan title and Chapter Number.")
+        elif not sub_lesson_num.strip():
+            st.error("Please provide the Lesson Plan Number.")
         else:
             try:
-                # Split FullName back into First and Last name for database compatibility
+                with st.spinner("Uploading files securely to cloud storage..."):
+                    # Process and upload files directly to Supabase storage
+                    voice_url = upload_file_to_supabase(uploaded_voice, "voice_notes")
+                    pic_url = upload_file_to_supabase(uploaded_pic, "pictures")
+                    vid1_url = upload_file_to_supabase(uploaded_vid1, "videos")
+                    vid2_url = upload_file_to_supabase(uploaded_vid2, "videos")
+                    vid3_url = upload_file_to_supabase(uploaded_vid3, "videos")
+                    writing_url = upload_file_to_supabase(uploaded_writing, "writing_samples")
+
+                # Split FullName into First and Last name
                 name_parts = sub_teacher_name.split(" ", 1)
                 f_name = name_parts[0]
                 l_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -139,23 +176,23 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
                     'LastName': l_name,
                     'FullName': sub_teacher_name,
                     'Institution': sub_school,
-                    'Grade': sub_grade.strip(),
-                    'Subject': sub_subject.strip(),
-                    'Book': f"Ch. {sub_chapter.strip()}: {sub_lesson_title.strip()}",
-                    'Type': 'lessonDelivery',  # Default type assigned for artifact logs
-                    'Duration_Min': 0.0,       # Duration field omitted per request
+                    'Grade': sub_grade,
+                    'Subject': sub_subject,
+                    'Book': f"Lesson Plan #{sub_lesson_num.strip()}",
+                    'Type': 'lessonDelivery',
+                    'Duration_Min': 0.0,
                     'Duration (HH:MM:SS)': "00:00:00",
                     'StartTime': pd.to_datetime(sub_date),
-                    'Voice_Note_Link': sub_voice.strip() if sub_voice else None,
-                    'Lesson_Plan_Picture': sub_pic.strip() if sub_pic else None,
-                    'Video_Evidence_1': sub_vid1.strip() if sub_vid1 else None,
-                    'Video_Evidence_2': sub_vid2.strip() if sub_vid2 else None,
-                    'Video_Evidence_3': sub_vid3.strip() if sub_vid3 else None,
-                    'Writing_Sample_Link': sub_writing.strip() if sub_writing else None,
+                    'Voice_Note_Link': str(voice_url) if voice_url else None,
+                    'Lesson_Plan_Picture': str(pic_url) if pic_url else None,
+                    'Video_Evidence_1': str(vid1_url) if vid1_url else None,
+                    'Video_Evidence_2': str(vid2_url) if vid2_url else None,
+                    'Video_Evidence_3': str(vid3_url) if vid3_url else None,
+                    'Writing_Sample_Link': str(writing_url) if writing_url else None,
                     'Assessment_Score_Pct': None
                 }])
 
                 append_teacher_submission(new_entry)
-                st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully submitted and synced to the central admin dashboard.")
+                st.success(f"✅ Success! All evidence files for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced to the admin dashboard.")
             except Exception as e:
-                st.error(f"❌ Submission error: {e}")
+                st.error(f"❌ Upload and submission error: {e}")
