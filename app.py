@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import glob
+import re
 from io import BytesIO
 from supabase import create_client
 
@@ -121,18 +122,18 @@ def load_or_update_master_db(new_upload_dfs=None):
         else:
             all_data = combined_new
 
-        # Ensure FullName is normalized across all records
+        # Ensure FullName is normalized across all records using regex to strip double spaces
         if 'FirstName' in all_data.columns and 'LastName' in all_data.columns:
-            all_data['FirstName'] = all_data['FirstName'].fillna('').astype(str).str.strip()
-            all_data['LastName'] = all_data['LastName'].fillna('').astype(str).str.strip()
-            all_data['FullName'] = (all_data['FirstName'] + " " + all_data['LastName']).str.strip()
+            all_data['FirstName'] = all_data['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+            all_data['LastName'] = all_data['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+            all_data['FullName'] = (all_data['FirstName'] + " " + all_data['LastName']).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
             all_data.loc[all_data['FullName'] == '', 'FullName'] = 'Unknown Teacher'
 
         # Deduplicate based on unique session signature
         dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
         available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
         
-        master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='first')
+        master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
         
         # Save Parquet to BytesIO buffer and upload to Supabase Bucket
         try:
@@ -164,22 +165,22 @@ if uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
             
-            # --- CLEANING & NORMALIZATION FIX (Combined FullName) ---
-            temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).str.strip() if 'FirstName' in temp_df.columns else ''
-            temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).str.strip() if 'LastName' in temp_df.columns else ''
-            temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).str.strip()
+            # --- CLEANING & NORMALIZATION FIX (Combined FullName with Regex) ---
+            temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) if 'FirstName' in temp_df.columns else ''
+            temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) if 'LastName' in temp_df.columns else ''
+            temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
             temp_df.loc[temp_df['FullName'] == '', 'FullName'] = 'Unknown Teacher'
 
             if 'Institution' not in temp_df.columns:
                 temp_df['Institution'] = "Default School"
             else:
-                temp_df['Institution'] = temp_df['Institution'].fillna('Unknown School').astype(str).str.strip()
+                temp_df['Institution'] = temp_df['Institution'].fillna('Unknown School').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
 
             for col in ['Grade', 'Subject', 'Book']:
                 if col not in temp_df.columns:
                     temp_df[col] = ''
                 else:
-                    temp_df[col] = temp_df[col].fillna('').astype(str).str.strip()
+                    temp_df[col] = temp_df[col].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
 
             def parse_time_mins(t_str):
                 try:
@@ -240,7 +241,7 @@ else:
     # Ensure FullName is present in main df if loaded from cloud
     if 'FullName' not in df.columns:
         if 'FirstName' in df.columns and 'LastName' in df.columns:
-            df['FullName'] = (df['FirstName'].fillna('').astype(str).str.strip() + " " + df['LastName'].fillna('').astype(str).str.strip()).str.strip()
+            df['FullName'] = (df['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) + " " + df['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
         else:
             df['FullName'] = 'Unknown Teacher'
 
