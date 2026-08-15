@@ -160,7 +160,7 @@ with st.form("teacher_submission_form", clear_on_submit=True):
 # --- ADMIN EXPORT PANEL ---
 st.markdown("---")
 with st.expander("🔐 Academic Manager Export Panel"):
-    st.caption("Download collected submissions as CSV for dashboard sync.")
+    st.caption("Download collected submissions as Excel/CSV for dashboard sync.")
     if os.path.exists(FORM_DB_PATH):
         try:
             admin_df = pd.read_excel(FORM_DB_PATH)
