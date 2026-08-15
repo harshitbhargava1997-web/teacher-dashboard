@@ -1040,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & FILTERED DISCUSSION LOGS)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & FILTER-AWARE DISCUSSION LOGS)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1154,7 +1154,7 @@ else:
 
             st.markdown("---")
 
-            # --- SCHOOL OWNER CRM CONTACT DIRECTORY & FILTER-AWARE CALL LOG ---
+            # --- SCHOOL OWNER CRM CONTACT DIRECTORY & CALL LOG ---
             st.subheader("📞 School Owner CRM, Call Script & Discussion Notes Log")
             st.caption(f"Active Observation Window: `{filter_description_text}`. Generate a data-driven talking script, call owners, and record date-stamped discussions.")
 
