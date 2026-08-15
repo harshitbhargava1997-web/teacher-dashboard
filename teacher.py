@@ -71,7 +71,7 @@ def append_teacher_submission(new_df):
     )
     fetch_master_db_from_supabase.clear()
 
-# --- HARDENED DATABASE & ROSTER LOADER ---
+# --- ROBUST DATABASE & ROSTER LOADER FOR TEACHER PORTAL ---
 master_df = fetch_master_db_from_supabase()
 
 school_options = []
@@ -79,7 +79,21 @@ inst_col = None
 name_col = None
 
 if not master_df.empty:
-    # 1. Detect Institution Column
+    # 1. Ensure FullName exists by combining FirstName and LastName if needed
+    if 'FullName' not in master_df.columns or master_df['FullName'].isna().all():
+        f_col = 'FirstName' if 'FirstName' in master_df.columns else ''
+        l_col = 'LastName' if 'LastName' in master_df.columns else ''
+        if f_col and l_col:
+            master_df['FullName'] = (master_df[f_col].fillna('').astype(str).str.strip() + " " + master_df[l_col].fillna('').astype(str).str.strip()).str.strip()
+        else:
+            master_df['FullName'] = 'Unknown Teacher'
+    else:
+        master_df['FullName'] = master_df['FullName'].fillna('').astype(str).str.strip()
+
+    # Filter out empty or placeholder names
+    master_df = master_df[master_df['FullName'] != '']
+
+    # 2. Detect Institution Column
     for col in ['Institution', 'School', 'school', 'School_Name', 'school_name', 'Institution_Name']:
         if col in master_df.columns:
             inst_col = col
@@ -87,11 +101,10 @@ if not master_df.empty:
             school_options = sorted(master_df[col].dropna().unique().tolist())
             break
             
-    # 2. Detect Teacher Name Column
+    # 3. Detect Teacher Name Column
     for col in ['FullName', 'Teacher_Name', 'teacher_name', 'Name', 'name', 'Teacher']:
         if col in master_df.columns:
             name_col = col
-            master_df[col] = master_df[col].astype(str).str.strip()
             break
 
 # --- UI FOR TEACHERS ---
@@ -102,16 +115,18 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
     st.subheader("1. School & Teacher Roster Selection")
     
     if not school_options:
-        st.warning("⚠️ No school data found in the central database yet. Please ensure your admin database has initial roster data loaded.")
+        st.warning("⚠️ No school data found in the central database yet. Please ensure your admin dashboard has initial roster data loaded.")
         school_options = ["Default School"]
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
     
-    # Dynamically filter teachers based on selected school with exact cleaning
+    # Dynamically filter teachers based on selected school
     filtered_teachers = []
     if sub_school != "-- Select School --" and not master_df.empty and inst_col and name_col:
         matched_rows = master_df[master_df[inst_col].str.lower() == sub_school.lower()]
         filtered_teachers = sorted(matched_rows[name_col].dropna().unique().tolist())
+        # Remove empty or unknown strings from the dropdown options
+        filtered_teachers = [t for t in filtered_teachers if t and t.lower() != 'unknown teacher']
 
     sub_teacher_name = st.selectbox(
         "Select Your Name *", 
