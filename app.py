@@ -29,7 +29,7 @@ try:
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
     """Downloads and reads the master parquet file from Supabase storage into memory with caching."""
     try:
@@ -274,6 +274,11 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Supabase Cloud Database Status")
 
+# Add Sync & Refresh Controls
+if st.sidebar.button("🔄 Sync Latest Teacher Submissions"):
+    fetch_master_db_from_supabase.clear()
+    st.rerun()
+
 current_db_check = fetch_master_db_from_supabase()
 
 if not current_db_check.empty:
@@ -299,9 +304,9 @@ else:
 
     # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
-        df['Date'] = df['StartTime'].dt.date
-        df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
-        df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')
+        df['Date'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.date
+        df['Month_Name'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%B %Y')
+        df['Month_Sort'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%Y-%m')
         
         def get_week_of_month(dt):
             try:
@@ -312,16 +317,16 @@ else:
             except:
                 return 1
                 
-        df['Week_Num'] = df['StartTime'].apply(get_week_of_month)
+        df['Week_Num'] = pd.to_datetime(df['StartTime'], errors='coerce').apply(get_week_of_month)
         
         week_ranges = df.groupby(['Month_Name', 'Week_Num'])['Date'].agg(['min', 'max']).reset_index()
         week_ranges['Week_Date_Range'] = (
-            week_ranges['min'].apply(lambda x: x.strftime('%b %d')) + " to " + 
-            week_ranges['max'].apply(lambda x: x.strftime('%b %d'))
+            week_ranges['min'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '') + " to " + 
+            week_ranges['max'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '')
         )
         
         df = df.merge(week_ranges[['Month_Name', 'Week_Num', 'Week_Date_Range']], on=['Month_Name', 'Week_Num'], how='left')
-        df['Month_Week_Label'] = df['StartTime'].dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
+        df['Month_Week_Label'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
         df['Week'] = df['Month_Week_Label']
     else:
         df['Date'] = "N/A"
@@ -339,7 +344,7 @@ else:
     # Sidebar Review Filters
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Review Filters")
-    all_schools = sorted([str(s) for s in df['Institution'].unique()])
+    all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
     # Filter Master Roster and Data by selected Schools
@@ -350,10 +355,10 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
-    available_months_df = school_filtered_df[['Month_Sort', 'Month_Name']].drop_duplicates().sort_values(by='Month_Sort', ascending=False)
+    available_months_df = school_filtered_df[['Month_Sort', 'Month_Name']].dropna().drop_duplicates().sort_values(by='Month_Sort', ascending=False)
     month_options = available_months_df['Month_Name'].tolist()
     
-    selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options)
+    selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options if month_options else ["No Month Data"])
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
     # Sunday Exclusion Toggle
@@ -361,7 +366,7 @@ else:
 
     # Global Monthly Holiday Punch-In Multiselect
     user_excluded_dates = []
-    if not month_filtered_df['Date'].isna().all():
+    if not month_filtered_df['Date'].isna().all() and not month_filtered_df.empty:
         m_min_date = month_filtered_df['Date'].min()
         m_max_date = month_filtered_df['Date'].max()
         all_month_possible_dates = [d.date() for d in pd.date_range(start=m_min_date, end=m_max_date)]
@@ -398,12 +403,16 @@ else:
 
     # View Mode Selector
     st.sidebar.subheader("🔍 Review View Level")
-    available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].unique())
+    available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
     
     view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review"])
     
-    if view_mode == "Full Month Summary":
+    if month_filtered_df.empty:
+        filtered_df = month_filtered_df
+        selected_num_days = 1
+        filter_description_text = f"Full Month: {selected_month} (0 Records)"
+    elif view_mode == "Full Month Summary":
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
@@ -411,8 +420,8 @@ else:
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
-        w_start = filtered_df['Date'].min()
-        w_end = filtered_df['Date'].max()
+        w_start = filtered_df['Date'].min() if not filtered_df.empty else selected_month
+        w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
         
@@ -682,6 +691,8 @@ else:
         else:
             target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers)
             
+            # Period-scoped data for benchmarks vs all-time records for submitted evidences
+            teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
             teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
             teacher_school = school_master_roster[school_master_roster['FullName'] == target_teacher]['Institution'].values[0] if not school_master_roster[school_master_roster['FullName'] == target_teacher].empty else "N/A"
 
@@ -797,22 +808,25 @@ else:
 
             v_cols = st.columns(4)
             
-            voice_links = teacher_date_data['Voice_Note_Link'].dropna().unique().tolist() if 'Voice_Note_Link' in teacher_date_data.columns else []
+            # Use teacher_all_data so all uploaded files are visible regardless of date filters
+            evidence_source = teacher_all_data if not teacher_all_data.empty else teacher_date_data
+            
+            voice_links = [l for l in evidence_source['Voice_Note_Link'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Voice_Note_Link' in evidence_source.columns else []
             v_cols[0].metric("🎧 Voice Notes", len(voice_links))
 
-            pic_links = teacher_date_data['Lesson_Plan_Picture'].dropna().unique().tolist() if 'Lesson_Plan_Picture' in teacher_date_data.columns else []
+            pic_links = [l for l in evidence_source['Lesson_Plan_Picture'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Lesson_Plan_Picture' in evidence_source.columns else []
             v_cols[1].metric("🖼️ LP Pictures", len(pic_links))
             
-            video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in teacher_date_data.columns]
+            video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in evidence_source.columns]
             video_count = 0
             if video_cols_exist:
-                video_count = teacher_date_data[video_cols_exist].notna().sum().sum()
+                video_count = evidence_source[video_cols_exist].notna().sum().sum()
             v_cols[2].metric("🎥 Videos", video_count)
 
-            writing_links = teacher_date_data['Writing_Sample_Link'].dropna().unique().tolist() if 'Writing_Sample_Link' in teacher_date_data.columns else []
+            writing_links = [l for l in evidence_source['Writing_Sample_Link'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Writing_Sample_Link' in evidence_source.columns else []
             v_cols[3].metric("📝 Writing Samples", len(writing_links))
 
-            with st.expander("🔍 View & Audit Submitted Artifact Files & Links"):
+            with st.expander("🔍 View & Audit Submitted Artifact Files & Links", expanded=True):
                 q_cols1, q_cols2, q_cols3, q_cols4 = st.columns(4)
                 
                 with q_cols1:
@@ -841,7 +855,7 @@ else:
                     st.markdown("##### 🎥 Activity Videos")
                     if video_count > 0:
                         for col in video_cols_exist:
-                            v_list = teacher_date_data[col].dropna().unique().tolist()
+                            v_list = [l for l in evidence_source[col].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none']
                             for idx, link in enumerate(v_list, 1):
                                 if str(link).startswith("http"):
                                     st.markdown(f"• [Video #{idx}]({link})")
@@ -868,13 +882,13 @@ else:
             with col_log_head:
                 st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
             with col_log_filt:
-                available_types = ["All Types"] + sorted(teacher_date_data['Type'].dropna().unique().tolist())
+                available_types = ["All Types"] + sorted(teacher_all_data['Type'].dropna().unique().tolist())
                 selected_type_filter = st.selectbox("Filter Audit Log by Type:", options=available_types)
 
             if selected_type_filter == "All Types":
-                filtered_audit_log = teacher_date_data
+                filtered_audit_log = teacher_all_data
             else:
-                filtered_audit_log = teacher_date_data[teacher_date_data['Type'] == selected_type_filter]
+                filtered_audit_log = teacher_all_data[teacher_all_data['Type'] == selected_type_filter]
 
             t_log_cols = ['Date', 'Type', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min']
             t_avail_cols = [c for c in t_log_cols if c in filtered_audit_log.columns]
