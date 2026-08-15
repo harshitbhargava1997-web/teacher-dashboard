@@ -16,7 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout configuration (Must be the first Streamlit command)
-st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review Dashboard", layout="wide")
+st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review Dashboard", layout="wide")[cite: 14]
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
@@ -27,7 +27,7 @@ try:
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
+    st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")[cite: 14]
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
@@ -38,19 +38,19 @@ def fetch_master_db_from_supabase():
             return pd.read_parquet(BytesIO(response))
     except Exception:
         pass
-    return pd.DataFrame()
+    return pd.DataFrame()[cite: 14]
 
 
 def _norm_text(value):
     """Normalize a single text value without converting missing values to the string 'nan'."""
     if pd.isna(value):
         return ""
-    return re.sub(r"\s+", " ", str(value)).strip()
+    return re.sub(r"\s+", " ", str(value)).strip()[cite: 14]
 
 
 def _norm_key(value):
     """Case-insensitive comparison key for school/name matching."""
-    return _norm_text(value).casefold()
+    return _norm_text(value).casefold()[cite: 14]
 
 
 def normalize_identity_columns(df):
@@ -60,84 +60,84 @@ def normalize_identity_columns(df):
     for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role"]:
         if col not in out.columns:
             out[col] = ""
-        out[col] = out[col].map(_norm_text)
+        out[col] = out[col].map(_norm_text)[cite: 14]
 
     # Prefer the already-populated FullName. Only construct it when it is missing.
     calculated_full = (
         out["FirstName"].fillna("") + " " + out["LastName"].fillna("")
-    ).map(_norm_text)
-    empty_full = out["FullName"].eq("")
-    out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
+    ).map(_norm_text)[cite: 14]
+    empty_full = out["FullName"].eq("")[cite: 14]
+    out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full][cite: 14]
 
     # Keep the existing application's sentinel for genuinely missing teacher names.
-    out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"
-    return out
+    out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"[cite: 14]
+    return out[cite: 14]
 
 
 def build_teacher_roster(df):
     """Build a stable school -> teacher roster from identity-bearing rows only."""
     if df is None or df.empty:
-        return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role"])
+        return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role"])[cite: 14]
 
-    roster = normalize_identity_columns(df)
+    roster = normalize_identity_columns(df)[cite: 14]
 
-    role_key = roster["Role"].map(_norm_key)
-    teacher_mask = role_key.isin({"teacher", "teachers"})
+    role_key = roster["Role"].map(_norm_key)[cite: 14]
+    teacher_mask = role_key.isin({"teacher", "teachers"})[cite: 14]
     if teacher_mask.any():
-        candidate = roster.loc[teacher_mask].copy()
+        candidate = roster.loc[teacher_mask].copy()[cite: 14]
     else:
-        candidate = roster.copy()
+        candidate = roster.copy()[cite: 14]
 
     candidate = candidate[
         candidate["Institution"].ne("")
         & ~candidate["Institution"].map(_norm_key).isin({"nan", "unknown school", "default school"})
         & candidate["FullName"].ne("")
         & ~candidate["FullName"].map(_norm_key).isin({"nan", "unknown teacher", "none"})
-    ]
+    ][cite: 14]
 
-    candidate["_institution_key"] = candidate["Institution"].map(_norm_key)
-    candidate["_teacher_key"] = candidate["FullName"].map(_norm_key)
+    candidate["_institution_key"] = candidate["Institution"].map(_norm_key)[cite: 14]
+    candidate["_teacher_key"] = candidate["FullName"].map(_norm_key)[cite: 14]
     candidate = candidate.drop_duplicates(
         subset=["_institution_key", "_teacher_key"], keep="last"
-    ).sort_values(["Institution", "FullName"], kind="stable")
+    ).sort_values(["Institution", "FullName"], kind="stable")[cite: 14]
 
-    return candidate.reset_index(drop=True)
+    return candidate.reset_index(drop=True)[cite: 14]
 
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
     """Generates a professional PDF document in memory and returns a downloadable BytesIO buffer."""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    styles = getSampleStyleSheet()
+    buffer = BytesIO()[cite: 14]
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)[cite: 14]
+    story = [][cite: 14]
+    styles = getSampleStyleSheet()[cite: 14]
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1F77B4'))
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.gray)
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1F77B4'))[cite: 14]
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.gray)[cite: 14]
     
-    story.append(Paragraph(f"<b>{title_text}</b>", title_style))
-    story.append(Paragraph(subtitle_text, subtitle_style))
-    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"<b>{title_text}</b>", title_style))[cite: 14]
+    story.append(Paragraph(subtitle_text, subtitle_style))[cite: 14]
+    story.append(Spacer(1, 12))[cite: 14]
 
     if summary_metrics:
-        metric_text = " &nbsp;&nbsp;|&nbsp;&nbsp; ".join([f"<b>{k}:</b> {v}" for k, v in summary_metrics.items()])
-        metric_style = ParagraphStyle('MetricBlock', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2CA02C'))
-        story.append(Paragraph(metric_text, metric_style))
-        story.append(Spacer(1, 12))
+        metric_text = " &nbsp;&nbsp;|&nbsp;&nbsp; ".join([f"<b>{k}:</b> {v}" for k, v in summary_metrics.items()])[cite: 14]
+        metric_style = ParagraphStyle('MetricBlock', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2CA02C'))[cite: 14]
+        story.append(Paragraph(metric_text, metric_style))[cite: 14]
+        story.append(Spacer(1, 12))[cite: 14]
 
     if not dataframe.empty:
-        raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)
-        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
+        raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()[cite: 14]
+        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)[cite: 14]
+        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')[cite: 14]
 
-        formatted_data = []
+        formatted_data = [][cite: 14]
         for i, row in enumerate(raw_data):
-            formatted_row = []
+            formatted_row = [][cite: 14]
             for cell in row:
-                st_to_use = header_style if i == 0 else cell_style
-                formatted_row.append(Paragraph(str(cell), st_to_use))
-            formatted_data.append(formatted_row)
+                st_to_use = header_style if i == 0 else cell_style[cite: 14]
+                formatted_row.append(Paragraph(str(cell), st_to_use))[cite: 14]
+            formatted_data.append(formatted_row)[cite: 14]
 
-        pdf_table = Table(formatted_data, repeatRows=1)
+        pdf_table = Table(formatted_data, repeatRows=1)[cite: 14]
         pdf_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F77B4')),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -146,81 +146,81 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9F9F9')]),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(pdf_table)
+        ]))[cite: 14]
+        story.append(pdf_table)[cite: 14]
 
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    doc.build(story)[cite: 14]
+    buffer.seek(0)[cite: 14]
+    return buffer[cite: 14]
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
     """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
-        start_np = np.datetime64(start_date)
-        end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
-        holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else []
-        w_mask = '1111110' if exclude_sundays else '1111111'
-        return max(1, int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np)))
+        start_np = np.datetime64(start_date)[cite: 14]
+        end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')[cite: 14]
+        holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else [][cite: 14]
+        w_mask = '1111110' if exclude_sundays else '1111111'[cite: 14]
+        return max(1, int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np)))[cite: 14]
     except Exception:
-        return 1
+        return 1[cite: 14]
 
 # Page layout title
-st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
-st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, and **Live Submissions Feed**.")
+st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")[cite: 14]
+st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, **Student Assessment Outcomes**, and **Live Submissions Feed**.")
 
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
-    master_df = fetch_master_db_from_supabase()
+    master_df = fetch_master_db_from_supabase()[cite: 14]
 
     if not new_upload_dfs:
-        return normalize_identity_columns(master_df) if not master_df.empty else master_df
+        return normalize_identity_columns(master_df) if not master_df.empty else master_df[cite: 14]
 
-    combined_new = pd.concat(new_upload_dfs, ignore_index=True)
-    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
-    all_data = normalize_identity_columns(all_data)
+    combined_new = pd.concat(new_upload_dfs, ignore_index=True)[cite: 14]
+    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new[cite: 14]
+    all_data = normalize_identity_columns(all_data)[cite: 14]
 
-    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
-    available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
-    master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
+    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution'][cite: 14]
+    available_dedup_cols = [c for c in dedup_cols if c in all_data.columns][cite: 14]
+    master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')[cite: 14]
 
     try:
-        parquet_buffer = BytesIO()
-        master_df.to_parquet(parquet_buffer, index=False)
-        parquet_buffer.seek(0)
+        parquet_buffer = BytesIO()[cite: 14]
+        master_df.to_parquet(parquet_buffer, index=False)[cite: 14]
+        parquet_buffer.seek(0)[cite: 14]
 
         supabase.storage.from_(BUCKET_NAME).upload(
             path=PARQUET_FILE_NAME,
             file=parquet_buffer.getvalue(),
             file_options={"upsert": "true", "content-type": "application/octet-stream"}
-        )
-        fetch_master_db_from_supabase.clear()
-        st.sidebar.success("Successfully synced database to Supabase Cloud!")
+        )[cite: 14]
+        fetch_master_db_from_supabase.clear()[cite: 14]
+        st.sidebar.success("Successfully synced database to Supabase Cloud!")[cite: 14]
     except Exception as e:
-        st.sidebar.error(f"Error saving Parquet Database to Supabase: {e}")
+        st.sidebar.error(f"Error saving Parquet Database to Supabase: {e}")[cite: 14]
 
-    return master_df
+    return master_df[cite: 14]
 
 # 2. Sidebar Data Upload Manager
-st.sidebar.header("📁 Data Upload & Database Sync")
-uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)
+st.sidebar.header("📁 Data Upload & Database Sync")[cite: 14]
+uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)[cite: 14]
 
-new_processed_dfs = []
+new_processed_dfs = [][cite: 14]
 if uploaded_files:
-    for file in uploaded_files:
+    for file in uploaded_files:[cite: 14]
         try:
-            temp_df = pd.read_excel(file, sheet_name="UserMetrics")
-            temp_df = normalize_identity_columns(temp_df)
-            if temp_df['Institution'].eq('').all():
-                temp_df['Institution'] = "Default School"
+            temp_df = pd.read_excel(file, sheet_name="UserMetrics")[cite: 14]
+            temp_df = normalize_identity_columns(temp_df)[cite: 14]
+            if temp_df['Institution'].eq('').all():[cite: 14]
+                temp_df['Institution'] = "Default School"[cite: 14]
             else:
-                temp_df['Institution'] = temp_df['Institution'].replace('', 'Unknown School')
+                temp_df['Institution'] = temp_df['Institution'].replace('', 'Unknown School')[cite: 14]
 
-            for col in ['Grade', 'Subject', 'Book']:
-                if col not in temp_df.columns:
-                    temp_df[col] = ''
+            for col in ['Grade', 'Subject', 'Book']:[cite: 14]
+                if col not in temp_df.columns:[cite: 14]
+                    temp_df[col] = ''[cite: 14]
                 else:
-                    temp_df[col] = temp_df[col].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+                    temp_df[col] = temp_df[col].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())[cite: 14]
 
             def parse_time_mins(t_str):
                 try:
@@ -229,68 +229,68 @@ if uploaded_files:
                 except:
                     return 0.0
 
-            if 'Duration (HH:MM:SS)' in temp_df.columns:
-                temp_df['Duration_Min'] = temp_df['Duration (HH:MM:SS)'].apply(parse_time_mins)
-            elif 'Duration (Minutes)' in temp_df.columns:
-                temp_df['Duration_Min'] = pd.to_numeric(temp_df['Duration (Minutes)'], errors='coerce').fillna(0.0)
+            if 'Duration (HH:MM:SS)' in temp_df.columns:[cite: 14]
+                temp_df['Duration_Min'] = temp_df['Duration (HH:MM:SS)'].apply(parse_time_mins)[cite: 14]
+            elif 'Duration (Minutes)' in temp_df.columns:[cite: 14]
+                temp_df['Duration_Min'] = pd.to_numeric(temp_df['Duration (Minutes)'], errors='coerce').fillna(0.0)[cite: 14]
             else:
-                temp_df['Duration_Min'] = 0.0
+                temp_df['Duration_Min'] = 0.0[cite: 14]
 
-            if 'Type' in temp_df.columns:
-                temp_df['Type'] = temp_df['Type'].fillna('Other').astype(str)
+            if 'Type' in temp_df.columns:[cite: 14]
+                temp_df['Type'] = temp_df['Type'].fillna('Other').astype(str)[cite: 14]
 
-            if 'StartTime' in temp_df.columns:
-                temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
+            if 'StartTime' in temp_df.columns:[cite: 14]
+                temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')[cite: 14]
 
-            for qual_col in ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
-                if qual_col not in temp_df.columns:
-                    temp_df[qual_col] = None
+            for qual_col in ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:[cite: 14]
+                if qual_col not in temp_df.columns:[cite: 14]
+                    temp_df[qual_col] = None[cite: 14]
 
-            new_processed_dfs.append(temp_df)
+            new_processed_dfs.append(temp_df)[cite: 14]
         except Exception as e:
-            st.sidebar.error(f"Error reading {file.name}: {e}")
+            st.sidebar.error(f"Error reading {file.name}: {e}")[cite: 14]
 
 if new_processed_dfs:
-    df = load_or_update_master_db(new_processed_dfs)
-    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Parquet DB!")
+    df = load_or_update_master_db(new_processed_dfs)[cite: 14]
+    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Parquet DB!")[cite: 14]
 else:
-    df = load_or_update_master_db()
+    df = load_or_update_master_db()[cite: 14]
 
 # 3. Cloud Database Status & Storage Controls
-st.sidebar.markdown("---")
-st.sidebar.header("🗄️ Supabase Cloud Database Status")
+st.sidebar.markdown("---")[cite: 14]
+st.sidebar.header("🗄️ Supabase Cloud Database Status")[cite: 14]
 
-if st.sidebar.button("🔄 Sync Latest Teacher Submissions"):
-    fetch_master_db_from_supabase.clear()
-    st.rerun()
+if st.sidebar.button("🔄 Sync Latest Teacher Submissions"):[cite: 14]
+    fetch_master_db_from_supabase.clear()[cite: 14]
+    st.rerun()[cite: 14]
 
-current_db_check = fetch_master_db_from_supabase()
+current_db_check = fetch_master_db_from_supabase()[cite: 14]
 
 if not current_db_check.empty:
-    st.sidebar.metric("Cloud DB Total Records", len(current_db_check))
-    if st.sidebar.button("🚨 Clear Cloud Database"):
+    st.sidebar.metric("Cloud DB Total Records", len(current_db_check))[cite: 14]
+    if st.sidebar.button("🚨 Clear Cloud Database"):[cite: 14]
         try:
-            supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])
-            fetch_master_db_from_supabase.clear()
-            st.sidebar.success("Cloud database cleared!")
-            st.rerun()
+            supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])[cite: 14]
+            fetch_master_db_from_supabase.clear()[cite: 14]
+            st.sidebar.success("Cloud database cleared!")[cite: 14]
+            st.rerun()[cite: 14]
         except Exception as e:
-            st.sidebar.error(f"Could not delete database from cloud: {e}")
+            st.sidebar.error(f"Could not delete database from cloud: {e}")[cite: 14]
 
 if df.empty:
-    st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")
+    st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")[cite: 14]
 else:
-    if 'FullName' not in df.columns:
-        if 'FirstName' in df.columns and 'LastName' in df.columns:
-            df['FullName'] = (df['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) + " " + df['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+    if 'FullName' not in df.columns:[cite: 14]
+        if 'FirstName' in df.columns and 'LastName' in df.columns:[cite: 14]
+            df['FullName'] = (df['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) + " " + df['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())).apply(lambda x: re.sub(r'\s+', ' ', x).strip())[cite: 14]
         else:
-            df['FullName'] = 'Unknown Teacher'
+            df['FullName'] = 'Unknown Teacher'[cite: 14]
 
-    if 'StartTime' in df.columns:
-        df['StartTime'] = pd.to_datetime(df['StartTime'], errors='coerce')
-        df['Date'] = df['StartTime'].dt.date
-        df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
-        df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')
+    if 'StartTime' in df.columns:[cite: 14]
+        df['StartTime'] = pd.to_datetime(df['StartTime'], errors='coerce')[cite: 14]
+        df['Date'] = df['StartTime'].dt.date[cite: 14]
+        df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')[cite: 14]
+        df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')[cite: 14]
         
         def get_week_of_month(dt):
             try:
@@ -300,141 +300,142 @@ else:
                 return int(np.ceil(adjusted_dom / 7.0))
             except:
                 return 1
-                
-        df['Week_Num'] = df['StartTime'].apply(get_week_of_month)
+
+        df['Week_Num'] = df['StartTime'].apply(get_week_of_month)[cite: 14]
         
-        week_ranges = df.groupby(['Month_Name', 'Week_Num'])['Date'].agg(['min', 'max']).reset_index()
+        week_ranges = df.groupby(['Month_Name', 'Week_Num'])['Date'].agg(['min', 'max']).reset_index()[cite: 14]
         week_ranges['Week_Date_Range'] = (
             week_ranges['min'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '') + " to " + 
             week_ranges['max'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '')
-        )
+        )[cite: 14]
         
-        df = df.merge(week_ranges[['Month_Name', 'Week_Num', 'Week_Date_Range']], on=['Month_Name', 'Week_Num'], how='left')
-        df['Month_Week_Label'] = df['StartTime'].dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
-        df['Week'] = df['Month_Week_Label']
+        df = df.merge(week_ranges[['Month_Name', 'Week_Num', 'Week_Date_Range']], on=['Month_Name', 'Week_Num'], how='left')[cite: 14]
+        df['Month_Week_Label'] = df['StartTime'].dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"[cite: 14]
+        df['Week'] = df['Month_Week_Label'][cite: 14]
     else:
-        df['Date'] = None
-        df['Month_Name'] = "N/A"
-        df['Week'] = "N/A"
+        df['Date'] = None[cite: 14]
+        df['Month_Name'] = "N/A"[cite: 14]
+        df['Week'] = "N/A"[cite: 14]
 
-    master_teacher_roster = build_teacher_roster(df)
+    master_teacher_roster = build_teacher_roster(df)[cite: 14]
     if master_teacher_roster.empty:
-        master_teacher_roster = pd.DataFrame(columns=['Institution', 'FullName'])
+        master_teacher_roster = pd.DataFrame(columns=['Institution', 'FullName'])[cite: 14]
     else:
-        master_teacher_roster = master_teacher_roster[['Institution', 'FullName']].drop_duplicates()
+        master_teacher_roster = master_teacher_roster[['Institution', 'FullName']].drop_duplicates()[cite: 14]
 
     # --- 1. GLOBAL SCHOOL FILTER ---
-    st.sidebar.markdown("---")
-    st.sidebar.header("🔍 Global Filters")
-    all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
-    selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
+    st.sidebar.markdown("---")[cite: 14]
+    st.sidebar.header("🔍 Global Filters")[cite: 14]
+    all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])[cite: 14]
+    selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)[cite: 14]
 
-    school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
-    school_filtered_df = df[df['Institution'].isin(selected_schools)]
+    school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)][cite: 14]
+    school_filtered_df = df[df['Institution'].isin(selected_schools)][cite: 14]
 
     # --- 2. GLOBAL CALENDAR & HOLIDAY MANAGER ---
-    st.sidebar.markdown("---")
-    st.sidebar.header("📅 Calendar & Holiday Manager")
+    st.sidebar.markdown("---")[cite: 14]
+    st.sidebar.header("📅 Calendar & Holiday Manager")[cite: 14]
     
-    available_months_df = school_filtered_df[['Month_Sort', 'Month_Name']].dropna().drop_duplicates().sort_values(by='Month_Sort', ascending=False)
-    month_options = available_months_df['Month_Name'].tolist()
+    available_months_df = school_filtered_df[['Month_Sort', 'Month_Name']].dropna().drop_duplicates().sort_values(by='Month_Sort', ascending=False)[cite: 14]
+    month_options = available_months_df['Month_Name'].tolist()[cite: 14]
     
-    selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options if month_options else ["No Month Data"])
-    month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
+    selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options if month_options else ["No Month Data"])[cite: 14]
+    month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month][cite: 14]
     
-    exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
+    exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)[cite: 14]
 
-    user_excluded_dates = []
-    if not month_filtered_df['Date'].isna().all() and not month_filtered_df.empty:
-        m_min_date = month_filtered_df['Date'].min()
-        m_max_date = month_filtered_df['Date'].max()
-        all_month_possible_dates = [d.date() for d in pd.date_range(start=m_min_date, end=m_max_date)]
+    user_excluded_dates = [][cite: 14]
+    if not month_filtered_df['Date'].isna().all() and not month_filtered_df.empty:[cite: 14]
+        m_min_date = month_filtered_df['Date'].min()[cite: 14]
+        m_max_date = month_filtered_df['Date'].max()[cite: 14]
+        all_month_possible_dates = [d.date() for d in pd.date_range(start=m_min_date, end=m_max_date)][cite: 14]
         
         user_excluded_dates = st.sidebar.multiselect(
             f"🗓️ Punch Holidays for {selected_month}:",
             options=all_month_possible_dates,
             format_func=lambda x: x.strftime('%Y-%m-%d')
-        )
+        )[cite: 14]
 
     # --- 3. DYNAMIC KPI BENCHMARK CONTROLS ---
-    st.sidebar.markdown("---")
-    st.sidebar.header("🎯 KPI Benchmark Controls")
+    st.sidebar.markdown("---")[cite: 14]
+    st.sidebar.header("🎯 KPI Benchmark Controls")[cite: 14]
 
-    daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
-    daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)
+    daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)[cite: 14]
+    daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)[cite: 14]
 
     # --- 4. GRANULARITY & CUSTOM DATE RANGE SELECTOR ---
-    st.sidebar.subheader("🔍 Review View Level")
-    available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())
-    available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
+    st.sidebar.subheader("🔍 Review View Level")[cite: 14]
+    available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())[cite: 14]
+    available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)[cite: 14]
     
-    view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review", "Custom Date Range"])
+    view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review", "Custom Date Range"])[cite: 14]
     
-    if month_filtered_df.empty and view_mode != "Custom Date Range":
-        filtered_df = month_filtered_df
-        selected_num_days = 1
-        filter_description_text = f"Full Month: {selected_month} (0 Records)"
-    elif view_mode == "Full Month Summary":
-        filtered_df = month_filtered_df
-        selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
-    elif view_mode == "Specific Week of Month":
-        selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
-        filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
-        w_start = filtered_df['Date'].min() if not filtered_df.empty else selected_month
-        w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month
-        selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
-    elif view_mode == "Single Day Review":
-        selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
-        filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
-        selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"
+    if month_filtered_df.empty and view_mode != "Custom Date Range":[cite: 14]
+        filtered_df = month_filtered_df[cite: 14]
+        selected_num_days = 1[cite: 14]
+        filter_description_text = f"Full Month: {selected_month} (0 Records)"[cite: 14]
+    elif view_mode == "Full Month Summary":[cite: 14]
+        filtered_df = month_filtered_df[cite: 14]
+        selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)[cite: 14]
+        filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"[cite: 14]
+    elif view_mode == "Specific Week of Month":[cite: 14]
+        selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)[cite: 14]
+        filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label][cite: 14]
+        w_start = filtered_df['Date'].min() if not filtered_df.empty else selected_month[cite: 14]
+        w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month[cite: 14]
+        selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)[cite: 14]
+        filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"[cite: 14]
+    elif view_mode == "Single Day Review":[cite: 14]
+        selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)[cite: 14]
+        filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date][cite: 14]
+        selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)[cite: 14]
+        filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"[cite: 14]
     else:  # Custom Date Range
-        min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
-        max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
+        min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()[cite: 14]
+        max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()[cite: 14]
         
-        custom_date_range = st.sidebar.date_input("Select Custom Date Range:", value=(min_avail, max_avail), min_value=min_avail, max_value=max_avail)
-        if isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 2:
-            c_start, c_end = custom_date_range
-        elif isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 1:
-            c_start = c_end = custom_date_range[0]
+        custom_date_range = st.sidebar.date_input("Select Custom Date Range:", value=(min_avail, max_avail), min_value=min_avail, max_value=max_avail)[cite: 14]
+        if isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 2:[cite: 14]
+            c_start, c_end = custom_date_range[cite: 14]
+        elif isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 1:[cite: 14]
+            c_start = c_end = custom_date_range[0][cite: 14]
         else:
-            c_start = c_end = custom_date_range
+            c_start = c_end = custom_date_range[cite: 14]
             
-        filtered_df = school_filtered_df[(school_filtered_df['Date'] >= c_start) & (school_filtered_df['Date'] <= c_end)]
-        selected_num_days = get_working_days(c_start, c_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Custom Range: {c_start} to {c_end} ({selected_num_days} Working Day(s))"
+        filtered_df = school_filtered_df[(school_filtered_df['Date'] >= c_start) & (school_filtered_df['Date'] <= c_end)][cite: 14]
+        selected_num_days = get_working_days(c_start, c_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)[cite: 14]
+        filter_description_text = f"Custom Range: {c_start} to {c_end} ({selected_num_days} Working Day(s))"[cite: 14]
 
-    calc_ld_kpi = daily_ld_target * selected_num_days
-    calc_lib_kpi = daily_lib_target * selected_num_days
+    calc_ld_kpi = daily_ld_target * selected_num_days[cite: 14]
+    calc_lib_kpi = daily_lib_target * selected_num_days[cite: 14]
 
     # --- 5. GLOBAL TEACHER FILTER ---
-    available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique() if str(t).strip()])
-    selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
+    available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique() if str(t).strip()])[cite: 14]
+    selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)[cite: 14]
     
-    filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
-    filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
+    filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)][cite: 14]
+    filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)][cite: 14]
 
-    # 7 Dedicated Active Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # 8 Dedicated Active Tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📬 7. Live Evidence Submissions Feed"
+        "📊 7. Student Assessment Outcomes",
+        "📬 8. Live Evidence Submissions Feed"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
     with tab1:
-        st.header("📘 Daily Lesson Plan Preparation Tracker")
-        st.caption(f"KPI Benchmark: **At least {calc_ld_kpi:.0f} Minutes** ({daily_ld_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        st.header("📘 Daily Lesson Plan Preparation Tracker")[cite: 14]
+        st.caption(f"KPI Benchmark: **At least {calc_ld_kpi:.0f} Minutes** ({daily_ld_target:.0f} mins/day across {selected_num_days} working day(s)).")[cite: 14]
 
-        ld_df = filtered_df[filtered_df['Type'] == 'lessonDelivery']
-        ld_usage = ld_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()
-        ld_daily = filtered_roster.merge(ld_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)
+        ld_df = filtered_df[filtered_df['Type'] == 'lessonDelivery'][cite: 14]
+        ld_usage = ld_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()[cite: 14]
+        ld_daily = filtered_roster.merge(ld_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)[cite: 14]
         
         def get_ld_status(x):
             if calc_ld_kpi == 0: return '✅ Holiday / No-Class (0m Req)'
@@ -442,30 +443,30 @@ else:
             elif x > 0.0: return f'⚠️ Below KPI (< {calc_ld_kpi:.0f}m)'
             else: return '❌ Inactive (0 Mins)'
         
-        ld_daily['KPI Status'] = ld_daily['Duration_Min'].apply(get_ld_status)
+        ld_daily['KPI Status'] = ld_daily['Duration_Min'].apply(get_ld_status)[cite: 14]
 
-        c1, c2, c3, c4 = st.columns(4)
-        total_teachers = len(ld_daily)
-        met_count = len(ld_daily[ld_daily['Duration_Min'] >= calc_ld_kpi]) if calc_ld_kpi > 0 else total_teachers
-        inactive_count = len(ld_daily[ld_daily['Duration_Min'] == 0.0])
+        c1, c2, c3, c4 = st.columns(4)[cite: 14]
+        total_teachers = len(ld_daily)[cite: 14]
+        met_count = len(ld_daily[ld_daily['Duration_Min'] >= calc_ld_kpi]) if calc_ld_kpi > 0 else total_teachers[cite: 14]
+        inactive_count = len(ld_daily[ld_daily['Duration_Min'] == 0.0])[cite: 14]
         
-        c1.metric("Total Roster Teachers", total_teachers)
-        c2.metric(f"Met {calc_ld_kpi:.0f}m KPI", f"{met_count} / {total_teachers}")
-        c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
-        c4.metric("KPI Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
+        c1.metric("Total Roster Teachers", total_teachers)[cite: 14]
+        c2.metric(f"Met {calc_ld_kpi:.0f}m KPI", f"{met_count} / {total_teachers}")[cite: 14]
+        c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")[cite: 14]
+        c4.metric("KPI Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")[cite: 14]
 
         fig_ld = px.bar(
             ld_daily, x="FullName", y="Duration_Min", color="KPI Status",
             title=f"Lesson Prep Minutes per Teacher vs. {calc_ld_kpi:.0f} Min KPI Standard",
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Prepared"},
             text_auto=".1f"
-        )
-        fig_ld.add_hline(y=calc_ld_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_ld_kpi:.0f} mins)")
-        st.plotly_chart(fig_ld, use_container_width=True)
+        )[cite: 14]
+        fig_ld.add_hline(y=calc_ld_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_ld_kpi:.0f} mins)")[cite: 14]
+        st.plotly_chart(fig_ld, use_container_width=True)[cite: 14]
 
-        st.subheader("📋 Lesson Plan KPI Review Table")
-        display_ld_table = ld_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})
-        st.dataframe(display_ld_table, use_container_width=True)
+        st.subheader("📋 Lesson Plan KPI Review Table")[cite: 14]
+        display_ld_table = ld_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})[cite: 14]
+        st.dataframe(display_ld_table, use_container_width=True)[cite: 14]
 
         pdf_tab1 = generate_pdf_report(
             title_text="📘 Daily Lesson Plan Preparation Report",
@@ -476,22 +477,22 @@ else:
                 "Compliance Rate": f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
             },
             dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
-        )
+        )[cite: 14]
         st.download_button(
             label="📄 Download Tab 1 Report (PDF)",
             data=pdf_tab1,
             file_name=f"Lesson_Plan_KPI_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
-        )
+        )[cite: 14]
 
     # TAB 2: DAILY LIBRARY KPI
     with tab2:
-        st.header("📚 Daily Library Usage Tracker")
-        st.caption(f"KPI Benchmark: **At least {calc_lib_kpi:.0f} Minutes** ({daily_lib_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        st.header("📚 Daily Library Usage Tracker")[cite: 14]
+        st.caption(f"KPI Benchmark: **At least {calc_lib_kpi:.0f} Minutes** ({daily_lib_target:.0f} mins/day across {selected_num_days} working day(s)).")[cite: 14]
 
-        lib_df = filtered_df[filtered_df['Type'] == 'library']
-        lib_usage = lib_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()
-        lib_daily = filtered_roster.merge(lib_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)
+        lib_df = filtered_df[filtered_df['Type'] == 'library'][cite: 14]
+        lib_usage = lib_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()[cite: 14]
+        lib_daily = filtered_roster.merge(lib_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)[cite: 14]
         
         def get_lib_status(x):
             if calc_lib_kpi == 0: return '✅ Holiday / No-Class (0m Req)'
@@ -499,30 +500,30 @@ else:
             elif x > 0.0: return f'⚠️ Below KPI (< {calc_lib_kpi:.0f}m)'
             else: return '❌ Inactive (0 Mins)'
 
-        lib_daily['KPI Status'] = lib_daily['Duration_Min'].apply(get_lib_status)
+        lib_daily['KPI Status'] = lib_daily['Duration_Min'].apply(get_lib_status)[cite: 14]
 
-        m1, m2, m3, m4 = st.columns(4)
-        lib_total_teachers = len(lib_daily)
-        lib_met_count = len(lib_daily[lib_daily['Duration_Min'] >= calc_lib_kpi]) if calc_lib_kpi > 0 else lib_total_teachers
-        lib_inactive_count = len(lib_daily[lib_daily['Duration_Min'] == 0.0])
+        m1, m2, m3, m4 = st.columns(4)[cite: 14]
+        lib_total_teachers = len(lib_daily)[cite: 14]
+        lib_met_count = len(lib_daily[lib_daily['Duration_Min'] >= calc_lib_kpi]) if calc_lib_kpi > 0 else lib_total_teachers[cite: 14]
+        lib_inactive_count = len(lib_daily[lib_daily['Duration_Min'] == 0.0])[cite: 14]
         
-        m1.metric("Total Roster Teachers", lib_total_teachers)
-        m2.metric(f"Met {calc_lib_kpi:.0f}m KPI", f"{lib_met_count} / {lib_total_teachers}")
-        m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
-        m4.metric("Library KPI Compliance Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
+        m1.metric("Total Roster Teachers", lib_total_teachers)[cite: 14]
+        m2.metric(f"Met {calc_lib_kpi:.0f}m KPI", f"{lib_met_count} / {lib_total_teachers}")[cite: 14]
+        m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")[cite: 14]
+        m4.metric("Library KPI Compliance Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")[cite: 14]
 
         fig_lib = px.bar(
             lib_daily, x="FullName", y="Duration_Min", color="KPI Status",
             title=f"Library Minutes per Teacher vs. {calc_lib_kpi:.0f} Min KPI Standard",
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Logged"},
             text_auto=".1f"
-        )
-        fig_lib.add_hline(y=calc_lib_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_lib_kpi:.0f} mins)")
-        st.plotly_chart(fig_lib, use_container_width=True)
+        )[cite: 14]
+        fig_lib.add_hline(y=calc_lib_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_lib_kpi:.0f} mins)")[cite: 14]
+        st.plotly_chart(fig_lib, use_container_width=True)[cite: 14]
 
-        st.subheader("📋 Library KPI Review Table")
-        display_lib_table = lib_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})
-        st.dataframe(display_lib_table, use_container_width=True)
+        st.subheader("📋 Library KPI Review Table")[cite: 14]
+        display_lib_table = lib_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})[cite: 14]
+        st.dataframe(display_lib_table, use_container_width=True)[cite: 14]
 
         pdf_tab2 = generate_pdf_report(
             title_text="📚 Daily Library Usage Report",
@@ -533,103 +534,103 @@ else:
                 "Compliance Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
             },
             dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
-        )
+        )[cite: 14]
         st.download_button(
             label="📄 Download Tab 2 Report (PDF)",
             data=pdf_tab2,
             file_name=f"Library_KPI_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
-        )
+        )[cite: 14]
 
     # TAB 3: CHAPTERS & RESOURCE BREAKDOWN
     with tab3:
-        st.header("📖 Chapters & Content Modules Opened")
-        st.caption(f"Track specific books, subjects, and themes during `{filter_description_text}`.")
+        st.header("📖 Chapters & Content Modules Opened")[cite: 14]
+        st.caption(f"Track specific books, subjects, and themes during `{filter_description_text}`.")[cite: 14]
 
-        content_df = filtered_df[filtered_df['Book'].str.len() > 0]
+        content_df = filtered_df[filtered_df['Book'].str.len() > 0][cite: 14]
 
         if content_df.empty:
-            st.info("No specific chapter/book access logs found in the uploaded data for the selected global filters.")
+            st.info("No specific chapter/book access logs found in the uploaded data for the selected global filters.")[cite: 14]
         else:
-            col_f1, col_f2, col_f3 = st.columns(3)
+            col_f1, col_f2, col_f3 = st.columns(3)[cite: 14]
             with col_f1:
-                t3_school_opt = ["All Selected Schools"] + sorted(content_df['Institution'].unique().tolist())
-                t3_school = st.selectbox("🏫 Select School:", t3_school_opt, key="t3_school")
+                t3_school_opt = ["All Selected Schools"] + sorted(content_df['Institution'].unique().tolist())[cite: 14]
+                t3_school = st.selectbox("🏫 Select School:", t3_school_opt, key="t3_school")[cite: 14]
                 
-            t3_df = content_df if t3_school == "All Selected Schools" else content_df[content_df['Institution'] == t3_school]
+            t3_df = content_df if t3_school == "All Selected Schools" else content_df[content_df['Institution'] == t3_school][cite: 14]
 
             with col_f2:
-                t3_teacher_opt = ["All Teachers"] + sorted(t3_df['FullName'].unique().tolist())
-                t3_teacher = st.selectbox("👤 Select Teacher:", t3_teacher_opt, key="t3_teacher")
+                t3_teacher_opt = ["All Teachers"] + sorted(t3_df['FullName'].unique().tolist())[cite: 14]
+                t3_teacher = st.selectbox("👤 Select Teacher:", t3_teacher_opt, key="t3_teacher")[cite: 14]
                 
             if t3_teacher != "All Teachers":
-                t3_df = t3_df[t3_df['FullName'] == t3_teacher]
+                t3_df = t3_df[t3_df['FullName'] == t3_teacher][cite: 14]
 
             with col_f3:
-                t3_subject_opt = ["All Subjects"] + sorted(t3_df['Subject'].unique().tolist())
-                t3_subject = st.selectbox("📚 Select Subject:", t3_subject_opt, key="t3_subject")
+                t3_subject_opt = ["All Subjects"] + sorted(t3_df['Subject'].unique().tolist())[cite: 14]
+                t3_subject = st.selectbox("📚 Select Subject:", t3_subject_opt, key="t3_subject")[cite: 14]
 
             if t3_subject != "All Subjects":
-                t3_df = t3_df[t3_df['Subject'] == t3_subject]
+                t3_df = t3_df[t3_df['Subject'] == t3_subject][cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
             if t3_df.empty:
-                st.warning("No data matches these specific drill-down filters.")
+                st.warning("No data matches these specific drill-down filters.")[cite: 14]
             else:
-                k1, k2, k3 = st.columns(3)
-                k1.metric("Chapters / Books Opened", t3_df['Book'].nunique())
-                k2.metric("Subjects Taught", t3_df['Subject'].nunique())
-                k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
+                k1, k2, k3 = st.columns(3)[cite: 14]
+                k1.metric("Chapters / Books Opened", t3_df['Book'].nunique())[cite: 14]
+                k2.metric("Subjects Taught", t3_df['Subject'].nunique())[cite: 14]
+                k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")[cite: 14]
 
-                col_c1, col_c2 = st.columns(2)
+                col_c1, col_c2 = st.columns(2)[cite: 14]
                 with col_c1:
                     if t3_teacher != "All Teachers":
-                        ch_summary = t3_df.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()
+                        ch_summary = t3_df.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()[cite: 14]
                         fig_ch = px.bar(
                             ch_summary, x="Duration_Min", y="Book", color="Grade", orientation="h",
                             title=f"Chapters Opened by {t3_teacher} (Mins)",
                             labels={"Duration_Min": "Minutes", "Book": "Book / Chapter"},
                             text_auto=".1f"
-                        )
-                        fig_ch.update_layout(yaxis={'categoryorder':'total ascending'})
+                        )[cite: 14]
+                        fig_ch.update_layout(yaxis={'categoryorder':'total ascending'})[cite: 14]
                     else:
-                        ch_summary = t3_df.groupby(['FullName', 'Book'])['Duration_Min'].sum().reset_index()
+                        ch_summary = t3_df.groupby(['FullName', 'Book'])['Duration_Min'].sum().reset_index()[cite: 14]
                         fig_ch = px.bar(
                             ch_summary, x="FullName", y="Duration_Min", color="Book",
                             title="Chapters / Books Opened per Teacher (Mins)",
                             labels={"FullName": "Teacher", "Duration_Min": "Minutes", "Book": "Book / Chapter"},
                             barmode="stack", text_auto=".1f"
-                        )
-                    st.plotly_chart(fig_ch, use_container_width=True)
+                        )[cite: 14]
+                    st.plotly_chart(fig_ch, use_container_width=True)[cite: 14]
 
                 with col_c2:
-                    subj_summary = t3_df.groupby('Subject')['Duration_Min'].sum().reset_index()
+                    subj_summary = t3_df.groupby('Subject')['Duration_Min'].sum().reset_index()[cite: 14]
                     fig_sub = px.pie(
                         subj_summary, names="Subject", values="Duration_Min",
                         title="Subject / Theme Distribution (Minutes)"
-                    )
-                    st.plotly_chart(fig_sub, use_container_width=True)
+                    )[cite: 14]
+                    st.plotly_chart(fig_sub, use_container_width=True)[cite: 14]
 
-                st.subheader("📋 Filtered Granular Class Log")
-                log_cols = ['Institution', 'FullName', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min']
-                available_cols = [c for c in log_cols if c in t3_df.columns]
+                st.subheader("📋 Filtered Granular Class Log")[cite: 14]
+                log_cols = ['Institution', 'FullName', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min'][cite: 14]
+                available_cols = [c for c in log_cols if c in t3_df.columns][cite: 14]
                 
                 display_content_log = t3_df[available_cols].rename(columns={
                     'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes'
-                }).sort_values(by='StartTime', ascending=False)
-                display_content_log['Minutes'] = display_content_log['Minutes'].round(1)
-                st.dataframe(display_content_log, use_container_width=True)
+                }).sort_values(by='StartTime', ascending=False)[cite: 14]
+                display_content_log['Minutes'] = display_content_log['Minutes'].round(1)[cite: 14]
+                st.dataframe(display_content_log, use_container_width=True)[cite: 14]
 
-                col_d1, col_d2 = st.columns(2)
+                col_d1, col_d2 = st.columns(2)[cite: 14]
                 with col_d1:
-                    csv_t3 = display_content_log.to_csv(index=False).encode('utf-8')
+                    csv_t3 = display_content_log.to_csv(index=False).encode('utf-8')[cite: 14]
                     st.download_button(
                         label="📥 Download Content Log (CSV)",
                         data=csv_t3,
                         file_name=f"Content_Log_{selected_month.replace(' ', '_')}.csv",
                         mime="text/csv"
-                    )
+                    )[cite: 14]
                 with col_d2:
                     pdf_tab3 = generate_pdf_report(
                         title_text="📖 Chapters & Digital Content Usage Report",
@@ -640,138 +641,139 @@ else:
                             "Total Duration": f"{t3_df['Duration_Min'].sum():.1f} Mins"
                         },
                         dataframe=display_content_log[['School', 'Teacher Name', 'Grade', 'Subject', 'Book', 'Minutes']].head(30)
-                    )
+                    )[cite: 14]
                     st.download_button(
                         label="📄 Download Tab 3 Content Report (PDF)",
                         data=pdf_tab3,
                         file_name=f"Content_Usage_Report_{selected_month.replace(' ', '_')}.pdf",
                         mime="application/pdf"
-                    )
+                    )[cite: 14]
 
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
-        st.header("👤 Teacher 360° Performance Profile")
-        st.caption("Review qualitative lesson artifacts, voice recordings, classroom videos, and KPI progress for the selected teacher.")
+        st.header("👤 Teacher 360° Performance Profile")[cite: 14]
+        st.caption("Review qualitative lesson artifacts, voice recordings, classroom videos, and KPI progress for the selected teacher.")[cite: 14]
 
-        all_roster_teachers = sorted(school_master_roster['FullName'].unique())
+        all_roster_teachers = sorted(school_master_roster['FullName'].unique())[cite: 14]
         
         if not all_roster_teachers:
-            st.info("No teachers found in roster for the selected school(s).")
+            st.info("No teachers found in roster for the selected school(s).")[cite: 14]
         else:
-            target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers)
+            target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers)[cite: 14]
             
-            teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
-            teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
-            teacher_school = school_master_roster[school_master_roster['FullName'] == target_teacher]['Institution'].values[0] if not school_master_roster[school_master_roster['FullName'] == target_teacher].empty else "N/A"
+            teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher][cite: 14]
+            teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher][cite: 14]
+            teacher_school = school_master_roster[school_master_roster['FullName'] == target_teacher]['Institution'].values[0] if not school_master_roster[school_master_roster['FullName'] == target_teacher].empty else "N/A"[cite: 14]
 
-            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
+            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")[cite: 14]
 
             # SECTION 1: PERFORMANCE INDICATOR SUMMARY
-            st.subheader("1. Performance Indicator Summary")
-            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **KPI Duration**: `{selected_num_days} Working Day(s)`")
+            st.subheader("1. Performance Indicator Summary")[cite: 14]
+            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **KPI Duration**: `{selected_num_days} Working Day(s)`")[cite: 14]
 
-            t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
-            t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
+            t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0[cite: 14]
+            t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0[cite: 14]
             
-            ld_pct = (t_day_ld / calc_ld_kpi) * 100 if calc_ld_kpi > 0 else (100.0 if t_day_ld >= 0 else 0)
-            lib_pct = (t_day_lib / calc_lib_kpi) * 100 if calc_lib_kpi > 0 else (100.0 if t_day_lib >= 0 else 0)
+            ld_pct = (t_day_ld / calc_ld_kpi) * 100 if calc_ld_kpi > 0 else (100.0 if t_day_ld >= 0 else 0)[cite: 14]
+            lib_pct = (t_day_lib / calc_lib_kpi) * 100 if calc_lib_kpi > 0 else (100.0 if t_day_lib >= 0 else 0)[cite: 14]
 
             if calc_ld_kpi > 0:
-                ld_advice = f"🌟 Doing Great! (Met {calc_ld_kpi:.0f}m KPI Standard)" if t_day_ld >= calc_ld_kpi else (f"⚠️ Needs Improvement (Below {calc_ld_kpi:.0f}m KPI Standard)" if t_day_ld > 0 else "❌ Action Required (0 Mins Logged)")
+                ld_advice = f"🌟 Doing Great! (Met {calc_ld_kpi:.0f}m KPI Standard)" if t_day_ld >= calc_ld_kpi else (f"⚠️ Needs Improvement (Below {calc_ld_kpi:.0f}m KPI Standard)" if t_day_ld > 0 else "❌ Action Required (0 Mins Logged)")[cite: 14]
             else:
-                ld_advice = "✅ Holiday / No-Class (No KPI Required)"
+                ld_advice = "✅ Holiday / No-Class (No KPI Required)"[cite: 14]
 
             if calc_lib_kpi > 0:
-                lib_advice = f"🌟 Doing Great! (Met {calc_lib_kpi:.0f}m KPI Standard)" if t_day_lib >= calc_lib_kpi else (f"⚠️ Needs Improvement (Below {calc_lib_kpi:.0f}m KPI Standard)" if t_day_lib > 0 else "❌ Action Required (0 Mins Logged)")
+                lib_advice = f"🌟 Doing Great! (Met {calc_lib_kpi:.0f}m KPI Standard)" if t_day_lib >= calc_lib_kpi else (f"⚠️ Needs Improvement (Below {calc_lib_kpi:.0f}m KPI Standard)" if t_day_lib > 0 else "❌ Action Required (0 Mins Logged)")[cite: 14]
             else:
-                lib_advice = "✅ Holiday / No-Class (No KPI Required)"
+                lib_advice = "✅ Holiday / No-Class (No KPI Required)"[cite: 14]
 
-            col_sum1, col_sum2 = st.columns([1, 1.2])
+            col_sum1, col_sum2 = st.columns([1, 1.2])[cite: 14]
 
             with col_sum1:
-                st.markdown("##### 📌 KPI Overview")
-                s1, s2 = st.columns(2)
-                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of KPI")
-                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of KPI")
+                st.markdown("##### 📌 KPI Overview")[cite: 14]
+                s1, s2 = st.columns(2)[cite: 14]
+                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of KPI")[cite: 14]
+                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of KPI")[cite: 14]
                 
-                st.markdown("##### 💡 Feedback & Recommendations")
-                if calc_ld_kpi == 0 and calc_lib_kpi == 0:
-                    st.info(f"🏖️ **Rest Day**: {target_teacher} selected filter falls on an excluded Holiday.")
-                elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:
-                    st.success(f"👏 **Excellent Work**: {target_teacher} achieved all KPIs for this {selected_num_days}-working day period!")
-                elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:
-                    st.error(f"⚠️ **Attention Needed**: {target_teacher} is below KPI standards for both Lesson Prep and Library Usage.")
+                st.markdown("##### 💡 Feedback & Recommendations")[cite: 14]
+                if calc_ld_kpi == 0 and calc_lib_kpi == 0:[cite: 14]
+                    st.info(f"🏖️ **Rest Day**: {target_teacher} selected filter falls on an excluded Holiday.")[cite: 14]
+                elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:[cite: 14]
+                    st.success(f"👏 **Excellent Work**: {target_teacher} achieved all KPIs for this {selected_num_days}-working day period!")[cite: 14]
+                elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:[cite: 14]
+                    st.error(f"⚠️ **Attention Needed**: {target_teacher} is below KPI standards for both Lesson Prep and Library Usage.")[cite: 14]
                 else:
-                    st.warning(f"💡 **Mixed Usage**: {target_teacher} met one benchmark but requires coaching in the other.")
+                    st.warning(f"💡 **Mixed Usage**: {target_teacher} met one benchmark but requires coaching in the other.")[cite: 14]
 
-                st.write(f"• **Lesson Plan Status**: {ld_advice}")
-                st.write(f"• **Library Usage Status**: {lib_advice}")
+                st.write(f"• **Lesson Plan Status**: {ld_advice}")[cite: 14]
+                st.write(f"• **Library Usage Status**: {lib_advice}")[cite: 14]
 
             with col_sum2:
-                st.markdown("##### 📊 KPI Achievement Comparison")
+                st.markdown("##### 📊 KPI Achievement Comparison")[cite: 14]
                 ach_df = pd.DataFrame({
                     'KPI Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)', f'Library Usage ({calc_lib_kpi:.0f}m)'],
                     'Logged Minutes': [t_day_ld, t_day_lib],
                     'KPI Standard': [calc_ld_kpi, calc_lib_kpi]
-                })
+                })[cite: 14]
                 
-                fig_ach = go.Figure()
+                fig_ach = go.Figure()[cite: 14]
                 fig_ach.add_trace(go.Bar(
                     x=ach_df['KPI Category'], y=ach_df['Logged Minutes'],
                     name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
-                ))
+                ))[cite: 14]
                 fig_ach.add_trace(go.Bar(
                     x=ach_df['KPI Category'], y=ach_df['KPI Standard'],
                     name='KPI Standard', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['KPI Standard']], textposition='auto'
-                ))
+                ))[cite: 14]
                 fig_ach.update_layout(
                     barmode='group', title=f"Logged Minutes vs. KPI Standard ({selected_num_days} Working Day(s))",
                     height=280, margin=dict(l=20, r=20, t=40, b=20)
-                )
-                st.plotly_chart(fig_ach, use_container_width=True)
+                )[cite: 14]
+                st.plotly_chart(fig_ach, use_container_width=True)[cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
             # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT
-            st.subheader("2. Book & Grade Digital Content Usage Report")
-            teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
+            st.subheader("2. Book & Grade Digital Content Usage Report")[cite: 14]
+            teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0][cite: 14]
             
             if teacher_books.empty:
-                st.info(f"No specific digital books or chapters were accessed by **{target_teacher}** during `{filter_description_text}`.")
+                st.info(f"No specific digital books or chapters were accessed by **{target_teacher}** during `{filter_description_text}`.")[cite: 14]
             else:
-                col_b1, col_b2 = st.columns(2)
+                col_b1, col_b2 = st.columns(2)[cite: 14]
                 with col_b1:
-                    t_book_summary = teacher_books.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()
+                    t_book_summary = teacher_books.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()[cite: 14]
                     fig_tb_bar = px.bar(
                         t_book_summary, x="Duration_Min", y="Book", color="Grade", orientation="h",
                         title=f"Books & Chapters Opened by {target_teacher} (Minutes)",
                         labels={"Duration_Min": "Minutes", "Book": "Book / Chapter"},
                         text_auto=".1f"
-                    )
-                    fig_tb_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=320)
-                    st.plotly_chart(fig_tb_bar, use_container_width=True)
+                    )[cite: 14]
+                    fig_tb_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=320)[cite: 14]
+                    st.plotly_chart(fig_tb_bar, use_container_width=True)[cite: 14]
                     
                 with col_b2:
-                    t_grade_summary = teacher_books.groupby('Grade')['Duration_Min'].sum().reset_index()
+                    t_grade_summary = teacher_books.groupby('Grade')['Duration_Min'].sum().reset_index()[cite: 14]
                     fig_tg_pie = px.pie(
                         t_grade_summary, names="Grade", values="Duration_Min",
                         title=f"Grade-Level Digital Time Share & Duration for {target_teacher}"
-                    )
+                    )[cite: 14]
                     fig_tg_pie.update_traces(
                         textinfo='value+percent',
                         texttemplate='%{label}: %{value:.1f} Mins<br>(%{percent})',
                         hovertemplate='<b>%{label}</b><br>Time Spent: %{value:.1f} Mins<br>Share: %{percent}'
-                    )
-                    fig_tg_pie.update_layout(height=320)
-                    st.plotly_chart(fig_tg_pie, use_container_width=True)
+                    )[cite: 14]
+                    fig_tg_pie.update_layout(height=320)[cite: 14]
+                    st.plotly_chart(fig_tg_pie, use_container_width=True)[cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB (WITH DATE & LESSON NUMBER LABELS)
-            st.subheader("3. Qualitative Evidences & Artifact Hub")
-            st.caption("Review authentic teacher pre-class voice notes, lesson plan pictures, in-class classroom activity videos, and student writing samples.")
+            # SECTION 3: QUALITATIVE EVIDENCE HUB (WITH GRADE, SUBJECT, LESSON PLAN & DATE CONTEXT)
+            st.subheader("3. Qualitative Evidences & Artifact Hub")[cite: 14]
+            st.caption("Review authentic teacher pre-class voice notes, lesson plan pictures, in-class classroom activity videos, and student writing samples for the active filter selection.")
 
-            evidence_source = teacher_all_data if not teacher_all_data.empty else teacher_date_data
+            # Uses filtered data according to global filters and dates
+            evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
             
             def extract_evidence_items(df_src, col_name):
                 if col_name not in df_src.columns:
@@ -781,8 +783,16 @@ else:
                     val = str(r[col_name]).strip()
                     if re.match(r'^https?://', val, re.IGNORECASE):
                         d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
-                        b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Activity"
-                        items.append({'url': val, 'date': d_str, 'lesson': b_str})
+                        g_str = f"Grade {r['Grade']}" if 'Grade' in r and str(r['Grade']).strip() else "Grade N/A"
+                        s_str = str(r['Subject']).strip() if 'Subject' in r and str(r['Subject']).strip() else "General Subject"
+                        b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Plan"
+                        items.append({
+                            'url': val,
+                            'date': d_str,
+                            'grade': g_str,
+                            'subject': s_str,
+                            'lesson': b_str
+                        })
                 seen = set()
                 deduped = []
                 for item in items:
@@ -819,7 +829,7 @@ else:
                     st.markdown("##### 🎧 Voice Notes")
                     if v_voice:
                         for item in v_voice:
-                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [Listen Audio]({item['url']})")
+                            st.markdown(f"• **{item['grade']}** | *{item['subject']}*<br>&nbsp;&nbsp;📖 **{item['lesson']}** ({item['date']}): [Listen Audio]({item['url']})", unsafe_allow_html=True)
                     else:
                         st.caption("None uploaded.")
 
@@ -827,7 +837,7 @@ else:
                     st.markdown("##### 🖼️ Lesson Pictures")
                     if v_pic:
                         for item in v_pic:
-                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [View Image]({item['url']})")
+                            st.markdown(f"• **{item['grade']}** | *{item['subject']}*<br>&nbsp;&nbsp;📖 **{item['lesson']}** ({item['date']}): [View Image]({item['url']})", unsafe_allow_html=True)
                     else:
                         st.caption("None uploaded.")
 
@@ -835,7 +845,7 @@ else:
                     st.markdown("##### 🎥 Activity Videos")
                     if v_vid:
                         for item in v_vid:
-                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [Watch Video]({item['url']})")
+                            st.markdown(f"• **{item['grade']}** | *{item['subject']}*<br>&nbsp;&nbsp;📖 **{item['lesson']}** ({item['date']}): [Watch Video]({item['url']})", unsafe_allow_html=True)
                     else:
                         st.caption("None uploaded.")
 
@@ -843,44 +853,44 @@ else:
                     st.markdown("##### 📝 Writing Samples")
                     if v_writing:
                         for item in v_writing:
-                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [View Sample]({item['url']})")
+                            st.markdown(f"• **{item['grade']}** | *{item['subject']}*<br>&nbsp;&nbsp;📖 **{item['lesson']}** ({item['date']}): [View Sample]({item['url']})", unsafe_allow_html=True)
                     else:
                         st.caption("None uploaded.")
 
             st.markdown("---")
 
             # SECTION 4: CLASSROOM AUDIT LOG
-            col_log_head, col_log_filt = st.columns([2, 1])
+            col_log_head, col_log_filt = st.columns([2, 1])[cite: 14]
             with col_log_head:
-                st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
+                st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")[cite: 14]
             with col_log_filt:
-                available_types = ["All Types"] + sorted(teacher_all_data['Type'].dropna().unique().tolist())
-                selected_type_filter = st.selectbox("Filter Audit Log by Type:", options=available_types)
+                available_types = ["All Types"] + sorted(teacher_all_data['Type'].dropna().unique().tolist())[cite: 14]
+                selected_type_filter = st.selectbox("Filter Audit Log by Type:", options=available_types)[cite: 14]
 
-            if selected_type_filter == "All Types":
-                filtered_audit_log = teacher_all_data
+            if selected_type_filter == "All Types":[cite: 14]
+                filtered_audit_log = teacher_all_data[cite: 14]
             else:
-                filtered_audit_log = teacher_all_data[teacher_all_data['Type'] == selected_type_filter]
+                filtered_audit_log = teacher_all_data[teacher_all_data['Type'] == selected_type_filter][cite: 14]
 
-            t_log_cols = ['Date', 'Type', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min']
-            t_avail_cols = [c for c in t_log_cols if c in filtered_audit_log.columns]
+            t_log_cols = ['Date', 'Type', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min'][cite: 14]
+            t_avail_cols = [c for c in t_log_cols if c in filtered_audit_log.columns][cite: 14]
             
             if filtered_audit_log.empty:
-                st.info(f"No logs found for type `{selected_type_filter}` during `{filter_description_text}`.")
+                st.info(f"No logs found for type `{selected_type_filter}` during `{filter_description_text}`.")[cite: 14]
             else:
-                t_display_log = filtered_audit_log[t_avail_cols].rename(columns={'Duration_Min': 'Minutes'}).sort_values(by='StartTime', ascending=False)
-                t_display_log['Minutes'] = t_display_log['Minutes'].round(1)
-                st.dataframe(t_display_log, use_container_width=True)
+                t_display_log = filtered_audit_log[t_avail_cols].rename(columns={'Duration_Min': 'Minutes'}).sort_values(by='StartTime', ascending=False)[cite: 14]
+                t_display_log['Minutes'] = t_display_log['Minutes'].round(1)[cite: 14]
+                st.dataframe(t_display_log, use_container_width=True)[cite: 14]
 
-                col_p1, col_p2 = st.columns(2)
+                col_p1, col_p2 = st.columns(2)[cite: 14]
                 with col_p1:
-                    csv_profile = t_display_log.to_csv(index=False).encode('utf-8')
+                    csv_profile = t_display_log.to_csv(index=False).encode('utf-8')[cite: 14]
                     st.download_button(
                         label=f"📥 Download Audit CSV for {target_teacher}",
                         data=csv_profile,
                         file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.csv",
                         mime="text/csv"
-                    )
+                    )[cite: 14]
                 with col_p2:
                     pdf_tab4 = generate_pdf_report(
                         title_text=f"👤 Teacher 360° Audit Report: {target_teacher}",
@@ -891,32 +901,32 @@ else:
                             "Books Opened": teacher_books['Book'].nunique() if not teacher_books.empty else 0
                         },
                         dataframe=t_display_log[['Date', 'Type', 'Grade', 'Subject', 'Book', 'Minutes']].head(25)
-                    )
+                    )[cite: 14]
                     st.download_button(
                         label="📄 Download 360° Profile Report (PDF)",
                         data=pdf_tab4,
                         file_name=f"{target_teacher.replace(' ', '_')}_360_Audit_Report.pdf",
                         mime="application/pdf"
-                    )
+                    )[cite: 14]
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
-        st.header("🏛️ Academic Manager Portfolio Overview")
-        st.caption("High-level classification and Week-on-Week Velocity tracking across your school portfolio.")
+        st.header("🏛️ Academic Manager Portfolio Overview")[cite: 14]
+        st.caption("High-level classification and Week-on-Week Velocity tracking across your school portfolio.")[cite: 14]
 
         if school_filtered_df.empty:
-            st.warning("No data available for the selected school filter.")
+            st.warning("No data available for the selected school filter.")[cite: 14]
         else:
-            school_stats = school_filtered_df.groupby(['Institution', 'Type'])['Duration_Min'].sum().unstack(fill_value=0.0).reset_index()
+            school_stats = school_filtered_df.groupby(['Institution', 'Type'])['Duration_Min'].sum().unstack(fill_value=0.0).reset_index()[cite: 14]
             
-            if 'lessonDelivery' not in school_stats.columns: school_stats['lessonDelivery'] = 0.0
-            if 'library' not in school_stats.columns: school_stats['library'] = 0.0
+            if 'lessonDelivery' not in school_stats.columns: school_stats['lessonDelivery'] = 0.0[cite: 14]
+            if 'library' not in school_stats.columns: school_stats['library'] = 0.0[cite: 14]
             
-            school_roster_count = school_master_roster.groupby('Institution')['FullName'].nunique().reset_index().rename(columns={'FullName': 'Roster_Teachers'})
-            school_stats = school_stats.merge(school_roster_count, on='Institution', how='left').fillna(1)
+            school_roster_count = school_master_roster.groupby('Institution')['FullName'].nunique().reset_index().rename(columns={'FullName': 'Roster_Teachers'})[cite: 14]
+            school_stats = school_stats.merge(school_roster_count, on='Institution', how='left').fillna(1)[cite: 14]
 
-            school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
-            school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
+            school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)[cite: 14]
+            school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)[cite: 14]
 
             def classify_school(row):
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
@@ -930,37 +940,37 @@ else:
                 else:
                     return '🚨 Priority Focus'
 
-            school_stats['Classification'] = school_stats.apply(classify_school, axis=1)
+            school_stats['Classification'] = school_stats.apply(classify_school, axis=1)[cite: 14]
 
             # --- 2x2 QUADRANT MATRIX GRID ---
-            st.subheader("🖼️ 2x2 Portfolio Classification Matrix")
+            st.subheader("🖼️ 2x2 Portfolio Classification Matrix")[cite: 14]
             
-            pace_setters = school_stats[school_stats['Classification'] == '🌟 Pace Setters']['Institution'].tolist()
-            lesson_focused = school_stats[school_stats['Classification'] == '📘 Lesson Focused']['Institution'].tolist()
-            library_focused = school_stats[school_stats['Classification'] == '📚 Library Focused']['Institution'].tolist()
-            priority_focus = school_stats[school_stats['Classification'] == '🚨 Priority Focus']['Institution'].tolist()
+            pace_setters = school_stats[school_stats['Classification'] == '🌟 Pace Setters']['Institution'].tolist()[cite: 14]
+            lesson_focused = school_stats[school_stats['Classification'] == '📘 Lesson Focused']['Institution'].tolist()[cite: 14]
+            library_focused = school_stats[school_stats['Classification'] == '📚 Library Focused']['Institution'].tolist()[cite: 14]
+            priority_focus = school_stats[school_stats['Classification'] == '🚨 Priority Focus']['Institution'].tolist()[cite: 14]
 
-            col_top1, col_top2 = st.columns(2)
+            col_top1, col_top2 = st.columns(2)[cite: 14]
             with col_top1:
-                st.success(f"🌟 **Pace Setters ({len(pace_setters)} Schools)**\n\n*Met both Lesson Prep (>={daily_ld_target:.0f}m) & Library (>={daily_lib_target:.0f}m) KPIs*\n\n" + (", ".join(pace_setters) if pace_setters else "None"))
+                st.success(f"🌟 **Pace Setters ({len(pace_setters)} Schools)**\n\n*Met both Lesson Prep (>={daily_ld_target:.0f}m) & Library (>={daily_lib_target:.0f}m) KPIs*\n\n" + (", ".join(pace_setters) if pace_setters else "None"))[cite: 14]
             with col_top2:
-                st.info(f"📘 **Lesson Focused ({len(lesson_focused)} Schools)**\n\n*Met Lesson Prep (>={daily_ld_target:.0f}m), Below Library (<{daily_lib_target:.0f}m)*\n\n" + (", ".join(lesson_focused) if lesson_focused else "None"))
+                st.info(f"📘 **Lesson Focused ({len(lesson_focused)} Schools)**\n\n*Met Lesson Prep (>={daily_ld_target:.0f}m), Below Library (<{daily_lib_target:.0f}m)*\n\n" + (", ".join(lesson_focused) if lesson_focused else "None"))[cite: 14]
 
-            col_bot1, col_bot2 = st.columns(2)
+            col_bot1, col_bot2 = st.columns(2)[cite: 14]
             with col_bot1:
-                st.warning(f"📚 **Library Focused ({len(library_focused)} Schools)**\n\n*Met Library (>={daily_lib_target:.0f}m), Below Lesson Prep (<{daily_ld_target:.0f}m)*\n\n" + (", ".join(library_focused) if library_focused else "None"))
+                st.warning(f"📚 **Library Focused ({len(library_focused)} Schools)**\n\n*Met Library (>={daily_lib_target:.0f}m), Below Lesson Prep (<{daily_ld_target:.0f}m)*\n\n" + (", ".join(library_focused) if library_focused else "None"))[cite: 14]
             with col_bot2:
-                st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below KPI Standards on both features*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
+                st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below KPI Standards on both features*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))[cite: 14]
 
-            st.markdown("---")
-            st.subheader("📋 Complete School Performance Leaderboard")
+            st.markdown("---")[cite: 14]
+            st.subheader("📋 Complete School Performance Leaderboard")[cite: 14]
             display_qtable = school_stats[['Institution', 'Roster_Teachers', 'Avg_Lesson_Prep_Mins', 'Avg_Library_Usage_Mins', 'Classification']].rename(columns={
                 'Institution': 'School Name',
                 'Roster_Teachers': 'Active Teachers',
                 'Avg_Lesson_Prep_Mins': 'Prep (m/day)',
                 'Avg_Library_Usage_Mins': 'Library (m/day)'
-            })
-            st.dataframe(display_qtable, use_container_width=True)
+            })[cite: 14]
+            st.dataframe(display_qtable, use_container_width=True)[cite: 14]
 
             pdf_tab5 = generate_pdf_report(
                 title_text="🏛️ Academic Manager Portfolio Review",
@@ -972,88 +982,88 @@ else:
                     "Priority Focus": len(priority_focus)
                 },
                 dataframe=display_qtable
-            )
+            )[cite: 14]
             st.download_button(
                 label="📄 Download Portfolio Overview Report (PDF)",
                 data=pdf_tab5,
                 file_name=f"Manager_Portfolio_Overview_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
-            )
+            )[cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
-            st.subheader("🚀 Week-on-Week (WoW) Portfolio Velocity")
+            st.subheader("🚀 Week-on-Week (WoW) Portfolio Velocity")[cite: 14]
             
-            if 'Week' in school_filtered_df.columns and school_filtered_df['Week'].nunique() >= 2:
-                weeks_sorted = sorted(school_filtered_df['Week'].unique())
-                latest_week = weeks_sorted[-1]
-                prev_week = weeks_sorted[-2]
+            if 'Week' in school_filtered_df.columns and school_filtered_df['Week'].nunique() >= 2:[cite: 14]
+                weeks_sorted = sorted(school_filtered_df['Week'].unique())[cite: 14]
+                latest_week = weeks_sorted[-1][cite: 14]
+                prev_week = weeks_sorted[-2][cite: 14]
 
-                st.caption(f"Comparing `{latest_week}` vs. `{prev_week}`")
+                st.caption(f"Comparing `{latest_week}` vs. `{prev_week}`")[cite: 14]
 
-                weekly_school = school_filtered_df.groupby(['Week', 'Institution'])['Duration_Min'].sum().unstack(level=0, fill_value=0.0).reset_index()
+                weekly_school = school_filtered_df.groupby(['Week', 'Institution'])['Duration_Min'].sum().unstack(level=0, fill_value=0.0).reset_index()[cite: 14]
                 
-                if latest_week in weekly_school.columns and prev_week in weekly_school.columns:
-                    weekly_school['WoW_Growth_Mins'] = weekly_school[latest_week] - weekly_school[prev_week]
+                if latest_week in weekly_school.columns and prev_week in weekly_school.columns:[cite: 14]
+                    weekly_school['WoW_Growth_Mins'] = weekly_school[latest_week] - weekly_school[prev_week][cite: 14]
                     weekly_school['WoW_Growth_Pct'] = np.where(
                         weekly_school[prev_week] > 0, 
                         (weekly_school['WoW_Growth_Mins'] / weekly_school[prev_week]) * 100, 
                         100.0
-                    )
+                    )[cite: 14]
 
-                    col_v1, col_v2 = st.columns(2)
+                    col_v1, col_v2 = st.columns(2)[cite: 14]
 
                     with col_v1:
-                        st.success("🔥 Top 5 Most Improved Schools (Highest WoW Growth)")
-                        top_improved = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=False).head(5)
+                        st.success("🔥 Top 5 Most Improved Schools (Highest WoW Growth)")[cite: 14]
+                        top_improved = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=False).head(5)[cite: 14]
                         fig_top = px.bar(
                             top_improved, x="WoW_Growth_Mins", y="Institution", orientation="h",
                             title="Top Accelerated Schools (+Mins)",
                             labels={"WoW_Growth_Mins": "Added Minutes Logged", "Institution": "School"},
                             color_discrete_sequence=['#2CA02C'], text_auto=".1f"
-                        )
-                        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_top, use_container_width=True)
+                        )[cite: 14]
+                        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})[cite: 14]
+                        st.plotly_chart(fig_top, use_container_width=True)[cite: 14]
 
                     with col_v2:
-                        st.error("🚨 Top 5 Priority Intervention Schools (Highest Usage Drop)")
-                        top_declining = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=True).head(5)
+                        st.error("🚨 Top 5 Priority Intervention Schools (Highest Usage Drop)")[cite: 14]
+                        top_declining = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=True).head(5)[cite: 14]
                         fig_bot = px.bar(
                             top_declining, x="WoW_Growth_Mins", y="Institution", orientation="h",
                             title="Highest Usage Drop Schools (-Mins)",
                             labels={"WoW_Growth_Mins": "Dropped Minutes Logged", "Institution": "School"},
                             color_discrete_sequence=['#D62728'], text_auto=".1f"
-                        )
-                        fig_bot.update_layout(yaxis={'categoryorder':'total descending'})
-                        st.plotly_chart(fig_bot, use_container_width=True)
+                        )[cite: 14]
+                        fig_bot.update_layout(yaxis={'categoryorder':'total descending'})[cite: 14]
+                        st.plotly_chart(fig_bot, use_container_width=True)[cite: 14]
 
             else:
-                st.info("Upload data covering at least 2 weeks to unlock Week-on-Week Velocity rankings.")
+                st.info("Upload data covering at least 2 weeks to unlock Week-on-Week Velocity rankings.")[cite: 14]
 
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
-        st.header("🏫 School-Level Teacher Progression & Execution Tiers")
-        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards (🌟 Achiever >= 100%, ⚠️ Fluctuating 40%-99%, ❌ Inactive < 40%).")
+        st.header("🏫 School-Level Teacher Progression & Execution Tiers")[cite: 14]
+        st.caption("Drill down into any individual school to classify teachers into execution tiers based on benchmark standards (🌟 Achiever >= 100%, ⚠️ Fluctuating 40%-99%, ❌ Inactive < 40%).")[cite: 14]
 
-        all_schools_list_t6 = sorted(school_master_roster['Institution'].unique())
+        all_schools_list_t6 = sorted(school_master_roster['Institution'].unique())[cite: 14]
         
         if not all_schools_list_t6:
-            st.info("No schools found in roster.")
+            st.info("No schools found in roster.")[cite: 14]
         else:
-            target_school_t6 = st.selectbox("Select School to Inspect:", options=all_schools_list_t6)
+            target_school_t6 = st.selectbox("Select School to Inspect:", options=all_schools_list_t6)[cite: 14]
 
-            school_t6_roster = school_master_roster[school_master_roster['Institution'] == target_school_t6]
-            school_t6_data = school_filtered_df[school_filtered_df['Institution'] == target_school_t6]
+            school_t6_roster = school_master_roster[school_master_roster['Institution'] == target_school_t6][cite: 14]
+            school_t6_data = school_filtered_df[school_filtered_df['Institution'] == target_school_t6][cite: 14]
 
-            st.markdown(f"### 🏫 School Audit: **{target_school_t6}** | Active Roster: **{len(school_t6_roster)} Teachers**")
+            st.markdown(f"### 🏫 School Audit: **{target_school_t6}** | Active Roster: **{len(school_t6_roster)} Teachers**")[cite: 14]
 
-            st.subheader("1. Teacher Execution Tiers")
+            st.subheader("1. Teacher Execution Tiers")[cite: 14]
 
-            t6_ld = school_t6_data[school_t6_data['Type'] == 'lessonDelivery'].groupby('FullName')['Duration_Min'].sum().reset_index()
-            t6_lib = school_t6_data[school_t6_data['Type'] == 'library'].groupby('FullName')['Duration_Min'].sum().reset_index()
+            t6_ld = school_t6_data[school_t6_data['Type'] == 'lessonDelivery'].groupby('FullName')['Duration_Min'].sum().reset_index()[cite: 14]
+            t6_lib = school_t6_data[school_t6_data['Type'] == 'library'].groupby('FullName')['Duration_Min'].sum().reset_index()[cite: 14]
 
-            t6_teachers = school_t6_roster.merge(t6_ld.rename(columns={'Duration_Min': 'Lesson_Mins'}), on='FullName', how='left').fillna(0.0)
-            t6_teachers = t6_teachers.merge(t6_lib.rename(columns={'Duration_Min': 'Library_Mins'}), on='FullName', how='left').fillna(0.0)
+            t6_teachers = school_t6_roster.merge(t6_ld.rename(columns={'Duration_Min': 'Lesson_Mins'}), on='FullName', how='left').fillna(0.0)[cite: 14]
+            t6_teachers = t6_teachers.merge(t6_lib.rename(columns={'Duration_Min': 'Library_Mins'}), on='FullName', how='left').fillna(0.0)[cite: 14]
 
             def tier_teacher(row):
                 ld_pct = (row['Lesson_Mins'] / calc_ld_kpi) if calc_ld_kpi > 0 else 1.0
@@ -1066,28 +1076,28 @@ else:
                 else:
                     return '⚠️ Fluctuating / Partial (40%-99%)'
 
-            t6_teachers['Execution_Tier'] = t6_teachers.apply(tier_teacher, axis=1)
+            t6_teachers['Execution_Tier'] = t6_teachers.apply(tier_teacher, axis=1)[cite: 14]
 
-            e1, e2, e3 = st.columns(3)
-            num_ach = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('🌟')])
-            num_fluc = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('⚠️')])
-            num_inact = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('❌')])
+            e1, e2, e3 = st.columns(3)[cite: 14]
+            num_ach = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('🌟')])[cite: 14]
+            num_fluc = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('⚠️')])[cite: 14]
+            num_inact = len(t6_teachers[t6_teachers['Execution_Tier'].str.startswith('❌')])[cite: 14]
 
-            e1.metric("🌟 Consistent Achievers", num_ach)
-            e2.metric("⚠️ Fluctuating / Partial", num_fluc)
-            e3.metric("❌ Persistent Inactive", num_inact)
+            e1.metric("🌟 Consistent Achievers", num_ach)[cite: 14]
+            e2.metric("⚠️ Fluctuating / Partial", num_fluc)[cite: 14]
+            e3.metric("❌ Persistent Inactive", num_inact)[cite: 14]
 
             fig_t6_bar = px.bar(
                 t6_teachers, x="FullName", y=["Lesson_Mins", "Library_Mins"],
                 title=f"Teacher Usage Breakdown for {target_school_t6} (Mins)",
                 labels={"FullName": "Teacher Name", "value": "Logged Minutes", "variable": "Feature"},
                 barmode="group", text_auto=".1f"
-            )
-            st.plotly_chart(fig_t6_bar, use_container_width=True)
+            )[cite: 14]
+            st.plotly_chart(fig_t6_bar, use_container_width=True)[cite: 14]
 
-            st.subheader("📋 Teacher Execution Tier Table")
-            display_t6_table = t6_teachers.rename(columns={'FullName': 'Teacher Name', 'Lesson_Mins': 'Lesson Prep (m)', 'Library_Mins': 'Library Usage (m)', 'Execution_Tier': 'Execution Tier'})
-            st.dataframe(display_t6_table, use_container_width=True)
+            st.subheader("📋 Teacher Execution Tier Table")[cite: 14]
+            display_t6_table = t6_teachers.rename(columns={'FullName': 'Teacher Name', 'Lesson_Mins': 'Lesson Prep (m)', 'Library_Mins': 'Library Usage (m)', 'Execution_Tier': 'Execution Tier'})[cite: 14]
+            st.dataframe(display_t6_table, use_container_width=True)[cite: 14]
 
             pdf_tab6 = generate_pdf_report(
                 title_text=f"🏫 School Inspection Report: {target_school_t6}",
@@ -1098,47 +1108,118 @@ else:
                     "Persistent Inactive": num_inact
                 },
                 dataframe=display_t6_table[['Teacher Name', 'Lesson Prep (m)', 'Library Usage (m)', 'Execution Tier']]
-            )
+            )[cite: 14]
             st.download_button(
                 label=f"📄 Download {target_school_t6} Inspection Report (PDF)",
                 data=pdf_tab6,
                 file_name=f"{target_school_t6.replace(' ', '_')}_Execution_Report.pdf",
                 mime="application/pdf"
-            )
+            )[cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
-            st.subheader("2. Grade & Subject Digital Content Coverage")
+            st.subheader("2. Grade & Subject Digital Content Coverage")[cite: 14]
 
-            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:
-                st.info("No chapter or book usage logs recorded for this school.")
+            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:[cite: 14]
+                st.info("No chapter or book usage logs recorded for this school.")[cite: 14]
             else:
-                col_t6_g1, col_t6_g2 = st.columns(2)
+                col_t6_g1, col_t6_g2 = st.columns(2)[cite: 14]
 
                 with col_t6_g1:
-                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()
+                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()[cite: 14]
                     fig_g6 = px.bar(
                         grade_t6, x="Grade", y="Duration_Min", color="Grade",
                         title="Digital Classroom Time by Grade Level (Mins)",
                         text_auto=".1f"
-                    )
-                    st.plotly_chart(fig_g6, use_container_width=True)
+                    )[cite: 14]
+                    st.plotly_chart(fig_g6, use_container_width=True)[cite: 14]
 
                 with col_t6_g2:
-                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()
+                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()[cite: 14]
                     fig_s6 = px.pie(
                         subj_t6, names="Subject", values="Duration_Min",
                         title="Subject / Module Distribution in School"
-                    )
-                    st.plotly_chart(fig_s6, use_container_width=True)
+                    )[cite: 14]
+                    st.plotly_chart(fig_s6, use_container_width=True)[cite: 14]
 
-    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED
+    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT
     with tab7:
-        st.header("📬 Live Evidence Submissions Feed")
-        st.caption("Complete log of all qualitative evidence submissions from the Teacher Portal across the filtered database.")
+        st.header("📊 Student Assessment Outcomes & Impact Analysis")[cite: 14]
+        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")[cite: 14]
 
-        evidence_cols = ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
-        avail_ev_cols = [c for c in evidence_cols if c in filtered_df.columns]
+        assess_df = school_filtered_df.copy()[cite: 14]
+        
+        # Robust conversion to numeric to resolve string dtype mean reduction error
+        if 'Assessment_Score_Pct' in assess_df.columns:[cite: 14]
+            assess_df['Assessment_Score_Pct'] = pd.to_numeric(assess_df['Assessment_Score_Pct'], errors='coerce')[cite: 14]
+            assess_df = assess_df.dropna(subset=['Assessment_Score_Pct'])[cite: 14]
+
+        if 'Assessment_Score_Pct' not in school_filtered_df.columns or assess_df.empty:[cite: 14]
+            st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")[cite: 14]
+        else:
+            a_col1, a_col2, a_col3 = st.columns(3)[cite: 14]
+            avg_score = float(assess_df['Assessment_Score_Pct'].mean())[cite: 14]
+            pass_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 40.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0[cite: 14]
+            high_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 75.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0[cite: 14]
+
+            a_col1.metric("Average Assessment Score", f"{avg_score:.1f}%")[cite: 14]
+            a_col2.metric("Pass Rate (>= 40%)", f"{pass_rate:.1f}%")[cite: 14]
+            a_col3.metric("High Performers (>= 75%)", f"{high_rate:.1f}%")[cite: 14]
+
+            st.markdown("---")[cite: 14]
+
+            col_a1, col_a2 = st.columns(2)[cite: 14]
+
+            with col_a1:
+                st.subheader("📚 Subject-Wise Assessment Scores")[cite: 14]
+                subj_score = assess_df.groupby('Subject')['Assessment_Score_Pct'].mean().reset_index()[cite: 14]
+                fig_as = px.bar(
+                    subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject",
+                    title="Average Assessment Score by Subject (%)", text_auto=".1f"
+                )[cite: 14]
+                fig_as.add_hline(y=75.0, line_dash="dash", line_color="green", annotation_text="Distinction Goal (75%)")[cite: 14]
+                st.plotly_chart(fig_as, use_container_width=True)[cite: 14]
+
+            with col_a2:
+                st.subheader("🏫 Grade-Level Performance Impact")[cite: 14]
+                grade_score = assess_df.groupby('Grade')['Assessment_Score_Pct'].mean().reset_index()[cite: 14]
+                fig_ag = px.bar(
+                    grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade",
+                    title="Average Assessment Score by Grade Level (%)", text_auto=".1f"
+                )[cite: 14]
+                st.plotly_chart(fig_ag, use_container_width=True)[cite: 14]
+
+            st.markdown("---")[cite: 14]
+            st.subheader("📋 Granular Assessment Leaderboard")[cite: 14]
+            display_assess_table = assess_df[['Institution', 'FullName', 'Grade', 'Subject', 'Assessment_Score_Pct']].rename(columns={
+                'Institution': 'School', 'FullName': 'Teacher Name', 'Assessment_Score_Pct': 'Average Score (%)'
+            })[cite: 14]
+            st.dataframe(display_assess_table, use_container_width=True)[cite: 14]
+
+            pdf_tab7 = generate_pdf_report(
+                title_text="📊 Student Assessment Outcomes Report",
+                subtitle_text=f"Period: {filter_description_text} | Total Evaluated Records: {len(assess_df)}",
+                summary_metrics={
+                    "Average Score": f"{avg_score:.1f}%",
+                    "Pass Rate": f"{pass_rate:.1f}%",
+                    "High Performers": f"{high_rate:.1f}%"
+                },
+                dataframe=display_assess_table
+            )[cite: 14]
+            st.download_button(
+                label="📄 Download Assessment Outcomes Report (PDF)",
+                data=pdf_tab7,
+                file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )[cite: 14]
+
+    # TAB 8: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED
+    with tab8:
+        st.header("📬 Live Evidence Submissions Feed")[cite: 14]
+        st.caption("Complete log of all qualitative evidence submissions from the Teacher Portal across the filtered database.")[cite: 14]
+
+        evidence_cols = ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link'][cite: 14]
+        avail_ev_cols = [c for c in evidence_cols if c in filtered_df.columns][cite: 14]
 
         def has_valid_evidence(row):
             for col in avail_ev_cols:
@@ -1147,66 +1228,66 @@ else:
                     return True
             return False
 
-        all_submissions_df = filtered_df[filtered_df.apply(has_valid_evidence, axis=1)].copy() if not filtered_df.empty and avail_ev_cols else pd.DataFrame()
+        all_submissions_df = filtered_df[filtered_df.apply(has_valid_evidence, axis=1)].copy() if not filtered_df.empty and avail_ev_cols else pd.DataFrame()[cite: 14]
 
         if all_submissions_df.empty:
-            st.info("No teacher evidence submissions match the currently selected global filter criteria.")
+            st.info("No teacher evidence submissions match the currently selected global filter criteria.")[cite: 14]
         else:
-            col_t7_f1, col_t7_f2, col_t7_f3 = st.columns(3)
-            with col_t7_f1:
-                t7_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
-                t7_selected_school = st.selectbox("Filter by School:", t7_schools, key="t7_school")
+            col_t8_f1, col_t8_f2, col_t8_f3 = st.columns(3)[cite: 14]
+            with col_t8_f1:
+                t8_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])[cite: 14]
+                t8_selected_school = st.selectbox("Filter by School:", t8_schools, key="t8_school")[cite: 14]
             
-            t7_filtered = all_submissions_df if t7_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t7_selected_school]
+            t8_filtered = all_submissions_df if t8_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t8_selected_school][cite: 14]
 
-            with col_t7_f2:
-                t7_teachers = ["All Teachers"] + sorted([t for t in t7_filtered['FullName'].unique() if str(t).strip()])
-                t7_selected_teacher = st.selectbox("Filter by Teacher:", t7_teachers, key="t7_teacher")
+            with col_t8_f2:
+                t8_teachers = ["All Teachers"] + sorted([t for t in t8_filtered['FullName'].unique() if str(t).strip()])[cite: 14]
+                t8_selected_teacher = st.selectbox("Filter by Teacher:", t8_teachers, key="t8_teacher")[cite: 14]
 
-            if t7_selected_teacher != "All Teachers":
-                t7_filtered = t7_filtered[t7_filtered['FullName'] == t7_selected_teacher]
+            if t8_selected_teacher != "All Teachers":
+                t8_filtered = t8_filtered[t8_filtered['FullName'] == t8_selected_teacher][cite: 14]
 
-            with col_t7_f3:
-                t7_grades = ["All Grades"] + sorted([g for g in t7_filtered['Grade'].unique() if str(g).strip()])
-                t7_selected_grade = st.selectbox("Filter by Grade:", t7_grades, key="t7_grade")
+            with col_t8_f3:
+                t8_grades = ["All Grades"] + sorted([g for g in t8_filtered['Grade'].unique() if str(g).strip()])[cite: 14]
+                t8_selected_grade = st.selectbox("Filter by Grade:", t8_grades, key="t8_grade")[cite: 14]
 
-            if t7_selected_grade != "All Grades":
-                t7_filtered = t7_filtered[t7_filtered['Grade'] == t7_selected_grade]
+            if t8_selected_grade != "All Grades":
+                t8_filtered = t8_filtered[t8_filtered['Grade'] == t8_selected_grade][cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
             # Metrics for Filtered Submissions
-            tot_subs = len(t7_filtered)
-            tot_audios = sum([1 for l in t7_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t7_filtered.columns else 0
-            tot_pics = sum([1 for l in t7_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t7_filtered.columns else 0
+            tot_subs = len(t8_filtered)[cite: 14]
+            tot_audios = sum([1 for l in t8_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t8_filtered.columns else 0[cite: 14]
+            tot_pics = sum([1 for l in t8_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t8_filtered.columns else 0[cite: 14]
             
-            tot_vids = 0
-            for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
-                if vc in t7_filtered.columns:
-                    tot_vids += sum([1 for l in t7_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+            tot_vids = 0[cite: 14]
+            for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:[cite: 14]
+                if vc in t8_filtered.columns:[cite: 14]
+                    tot_vids += sum([1 for l in t8_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])[cite: 14]
 
-            tot_writing = sum([1 for l in t7_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t7_filtered.columns else 0
+            tot_writing = sum([1 for l in t8_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t8_filtered.columns else 0[cite: 14]
 
-            m_c1, m_c2, m_c3, m_c4, m_c5 = st.columns(5)
-            m_c1.metric("📋 Total Submission Logs", tot_subs)
-            m_c2.metric("🎧 Audio Voice Notes", tot_audios)
-            m_c3.metric("🖼️ LP Pictures", tot_pics)
-            m_c4.metric("🎥 Videos Uploaded", tot_vids)
-            m_c5.metric("📝 Writing Samples", tot_writing)
+            m_c1, m_c2, m_c3, m_c4, m_c5 = st.columns(5)[cite: 14]
+            m_c1.metric("📋 Total Submission Logs", tot_subs)[cite: 14]
+            m_c2.metric("🎧 Audio Voice Notes", tot_audios)[cite: 14]
+            m_c3.metric("🖼️ LP Pictures", tot_pics)[cite: 14]
+            m_c4.metric("🎥 Videos Uploaded", tot_vids)[cite: 14]
+            m_c5.metric("📝 Writing Samples", tot_writing)[cite: 14]
 
-            st.markdown("---")
+            st.markdown("---")[cite: 14]
 
             # Submissions Display Table
-            t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
-            t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
+            t8_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link'][cite: 14]
+            t8_avail = [c for c in t8_display_cols if c in t8_filtered.columns][cite: 14]
             
-            t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
-            st.dataframe(t7_table, use_container_width=True)
+            t8_table = t8_filtered[t8_avail].sort_values(by='StartTime', ascending=False)[cite: 14]
+            st.dataframe(t8_table, use_container_width=True)[cite: 14]
 
-            csv_t7 = t7_table.to_csv(index=False).encode('utf-8')
+            csv_t8 = t8_table.to_csv(index=False).encode('utf-8')[cite: 14]
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
-                data=csv_t7,
+                data=csv_t8,
                 file_name="Teacher_Evidence_Submissions.csv",
                 mime="text/csv"
-            )
+            )[cite: 14]
