@@ -1058,10 +1058,10 @@ else:
             school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
             school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
 
-            # Compute Qualitative Artifact Counts per School
+            # Compute Qualitative Artifact Counts per School honoring global filters/dates
             qual_agg = []
             for s_name in school_stats['Institution'].unique():
-                s_data = school_filtered_df[school_filtered_df['Institution'] == s_name]
+                s_data = filtered_df[filtered_df['Institution'] == s_name]
                 s_vids = 0
                 for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
                     if vc in s_data.columns:
