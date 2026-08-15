@@ -20,7 +20,7 @@ st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review D
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
-    SUPABASE_URL = st.secrets["supabase"]["url"]
+    SUPABASE_URL = st.secrets["supabase"]["url"].rstrip('/')
     SUPABASE_KEY = st.secrets["supabase"]["key"]
     BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
     PARQUET_FILE_NAME = "master_database.parquet"
@@ -441,15 +441,16 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 7 Dedicated Meeting Review Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # 8 Dedicated Meeting Review Tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📊 7. Student Assessment Outcomes"
+        "📊 7. Student Assessment Outcomes",
+        "📬 8. Live Evidence Submissions Feed"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
@@ -808,22 +809,23 @@ else:
 
             v_cols = st.columns(4)
             
-            # Use teacher_all_data so all uploaded files are visible regardless of date filters
             evidence_source = teacher_all_data if not teacher_all_data.empty else teacher_date_data
             
-            voice_links = [l for l in evidence_source['Voice_Note_Link'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Voice_Note_Link' in evidence_source.columns else []
+            # Strict regex filter so only real, populated HTTP web links are counted
+            voice_links = [str(l).strip() for l in evidence_source['Voice_Note_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Voice_Note_Link' in evidence_source.columns else []
             v_cols[0].metric("🎧 Voice Notes", len(voice_links))
 
-            pic_links = [l for l in evidence_source['Lesson_Plan_Picture'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Lesson_Plan_Picture' in evidence_source.columns else []
+            pic_links = [str(l).strip() for l in evidence_source['Lesson_Plan_Picture'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Lesson_Plan_Picture' in evidence_source.columns else []
             v_cols[1].metric("🖼️ LP Pictures", len(pic_links))
             
             video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in evidence_source.columns]
-            video_count = 0
-            if video_cols_exist:
-                video_count = evidence_source[video_cols_exist].notna().sum().sum()
-            v_cols[2].metric("🎥 Videos", video_count)
+            all_vids = []
+            for col in video_cols_exist:
+                all_vids.extend([str(l).strip() for l in evidence_source[col].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+            all_vids = list(set(all_vids))
+            v_cols[2].metric("🎥 Videos", len(all_vids))
 
-            writing_links = [l for l in evidence_source['Writing_Sample_Link'].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none'] if 'Writing_Sample_Link' in evidence_source.columns else []
+            writing_links = [str(l).strip() for l in evidence_source['Writing_Sample_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Writing_Sample_Link' in evidence_source.columns else []
             v_cols[3].metric("📝 Writing Samples", len(writing_links))
 
             with st.expander("🔍 View & Audit Submitted Artifact Files & Links", expanded=True):
@@ -833,10 +835,7 @@ else:
                     st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
                         for idx, link in enumerate(voice_links, 1):
-                            if str(link).startswith("http"):
-                                st.markdown(f"• [Listen #{idx}]({link})")
-                            else:
-                                st.text(f"• File #{idx}")
+                            st.markdown(f"• [Audio Recording #{idx}]({link})")
                     else:
                         st.caption("None uploaded.")
 
@@ -844,23 +843,15 @@ else:
                     st.markdown("##### 🖼️ Lesson Pictures")
                     if pic_links:
                         for idx, link in enumerate(pic_links, 1):
-                            if str(link).startswith("http"):
-                                st.markdown(f"• [View Pic #{idx}]({link})")
-                            else:
-                                st.text(f"• File #{idx}")
+                            st.markdown(f"• [Lesson Image #{idx}]({link})")
                     else:
                         st.caption("None uploaded.")
 
                 with q_cols3:
                     st.markdown("##### 🎥 Activity Videos")
-                    if video_count > 0:
-                        for col in video_cols_exist:
-                            v_list = [l for l in evidence_source[col].dropna().unique().tolist() if str(l).strip() and str(l).lower() != 'none']
-                            for idx, link in enumerate(v_list, 1):
-                                if str(link).startswith("http"):
-                                    st.markdown(f"• [Video #{idx}]({link})")
-                                else:
-                                    st.text(f"• Video #{idx}")
+                    if all_vids:
+                        for idx, link in enumerate(all_vids, 1):
+                            st.markdown(f"• [Activity Video #{idx}]({link})")
                     else:
                         st.caption("None uploaded.")
 
@@ -868,10 +859,7 @@ else:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
                         for idx, link in enumerate(writing_links, 1):
-                            if str(link).startswith("http"):
-                                st.markdown(f"• [Sample #{idx}]({link})")
-                            else:
-                                st.text(f"• Sample #{idx}")
+                            st.markdown(f"• [Student Work #{idx}]({link})")
                     else:
                         st.caption("None uploaded.")
 
@@ -1224,4 +1212,85 @@ else:
                 data=pdf_tab7,
                 file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
+            )
+
+    # TAB 8: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED (Independent of Global Filters)
+    with tab8:
+        st.header("📬 Live Evidence Submissions Feed")
+        st.caption("Complete, unfiltered log of all qualitative evidence submissions from the Teacher Portal across the entire master database.")
+
+        evidence_cols = ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
+        avail_ev_cols = [c for c in evidence_cols if c in df.columns]
+
+        def has_valid_evidence(row):
+            for col in avail_ev_cols:
+                val = str(row[col]).strip()
+                if re.match(r'^https?://', val, re.IGNORECASE):
+                    return True
+            return False
+
+        all_submissions_df = df[df.apply(has_valid_evidence, axis=1)].copy() if not df.empty and avail_ev_cols else pd.DataFrame()
+
+        if all_submissions_df.empty:
+            st.info("No teacher evidence submissions found yet in the cloud database.")
+        else:
+            # Independent In-Tab Drilldown Filters
+            col_t8_f1, col_t8_f2, col_t8_f3 = st.columns(3)
+            with col_t8_f1:
+                t8_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
+                t8_selected_school = st.selectbox("Filter by School:", t8_schools, key="t8_school")
+            
+            t8_filtered = all_submissions_df if t8_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t8_selected_school]
+
+            with col_t8_f2:
+                t8_teachers = ["All Teachers"] + sorted([t for t in t8_filtered['FullName'].unique() if str(t).strip()])
+                t8_selected_teacher = st.selectbox("Filter by Teacher:", t8_teachers, key="t8_teacher")
+
+            if t8_selected_teacher != "All Teachers":
+                t8_filtered = t8_filtered[t8_filtered['FullName'] == t8_selected_teacher]
+
+            with col_t8_f3:
+                t8_grades = ["All Grades"] + sorted([g for g in t8_filtered['Grade'].unique() if str(g).strip()])
+                t8_selected_grade = st.selectbox("Filter by Grade:", t8_grades, key="t8_grade")
+
+            if t8_selected_grade != "All Grades":
+                t8_filtered = t8_filtered[t8_filtered['Grade'] == t8_selected_grade]
+
+            st.markdown("---")
+
+            # Metrics for Filtered Submissions
+            tot_subs = len(t8_filtered)
+            tot_audios = sum([1 for l in t8_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t8_filtered.columns else 0
+            tot_pics = sum([1 for l in t8_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t8_filtered.columns else 0
+            
+            tot_vids = 0
+            for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+                if vc in t8_filtered.columns:
+                    tot_vids += sum([1 for l in t8_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+
+            tot_writing = sum([1 for l in t8_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t8_filtered.columns else 0
+
+            m_c1, m_c2, m_c3, m_c4, m_c5 = st.columns(5)
+            m_c1.metric("📋 Total Submission Logs", tot_subs)
+            m_c2.metric("🎧 Audio Voice Notes", tot_audios)
+            m_c3.metric("🖼️ LP Pictures", tot_pics)
+            m_c4.metric("🎥 Videos Uploaded", tot_vids)
+            m_c5.metric("📝 Writing Samples", tot_writing)
+
+            st.markdown("---")
+
+            # Submissions Display Table
+            t8_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
+            t8_avail = [c for c in t8_display_cols if c in t8_filtered.columns]
+            
+            t8_table = t8_filtered[t8_avail].sort_values(by='StartTime', ascending=False)
+            st.dataframe(t8_table, use_container_width=True)
+
+            # Download CSV Button
+            csv_t8 = t8_table.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Evidence Submissions Log (CSV)",
+                data=csv_t8,
+                file_name="All_Teacher_Evidence_Submissions.csv",
+                mime="text/csv"
             )
