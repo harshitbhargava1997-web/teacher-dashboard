@@ -62,14 +62,11 @@ def normalize_identity_columns(df):
             out[col] = ""
         out[col] = out[col].map(_norm_text)
 
-    # Prefer the already-populated FullName. Only construct it when it is missing.
     calculated_full = (
         out["FirstName"].fillna("") + " " + out["LastName"].fillna("")
     ).map(_norm_text)
     empty_full = out["FullName"].eq("")
     out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
-
-    # Keep the existing application's sentinel for genuinely missing teacher names.
     out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"
     return out
 
@@ -81,8 +78,6 @@ def build_teacher_roster(df):
 
     roster = normalize_identity_columns(df)
 
-    # Prefer rows that are explicitly teachers when Role is available; otherwise fall back
-    # to all valid named identity rows so an imperfect UserMetrics export still works.
     role_key = roster["Role"].map(_norm_key)
     teacher_mask = role_key.isin({"teacher", "teachers"})
     if teacher_mask.any():
@@ -97,7 +92,6 @@ def build_teacher_roster(df):
         & ~candidate["FullName"].map(_norm_key).isin({"nan", "unknown teacher", "none"})
     ]
 
-    # Keep the original display spelling, but deduplicate using normalized keys.
     candidate["_institution_key"] = candidate["Institution"].map(_norm_key)
     candidate["_teacher_key"] = candidate["FullName"].map(_norm_key)
     candidate = candidate.drop_duplicates(
@@ -108,9 +102,6 @@ def build_teacher_roster(df):
 
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
-    """
-    Generates a professional PDF document in memory and returns a downloadable BytesIO buffer.
-    """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -131,7 +122,6 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
     if not dataframe.empty:
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        
         cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)
         header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
 
@@ -161,24 +151,20 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
-    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
         holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else []
-        
         w_mask = '1111110' if exclude_sundays else '1111111'
         return int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np))
     except Exception:
         return 1
 
-# Page layout title
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
 st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, and **Assessment Outcomes**.")
 
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
-    """Load master database, merge UserMetrics uploads, preserve teacher identity, and sync Supabase."""
     master_df = fetch_master_db_from_supabase()
 
     if not new_upload_dfs:
@@ -188,8 +174,6 @@ def load_or_update_master_db(new_upload_dfs=None):
     all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
 
-    # Existing admin dedup logic is preserved, with Book included so multiple lesson
-    # submissions by the same teacher on the same day do not collapse into one row.
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
     master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
@@ -220,8 +204,6 @@ if uploaded_files:
     for file in uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
-            
-            # --- IDENTITY NORMALIZATION ---
             temp_df = normalize_identity_columns(temp_df)
             if temp_df['Institution'].eq('').all():
                 temp_df['Institution'] = "Default School"
@@ -254,7 +236,6 @@ if uploaded_files:
             if 'StartTime' in temp_df.columns:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
-            # Optional Qualitative Link Columns
             for qual_col in ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
@@ -263,7 +244,6 @@ if uploaded_files:
         except Exception as e:
             st.sidebar.error(f"Error reading {file.name}: {e}")
 
-# Load or Sync Supabase Parquet Database
 if new_processed_dfs:
     df = load_or_update_master_db(new_processed_dfs)
     st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Parquet DB!")
@@ -274,7 +254,6 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Supabase Cloud Database Status")
 
-# Add Sync & Refresh Controls
 if st.sidebar.button("🔄 Sync Latest Teacher Submissions"):
     fetch_master_db_from_supabase.clear()
     st.rerun()
@@ -295,18 +274,17 @@ if not current_db_check.empty:
 if df.empty:
     st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")
 else:
-    # Ensure FullName is present in main df if loaded from cloud
     if 'FullName' not in df.columns:
         if 'FirstName' in df.columns and 'LastName' in df.columns:
             df['FullName'] = (df['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip()) + " " + df['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
         else:
             df['FullName'] = 'Unknown Teacher'
 
-    # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
-        df['Date'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.date
-        df['Month_Name'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%B %Y')
-        df['Month_Sort'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%Y-%m')
+        df['StartTime'] = pd.to_datetime(df['StartTime'], errors='coerce')
+        df['Date'] = df['StartTime'].dt.date
+        df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
+        df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')
         
         def get_week_of_month(dt):
             try:
@@ -317,7 +295,7 @@ else:
             except:
                 return 1
                 
-        df['Week_Num'] = pd.to_datetime(df['StartTime'], errors='coerce').apply(get_week_of_month)
+        df['Week_Num'] = df['StartTime'].apply(get_week_of_month)
         
         week_ranges = df.groupby(['Month_Name', 'Week_Num'])['Date'].agg(['min', 'max']).reset_index()
         week_ranges['Week_Date_Range'] = (
@@ -326,15 +304,13 @@ else:
         )
         
         df = df.merge(week_ranges[['Month_Name', 'Week_Num', 'Week_Date_Range']], on=['Month_Name', 'Week_Num'], how='left')
-        df['Month_Week_Label'] = pd.to_datetime(df['StartTime'], errors='coerce').dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
+        df['Month_Week_Label'] = df['StartTime'].dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
         df['Week'] = df['Month_Week_Label']
     else:
         df['Date'] = "N/A"
         df['Month_Name'] = "N/A"
         df['Week'] = "N/A"
 
-    # Build the master teacher roster independently from activity totals.
-    # This ensures teachers with zero activity still appear in the admin filters.
     master_teacher_roster = build_teacher_roster(df)
     if master_teacher_roster.empty:
         master_teacher_roster = pd.DataFrame(columns=['Institution', 'FullName'])
@@ -347,11 +323,10 @@ else:
     all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
-    # Filter Master Roster and Data by selected Schools
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
     school_filtered_df = df[df['Institution'].isin(selected_schools)]
 
-    # --- MONTH-FIRST & CALENDAR HOLIDAY MANAGER ---
+    # Calendar & Holiday Manager
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -361,10 +336,8 @@ else:
     selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options if month_options else ["No Month Data"])
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
-    # Sunday Exclusion Toggle
     exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
 
-    # Global Monthly Holiday Punch-In Multiselect
     user_excluded_dates = []
     if not month_filtered_df['Date'].isna().all() and not month_filtered_df.empty:
         m_min_date = month_filtered_df['Date'].min()
@@ -376,32 +349,14 @@ else:
             options=all_month_possible_dates,
             format_func=lambda x: x.strftime('%Y-%m-%d')
         )
-        if user_excluded_dates:
-            st.sidebar.caption(f"{len(user_excluded_dates)} holiday date(s) deducted from {selected_month} KPIs.")
 
-    # --- DYNAMIC KPI BENCHMARK MANAGER ---
+    # Dynamic KPI Controls
     st.sidebar.markdown("---")
     st.sidebar.header("🎯 KPI Benchmark Controls")
 
-    daily_ld_target = st.sidebar.number_input(
-        "Lesson Prep Target (Mins/Day)",
-        min_value=0.0,
-        max_value=60.0,
-        value=10.0,
-        step=5.0,
-        help="Default benchmark is 10 minutes per working day."
-    )
+    daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
+    daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)
 
-    daily_lib_target = st.sidebar.number_input(
-        "Library Usage Target (Mins/Day)",
-        min_value=0.0,
-        max_value=120.0,
-        value=30.0,
-        step=5.0,
-        help="Default benchmark is 30 minutes per working day."
-    )
-
-    # View Mode Selector
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -441,7 +396,7 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 8 Dedicated Meeting Review Tabs
+    # 8 Dedicated Review Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
@@ -577,7 +532,6 @@ else:
         if content_df.empty:
             st.info("No specific chapter/book access logs found in the uploaded data for the selected global filters.")
         else:
-            st.markdown("#### 🎯 Drill-Down Filters")
             col_f1, col_f2, col_f3 = st.columns(3)
             
             with col_f1:
@@ -803,63 +757,86 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE EVIDENCE HUB
+            # SECTION 3: QUALITATIVE EVIDENCE HUB (WITH DATE & LESSON NUMBER LABELS)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
             st.caption("Review authentic teacher pre-class voice notes, lesson plan pictures, in-class classroom activity videos, and student writing samples.")
 
-            v_cols = st.columns(4)
-            
             evidence_source = teacher_all_data if not teacher_all_data.empty else teacher_date_data
             
-            # Strict regex filter so only real, populated HTTP web links are counted
-            voice_links = [str(l).strip() for l in evidence_source['Voice_Note_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Voice_Note_Link' in evidence_source.columns else []
-            v_cols[0].metric("🎧 Voice Notes", len(voice_links))
+            # Helper function to extract (URL, Date, Lesson Label)
+            def extract_evidence_items(df_src, col_name):
+                if col_name not in df_src.columns:
+                    return []
+                items = []
+                for _, r in df_src.iterrows():
+                    val = str(r[col_name]).strip()
+                    if re.match(r'^https?://', val, re.IGNORECASE):
+                        d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
+                        b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Activity"
+                        items.append({'url': val, 'date': d_str, 'lesson': b_str})
+                # Deduplicate by url
+                seen = set()
+                deduped = []
+                for item in items:
+                    if item['url'] not in seen:
+                        seen.add(item['url'])
+                        deduped.append(item)
+                return deduped
 
-            pic_links = [str(l).strip() for l in evidence_source['Lesson_Plan_Picture'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Lesson_Plan_Picture' in evidence_source.columns else []
-            v_cols[1].metric("🖼️ LP Pictures", len(pic_links))
-            
-            video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in evidence_source.columns]
-            all_vids = []
-            for col in video_cols_exist:
-                all_vids.extend([str(l).strip() for l in evidence_source[col].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
-            all_vids = list(set(all_vids))
-            v_cols[2].metric("🎥 Videos", len(all_vids))
+            v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
+            v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
+            v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
 
-            writing_links = [str(l).strip() for l in evidence_source['Writing_Sample_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)] if 'Writing_Sample_Link' in evidence_source.columns else []
-            v_cols[3].metric("📝 Writing Samples", len(writing_links))
+            v_vid = []
+            for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+                v_vid.extend(extract_evidence_items(evidence_source, col))
+            # Deduplicate videos by url
+            seen_v = set()
+            deduped_v = []
+            for item in v_vid:
+                if item['url'] not in seen_v:
+                    seen_v.add(item['url'])
+                    deduped_v.append(item)
+            v_vid = deduped_v
+
+            v_cols = st.columns(4)
+            v_cols[0].metric("🎧 Voice Notes", len(v_voice))
+            v_cols[1].metric("🖼️ LP Pictures", len(v_pic))
+            v_cols[2].metric("🎥 Videos", len(v_vid))
+            v_cols[3].metric("📝 Writing Samples", len(v_writing))
 
             with st.expander("🔍 View & Audit Submitted Artifact Files & Links", expanded=True):
                 q_cols1, q_cols2, q_cols3, q_cols4 = st.columns(4)
                 
                 with q_cols1:
                     st.markdown("##### 🎧 Voice Notes")
-                    if voice_links:
-                        for idx, link in enumerate(voice_links, 1):
-                            st.markdown(f"• [Audio Recording #{idx}]({link})")
+                    if v_voice:
+                        for item in v_voice:
+                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [Listen Audio]({item['url']})")
                     else:
                         st.caption("None uploaded.")
 
                 with q_cols2:
                     st.markdown("##### 🖼️ Lesson Pictures")
-                    if pic_links:
-                        for idx, link in enumerate(pic_links, 1):
-                            st.markdown(f"• [Lesson Image #{idx}]({link})")
+                    if v_pic:
+                        for item in v_pic:
+                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [View Image]({item['url']})")
                     else:
                         st.caption("None uploaded.")
 
                 with q_cols3:
                     st.markdown("##### 🎥 Activity Videos")
-                    if all_vids:
-                        for idx, link in enumerate(all_vids, 1):
-                            st.markdown(f"• [Activity Video #{idx}]({link})")
+                    if v_vid:
+                        for item in v_vid:
+                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [Watch Video]({item['url']})")
                     else:
                         st.caption("None uploaded.")
 
                 with q_cols4:
                     st.markdown("##### 📝 Writing Samples")
-                    if writing_links:
-                        for idx, link in enumerate(writing_links, 1):
-                            st.markdown(f"• [Student Work #{idx}]({link})")
+                    if v_writing:
+                        for item in v_writing:
+                            st.markdown(f"• **{item['lesson']}** ({item['date']}): [View Sample]({item['url']})")
                     else:
                         st.caption("None uploaded.")
 
@@ -1148,20 +1125,25 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT
+    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT (TYPEERROR FIX INCLUDED)
     with tab7:
         st.header("📊 Student Assessment Outcomes & Impact Analysis")
         st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
 
-        if 'Assessment_Score_Pct' not in school_filtered_df.columns or school_filtered_df['Assessment_Score_Pct'].dropna().empty:
+        assess_df = school_filtered_df.copy()
+        
+        # Robust conversion to numeric to resolve string dtype mean reduction error
+        if 'Assessment_Score_Pct' in assess_df.columns:
+            assess_df['Assessment_Score_Pct'] = pd.to_numeric(assess_df['Assessment_Score_Pct'], errors='coerce')
+            assess_df = assess_df.dropna(subset=['Assessment_Score_Pct'])
+
+        if 'Assessment_Score_Pct' not in school_filtered_df.columns or assess_df.empty:
             st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
         else:
-            assess_df = school_filtered_df.dropna(subset=['Assessment_Score_Pct'])
-
             a_col1, a_col2, a_col3 = st.columns(3)
-            avg_score = assess_df['Assessment_Score_Pct'].mean()
-            pass_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 40.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0
-            high_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 75.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0
+            avg_score = float(assess_df['Assessment_Score_Pct'].mean())
+            pass_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 40.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
+            high_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 75.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
 
             a_col1.metric("Average Assessment Score", f"{avg_score:.1f}%")
             a_col2.metric("Pass Rate (>= 40%)", f"{pass_rate:.1f}%")
