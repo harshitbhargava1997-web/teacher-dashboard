@@ -16,11 +16,11 @@ try:
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.error("⚠️ Cloud connection configuration is missing. Please check your Streamlit Cloud Secrets settings.")
+    st.error(f"⚠️ Cloud connection configuration is missing: {e}")
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def fetch_master_db_from_supabase():
-    """Fetches the existing master parquet file from Supabase storage."""
+    """Fetches the existing master parquet file from Supabase storage with short TTL to ensure real-time sync."""
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
@@ -71,40 +71,29 @@ def append_teacher_submission(new_df):
     )
     fetch_master_db_from_supabase.clear()
 
-# --- ROBUST DATABASE & ROSTER LOADER FOR TEACHER PORTAL ---
+# --- BULLETPROOF DATABASE & ROSTER CLEANING ---
 master_df = fetch_master_db_from_supabase()
 
 school_options = []
-inst_col = None
-name_col = None
-
 if not master_df.empty:
-    # 1. Ensure FullName exists by combining FirstName and LastName if needed
-    if 'FullName' not in master_df.columns or master_df['FullName'].isna().all():
+    # Ensure standard text cleaning on columns
+    for col in master_df.select_dtypes(include=['object', 'string']).columns:
+        master_df[col] = master_df[col].fillna('').astype(str).str.strip()
+
+    # Build FullName if missing or empty
+    if 'FullName' not in master_df.columns or (master_df['FullName'] == '').all():
         f_col = 'FirstName' if 'FirstName' in master_df.columns else ''
         l_col = 'LastName' if 'LastName' in master_df.columns else ''
         if f_col and l_col:
-            master_df['FullName'] = (master_df[f_col].fillna('').astype(str).str.strip() + " " + master_df[l_col].fillna('').astype(str).str.strip()).str.strip()
+            master_df['FullName'] = master_df[f_col] + " " + master_df[l_col]
+            master_df['FullName'] = master_df['FullName'].str.strip()
         else:
             master_df['FullName'] = 'Unknown Teacher'
-    else:
-        master_df['FullName'] = master_df['FullName'].fillna('').astype(str).str.strip()
 
-    # Filter out empty or placeholder names
-    master_df = master_df[master_df['FullName'] != '']
-
-    # 2. Detect Institution Column
-    for col in ['Institution', 'School', 'school', 'School_Name', 'school_name', 'Institution_Name']:
+    # Extract unique schools
+    for col in ['Institution', 'School', 'school', 'School_Name']:
         if col in master_df.columns:
-            inst_col = col
-            master_df[col] = master_df[col].astype(str).str.strip()
-            school_options = sorted(master_df[col].dropna().unique().tolist())
-            break
-            
-    # 3. Detect Teacher Name Column
-    for col in ['FullName', 'Teacher_Name', 'teacher_name', 'Name', 'name', 'Teacher']:
-        if col in master_df.columns:
-            name_col = col
+            school_options = sorted([s for s in master_df[col].unique() if s and s != 'nan' and s != ''])
             break
 
 # --- UI FOR TEACHERS ---
@@ -115,18 +104,29 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
     st.subheader("1. School & Teacher Roster Selection")
     
     if not school_options:
-        st.warning("⚠️ No school data found in the central database yet. Please ensure your admin dashboard has initial roster data loaded.")
-        school_options = ["Default School"]
+        st.warning("⚠️ No schools detected in Supabase database. Please check your admin uploads.")
+        school_options = ["No Schools Found"]
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
     
-    # Dynamically filter teachers based on selected school
+    # Bulletproof dynamic filtering for teachers
     filtered_teachers = []
-    if sub_school != "-- Select School --" and not master_df.empty and inst_col and name_col:
-        matched_rows = master_df[master_df[inst_col].str.lower() == sub_school.lower()]
-        filtered_teachers = sorted(matched_rows[name_col].dropna().unique().tolist())
-        # Remove empty or unknown strings from the dropdown options
-        filtered_teachers = [t for t in filtered_teachers if t and t.lower() != 'unknown teacher']
+    if sub_school != "-- Select School --" and not master_df.empty:
+        # Find which column holds the institution name
+        inst_column = None
+        for col in ['Institution', 'School', 'school', 'School_Name']:
+            if col in master_df.columns:
+                inst_column = col
+                break
+        
+        if inst_column:
+            # Match school case-insensitively
+            school_match = master_df[master_df[inst_column].str.lower() == sub_school.lower()]
+            
+            # Extract unique valid names from FullName or FirstName+LastName
+            if 'FullName' in school_match.columns:
+                raw_names = school_match['FullName'].unique().tolist()
+                filtered_teachers = sorted([n for n in raw_names if n and n.lower() not in ['', 'nan', 'unknown teacher', 'none']])
 
     sub_teacher_name = st.selectbox(
         "Select Your Name *", 
@@ -209,3 +209,12 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
                 st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced to the admin dashboard.")
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
+
+# --- QUICK DIAGNOSTIC FOOTER ---
+with st.expander("🛠️ Real-Time Roster Debugger"):
+    if not master_df.empty:
+        st.write(f"Total rows in cloud DB: {len(master_df)}")
+        st.write("Available columns:", master_df.columns.tolist())
+        st.write("Unique Roster Names:", master_df['FullName'].unique().tolist() if 'FullName' in master_df.columns else "No FullName")
+    else:
+        st.write("Cloud database is currently empty.")
