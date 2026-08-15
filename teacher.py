@@ -76,24 +76,26 @@ master_df = fetch_master_db_from_supabase()
 
 school_options = []
 if not master_df.empty:
-    # Ensure standard text cleaning on columns
+    # 1. Clean string columns
     for col in master_df.select_dtypes(include=['object', 'string']).columns:
         master_df[col] = master_df[col].fillna('').astype(str).str.strip()
 
-    # Build FullName if missing or empty
+    # 2. Force generate FullName if missing or empty
     if 'FullName' not in master_df.columns or (master_df['FullName'] == '').all():
         f_col = 'FirstName' if 'FirstName' in master_df.columns else ''
         l_col = 'LastName' if 'LastName' in master_df.columns else ''
         if f_col and l_col:
-            master_df['FullName'] = master_df[f_col] + " " + master_df[l_col]
-            master_df['FullName'] = master_df['FullName'].str.strip()
+            master_df['FullName'] = (master_df[f_col] + " " + master_df[l_col]).str.strip()
         else:
             master_df['FullName'] = 'Unknown Teacher'
+    
+    master_df['FullName'] = master_df['FullName'].replace('', 'Unknown Teacher')
 
-    # Extract unique schools
-    for col in ['Institution', 'School', 'school', 'School_Name']:
+    # 3. Detect Institution column dynamically
+    for col in ['Institution', 'School', 'school', 'School_Name', 'school_name']:
         if col in master_df.columns:
-            school_options = sorted([s for s in master_df[col].unique() if s and s != 'nan' and s != ''])
+            master_df['Institution'] = master_df[col]
+            school_options = sorted([s for s in master_df['Institution'].unique() if s and s != 'nan' and s != 'Unknown School'])
             break
 
 # --- UI FOR TEACHERS ---
@@ -109,24 +111,26 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
     
-    # Bulletproof dynamic filtering for teachers
+    # --- BULLETPROOF TEACHER FILTERING ---
     filtered_teachers = []
     if sub_school != "-- Select School --" and not master_df.empty:
-        # Find which column holds the institution name
-        inst_column = None
-        for col in ['Institution', 'School', 'school', 'School_Name']:
-            if col in master_df.columns:
-                inst_column = col
-                break
+        # Match school case-insensitively and strip whitespace
+        matched_rows = master_df[master_df['Institution'].str.lower() == sub_school.lower()]
         
-        if inst_column:
-            # Match school case-insensitively
-            school_match = master_df[master_df[inst_column].str.lower() == sub_school.lower()]
+        if not matched_rows.empty:
+            # Gather unique names from FullName
+            if 'FullName' in matched_rows.columns:
+                raw_names = matched_rows['FullName'].unique().tolist()
+                filtered_teachers = [n for n in raw_names if n and n.lower() not in ['nan', 'unknown teacher', '', 'none']]
             
-            # Extract unique valid names from FullName or FirstName+LastName
-            if 'FullName' in school_match.columns:
-                raw_names = school_match['FullName'].unique().tolist()
-                filtered_teachers = sorted([n for n in raw_names if n and n.lower() not in ['', 'nan', 'unknown teacher', 'none']])
+            # If still empty, try grabbing FirstName + LastName directly from matched rows
+            if not filtered_teachers and 'FirstName' in matched_rows.columns:
+                f_vals = matched_rows['FirstName'].astype(str).str.strip()
+                l_vals = matched_rows['LastName'].astype(str).str.strip() if 'LastName' in matched_rows.columns else ''
+                combined_names = (f_vals + " " + l_vals).str.strip().unique().tolist()
+                filtered_teachers = [n for n in combined_names if n and n.lower() not in ['nan', 'unknown teacher', '', 'none']]
+
+        filtered_teachers = sorted(list(set(filtered_teachers)))
 
     sub_teacher_name = st.selectbox(
         "Select Your Name *", 
