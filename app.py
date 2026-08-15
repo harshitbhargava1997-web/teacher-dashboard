@@ -620,15 +620,17 @@ else:
             mime="application/pdf"
         )
 
-    # TAB 3: CONTENT & CHAPTERS
+    # TAB 3: CONTENT & CHAPTERS (CLEANED TO EXCLUDE LESSON PLAN MARKERS)
     with tab3:
         st.header("📖 Content & Chapters")
-        st.caption(f"Track specific books, subjects, and instructional modules opened during `{filter_description_text}`.")
+        st.caption(f"Track specific textbooks and instructional modules opened during `{filter_description_text}`.")
 
-        content_df = filtered_df[filtered_df['Book'].str.len() > 0]
+        # Filter out lesson plan identifiers from appearing as books/chapters
+        content_raw = filtered_df[filtered_df['Book'].str.len() > 0]
+        content_df = content_raw[~content_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
 
         if content_df.empty:
-            st.info("No specific chapter/book access logs found in the uploaded data for the selected global filters.")
+            st.info("No specific textbook/chapter access logs found in the uploaded data for the selected global filters.")
         else:
             col_f1, col_f2, col_f3 = st.columns(3)
             with col_f1:
@@ -657,7 +659,7 @@ else:
                 st.warning("No data matches these specific drill-down filters.")
             else:
                 k1, k2, k3 = st.columns(3)
-                k1.metric("Chapters / Books Opened", t3_df['Book'].nunique())
+                k1.metric("Textbooks / Chapters Opened", t3_df['Book'].nunique())
                 k2.metric("Subjects Taught", t3_df['Subject'].nunique())
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
 
@@ -676,7 +678,7 @@ else:
                         ch_summary = t3_df.groupby(['FullName', 'Book'])['Duration_Min'].sum().reset_index()
                         fig_ch = px.bar(
                             ch_summary, x="FullName", y="Duration_Min", color="Book",
-                            title="Chapters / Books Opened per Teacher (Mins)",
+                            title="Textbooks / Chapters Opened per Teacher (Mins)",
                             labels={"FullName": "Teacher", "Duration_Min": "Minutes", "Book": "Book / Chapter"},
                             barmode="stack", text_auto=".1f"
                         )
@@ -690,7 +692,7 @@ else:
                     )
                     st.plotly_chart(fig_sub, use_container_width=True)
 
-                st.subheader("📋 Filtered Granular Class Log")
+                st.subheader("📋 Filtered Granular Textbook Log")
                 log_cols = ['Institution', 'FullName', 'Grade', 'Subject', 'Book', 'StartTime', 'Duration (HH:MM:SS)', 'Duration_Min']
                 available_cols = [c for c in log_cols if c in t3_df.columns]
                 
@@ -711,7 +713,7 @@ else:
                     )
                 with col_d2:
                     pdf_tab3 = generate_pdf_report(
-                        title_text="📖 Chapters & Digital Content Usage Report",
+                        title_text="📖 Textbooks & Digital Content Usage Report",
                         subtitle_text=f"School: {t3_school} | Teacher: {t3_teacher} | Subject: {t3_subject}",
                         summary_metrics={
                             "Chapters Opened": t3_df['Book'].nunique(),
@@ -813,14 +815,16 @@ else:
 
             st.markdown("---")
 
-            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT (WITH ALL-TIME FALLBACK)
+            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT (CLEANED)
             st.subheader("2. Book & Grade Digital Content Usage Report")
-            teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
-            if teacher_books.empty:
-                teacher_books = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
+            t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
+            if t_books_raw.empty:
+                t_books_raw = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
+            
+            teacher_books = t_books_raw[~t_books_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
             
             if teacher_books.empty:
-                st.info(f"No digital chapters or modules recorded for **{target_teacher}**.")
+                st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
             else:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
@@ -1293,7 +1297,6 @@ else:
                 ]
 
                 if filtered_logs:
-                    # Safely construct DataFrame ensuring all columns exist even with legacy logs
                     normalized_logs = []
                     for log in filtered_logs:
                         normalized_logs.append({
