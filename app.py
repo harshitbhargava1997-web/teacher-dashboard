@@ -22,13 +22,35 @@ except Exception:
 
 FORM_DB_PATH = os.path.join(DATA_FOLDER, "teacher_form_submissions.xlsx")
 
-# --- SCHOOL & TEACHER DIRECTORY MAPPING ---
+# --- COMPLETE SCHOOL & TEACHER DIRECTORY ---
 SCHOOL_TEACHER_ROSTER = {
-    "Delhi Public School Bhopal": ["Aarav Sharma", "Priya Verma", "Rohan Gupta", "Ananya Singh"],
-    "St. Xavier's High School": ["Manish Kumar", "Neha Patel", "Amit Joshi", "Pooja Sharma"],
-    "Campion School Bhopal": ["Rajeshwari Iyer", "Vikram Malhotra", "Sunita Nair", "Deepak Rao"],
-    "Bhopal Convent School": ["Sanjay Roy", "Meenakshi Das", "Karan Kapoor", "Divya Sen"],
-    "Global Tech School": ["Harshit Bhargav", "Alok Mishra", "Swati Tiwari", "Nikhil Jain"]
+    "Pragyanam International School": ["Deepali Yadav", "Tr Hema", "Tr Kavita"],
+    "Little Commando Foundations School": ["Deepika mewada", "Gayatri Singh", "Jagruti Patil", "Roshni Rawat", "Sapna yadav", "Shraddha mishra", "TrPriyanka"],
+    "Nature's Kids University": ["AAYUSHI PATIDAR", "ADITI YOGI", "Anjali Mukati", "Binu Joshi", "ISHIKA PANJWANI", "Kawaljeet Kaur Bhatia", "Komal Wardhani", "MANISHA VARMA", "Meenakshi Panwar", "PRACHI SEN", "REETA HADA", "SHIVANI RATHORE", "SURYA PATIDAR", "Saket Sharma", "Sakshi Sanwatsar", "Sapna Chouhan", "TANISHA BORYALE", "Tejaswi Mishra", "VEENA CHOUDHARY"],
+    "Wisdom World School - Gwalior": ["Bhumi Sharma", "Hemlata Sharma", "Lata Golash", "Neelu Gupta", "Saloni Tyagi", "Sanya Yadav", "Shashi Maini"],
+    "Noble Minds International School Gwalior": ["Geeta Godiya", "Miss Mohini", "Smita Chauhan", "Manisha Pandey", "Pinky Goud", "Soma Tomar", "Manju Pal", "Seema Tomar", "Soma Khare", "Pooja Jha"],
+    "Nahar Global School": ["Anushika Rathod", "KAJAL TANK", "Rimzim Sisodiya", "TrKhushboo", "mansi Sisodiya", "Atika Mansuri", "Pragati Rathore", "SIMRAN BHATIA", "Umang Solanki", "JAGRATI BAIS", "Pragya Dixit", "Tanishka RATHORE", "archana Upadhyay"],
+    "Colonels Academy": ["Aarti Joseph", "Karuna Tomer", "Prachi Joshi", "Prizma Singh", "Tara Pawar", "Divya Dubey", "Neha Bisht", "Prakrati", "Rehana Hussain", "TrSakshi", "Heena", "Noopur Thapliyal", "Preetilyer", "Shubhangi", "Vijaya Bisht"],
+    "Jayshree Bal Vinay Mandir": ["Anshu Tiwari", "Bulbul Patel", "Geeta Patel", "Mahima Jadhav", "Maya Parmar", "Neetu Patel", "Rekha Solanki", "Tushar Waghmare"],
+    "Jain Public School": ["Arjun Borana", "Deepti Pateriya", "Paridhi Soni", "Pragati Pawar", "Ragni Varagi", "Ritu Shatawar", "Shrijal Gupta", "Sushma Kumar", "Swati Dwivedi"],
+    "Rational Kids Academy-Gwalior": ["Esha Saxena", "Ms Namrata", "Rakhi Kushwah", "Ishika Sharna", "Muskan Bhadoriya", "Sneha Prabha", "Neha Saxena", "Kushboo Sharma"],
+    "Charming Kids International": ["ANUPAMA MOGHE", "Chhaya Motwani", "Kushboo Purwani", "Mitali Sachdev", "Muskan Sachdev", "Palak Kingrani", "Swati Parmar"],
+    "Ambika Convent HR Sec school": ["Ankita Khede", "Komal Vaskel", "Mamta Meena", "Ramila Dawar", "Simran Pancholi"],
+    "Mother's Pride School": ["Jyoti Modi", "Kalpana Rathore", "Monika Rekvar", "Pooja Bairagi", "Rani Gujrati"],
+    "Universal Day Boarding Academy": ["Dolly", "Pooja Kushwah", "Raghvendra", "Rajeev Pal", "Sandhya", "Somesh Shah"],
+    "Credible World School": ["Disha Raghuvanshi", "Komal Jain", "Miss aakrati", "Priyanka Joshi", "Ritu Rathore", "Shivani Jain"],
+    "Scholar's High School": ["Israr Mansuri", "Nidhi bhawasar", "Shahnoor Sheikh", "Vishal Pawar", "tamanna waskale"],
+    "Late Shree Pidiya Bhuriya Memorial School": ["Anjali Khatediya", "Gayatri Datla", "Kamala Muniya", "Pratika Bhuriya", "Rasna Ninama", "Seema Damor", "Vandana Vasuniya"],
+    "JK International School": ["Anjali Pal", "Palak Agrawal", "priyanka kol", "Arpita Sharma", "Poorva Soni", "Khushbu Gupta", "Sakhi Sonia", "Shivangi Malviya", "harshita mishra", "kirti choubey"],
+    "Rainbow Play School - Karnawad": ["Neha Patidar", "Payal Patidar", "Purva Patidar", "Suhani Patidar", "Nikita Patidar", "Pooja Patidar", "Rachna Patidar", "Nita Soner", "Pratibha Patidar", "Ravi Patidar"],
+    "Dream India-Khargone": ["Ayushi Rathod", "Manish Mandloi", "Ragini Chouhan", "Simran Kushwah", "Laxmi Rathore", "Miss Anisha", "Shahani Pinjane", "Sunita Rawal", "Madhu gupta", "PRIYA KANUNGO", "Shailbala singh", "Vashnavi Pinjane"],
+    "Shubharambh Academy": ["Ajay Rajput", "Mamta Solanki", "Sharda Trivedi", "payal bhabhri"],
+    "Active English School": ["Bhumika Jhawar", "Meena Sharma", "Mithlesh Suri", "Pankaj Sir", "Priyanka prajapati", "SHEEFA Mansuri", "Sheefa Mansuri", "Vinesh Sikarwar", "Ranjana Pandey"],
+    "Lebad Public School": ["Deepali Rathore", "Divya Parmar", "Ishika Raghuvanshi", "Joyti Bhat", "KAVITA CHOUHAN", "Madhu Gour", "Miss Shewta", "Miss Joyti", "Mustafa Sir", "NIBHA UPADHYAY", "Nikita Manawat", "Rani Singh", "Roshni Goswami", "Shivani Pandey", "Sneha Rai"],
+    "Adarsh Gurukul Academy": ["Mrs Kalpana Mahawar", "Manali Sharma", "Neelu Garg", "Smita Dashottar", "Anju Jain", "ManjuBala Sharma", "Neha Shaktawat", "Rekha Salaya", "Uma Dwiveldi", "Kavita Budhani", "Neelam Rathod", "Poonam Gadwal", "Simran Bhatia", "Pramila Lalan", "sneha gehlot"],
+    "Innovative Public School": ["Alina Khan", "Sarita Sharma", "Chandni Khan", "Naseen Shaikh", "Farheen Khan", "Mantasha Shah", "Pooja Verma"],
+    "ECS - SANSKRITI CORRIDOR": ["Deepali Gore", "Deepali Gore", "Kajal Khare", "Mahima Soni", "Megha Sharma"],
+    "Arhamn International School": ["ANURAG JAIN", "CHANCHAL VIDHYARTHI", "JYOTI BALA YADAV", "Khushi Patil", "PALLAVI RAWAT", "Prachi chouhan", "Priti Bhawsar", "Rashmi Verma", "Yashaswi Girnar", "pooja Chouhan"]
 }
 
 # Form Input Fields
@@ -57,17 +79,9 @@ with st.form("teacher_submission_form", clear_on_submit=True):
         subject = st.selectbox(
             "Subject *", 
             options=[
-                "Maths / Numeracy", 
-                "EVS", 
-                "Literacy / English", 
-                "Hindi", 
-                "Science", 
-                "Social Science", 
-                "Computer", 
-                "GK", 
-                "Grammar", 
-                "Pre-Primary Play Activities", 
-                "Pre-Primary Art & Craft Activities"
+                "Maths / Numeracy", "EVS", "Literacy / English", "Hindi", "Science", 
+                "Social Science", "Computer", "GK", "Grammar", 
+                "Pre-Primary Play Activities", "Pre-Primary Art & Craft Activities"
             ]
         )
 
@@ -75,15 +89,15 @@ with st.form("teacher_submission_form", clear_on_submit=True):
 
     st.markdown("---")
     st.subheader("📁 3. Direct Qualitative Evidence Uploads")
-    st.caption("You can upload one or multiple files below depending on your daily session activities (Audio recordings, Activity videos, or Writing samples).")
+    st.caption("You may upload one or multiple files below (Audio, Video, Writing/Worksheet).")
 
-    voice_note_file = st.file_uploader("🎧 Upload Voice Note / Audio Recording (.mp3, .wav, .m4a)", type=["mp3", "wav", "m4a"], key="voice_upload")
-    video_file = st.file_uploader("🎥 Upload Classroom Activity Video (.mp4, .mov, .avi)", type=["mp4", "mov", "avi"], key="video_upload")
-    writing_file = st.file_uploader("📝 Upload Student Writing Sample / Worksheet (.pdf, .jpg, .png)", type=["pdf", "jpg", "png"], key="writing_upload")
+    voice_note_file = st.file_uploader("🎧 Upload Voice Note (.mp3, .wav, .m4a)", type=["mp3", "wav", "m4a"], key="voice_upload")
+    video_file = st.file_uploader("🎥 Upload Classroom Video (.mp4, .mov, .avi)", type=["mp4", "mov", "avi"], key="video_upload")
+    writing_file = st.file_uploader("📝 Upload Writing Sample / Worksheet (.pdf, .jpg, .png)", type=["pdf", "jpg", "png"], key="writing_upload")
 
     st.markdown("---")
     st.subheader("📸 4. Assessment & Result Picture Upload")
-    st.caption("Upload snapshots of evaluation result sheets, mark registers, or student performance scorecards.")
+    st.caption("Upload snapshots of evaluation result sheets or mark registers.")
 
     result_image = st.file_uploader("📊 Upload Assessment / Result Snapshot (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"], key="result_upload")
 
@@ -121,15 +135,12 @@ with st.form("teacher_submission_form", clear_on_submit=True):
                 "FullName": teacher_name.strip(),
                 "Grade": grade,
                 "Subject": subject,
-                "Duration_Min": 10.0,
                 "Lesson_Plan_Num": lesson_plan_number.strip(),
                 "Type": "teacherSubmission",
                 "Voice_Note_Link": voice_path,
                 "Video_Evidence_1": video_path,
                 "Writing_Sample_Link": writing_path,
-                "Assessment_Score_Pct": None,
-                "Assessment_Image_Path": result_path,
-                "Portfolio_Image_Path": result_path
+                "Assessment_Image_Path": result_path
             }
 
             df_new = pd.DataFrame([new_entry])
@@ -143,26 +154,17 @@ with st.form("teacher_submission_form", clear_on_submit=True):
                 df_combined = df_new
 
             df_combined.to_excel(FORM_DB_PATH, index=False)
-            st.success(f"✅ Thank you, {teacher_name}! Your submission and uploads have been recorded successfully.")
+            st.success(f"✅ Thank you, {teacher_name}! Your submission has been recorded.")
             st.balloons()
 
 # --- ADMIN EXPORT PANEL ---
 st.markdown("---")
 with st.expander("🔐 Academic Manager Export Panel"):
-    st.caption("Download all collected submissions to upload directly into your main dashboard.")
+    st.caption("Download collected submissions as CSV for dashboard sync.")
     if os.path.exists(FORM_DB_PATH):
         try:
             admin_df = pd.read_excel(FORM_DB_PATH)
-            st.write(f"Total Submissions Collected: {len(admin_df)}")
-            
             csv_data = admin_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download All Submissions (CSV)",
-                data=csv_data,
-                file_name=f"Teacher_Submissions_Export_{datetime.now().strftime('%Y-%m-%d')}.csv",
-                mime="application/csv"
-            )
+            st.download_button("📥 Download Submissions (CSV)", data=csv_data, file_name="Teacher_Submissions_Export.csv", mime="application/csv")
         except Exception as e:
             st.error(f"Error loading export file: {e}")
-    else:
-        st.info("No submissions recorded yet.")
