@@ -12,7 +12,7 @@ from supabase import create_client
 
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -136,25 +136,37 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe=No
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1F77B4'))
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.gray)
     sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=colors.HexColor('#1F77B4'))
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=11)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12)
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#555555'), fontName='Helvetica-Bold')
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=12, leading=14, textColor=colors.HexColor('#1F77B4'), fontName='Helvetica-Bold')
     
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
     story.append(Paragraph(subtitle_text, subtitle_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     if summary_metrics:
-        metric_text = " &nbsp;&nbsp;|&nbsp;&nbsp; ".join([f"<b>{k}:</b> {v}" for k, v in summary_metrics.items()])
-        metric_style = ParagraphStyle('MetricBlock', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2CA02C'))
-        story.append(Paragraph(metric_text, metric_style))
+        headers_row = [Paragraph(f"<b>{k}</b>", card_header) for k in summary_metrics.keys()]
+        values_row = [Paragraph(f"<b>{v}</b>", card_value) for v in summary_metrics.values()]
+        kpi_table = Table([headers_row, values_row], colWidths=[552 / len(summary_metrics)] * len(summary_metrics))
+        kpi_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(kpi_table)
         story.append(Spacer(1, 10))
 
     if custom_sections:
         for heading, body_items in custom_sections.items():
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, 3))
+            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#E2E8F0'), spaceAfter=6))
             for item in body_items:
                 story.append(Paragraph(f"• {item}", normal_style))
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 10))
 
     if dataframe is not None and not dataframe.empty:
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
@@ -199,7 +211,7 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
 
 # Page layout title
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
-st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily Quantitative KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences & Artifact Compliance**, and **Student Assessment Outcomes**.")
+st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily Quantitative KPIs (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
 
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
@@ -460,16 +472,15 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 8 Dedicated Active Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    # 7 Dedicated Active Tabs (Student Assessment Outcomes removed as requested)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📊 7. Student Assessment Outcomes",
-        "📬 8. Live Evidence Submissions Feed"
+        "📬 7. Live Evidence Submissions Feed"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
@@ -814,10 +825,6 @@ else:
 
             # SECTION 3: QUALITATIVE PERFORMANCE EVIDENCE (ORDERED: 1. LP/VN -> 2. ACTIVITIES -> 3. WRITING)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-            if enable_qual_kpi:
-                st.caption(f"Configured Benchmark: Min **{target_vid_count} Videos**, Min **{target_writing_count} Writing Samples**, Min **{target_lp_combo_count} LP / Voice Notes**.")
-            else:
-                st.caption("Review authenticated teacher submissions in structured order: (1) Lesson Plans / Voice Notes, (2) Classroom Activity Videos, (3) Student Writing Practices.")
 
             evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
             
@@ -1239,79 +1246,8 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT
+    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE KPI TRACKER
     with tab7:
-        st.header("📊 Student Assessment Outcomes & Impact Analysis")
-        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
-
-        assess_df = school_filtered_df.copy()
-        
-        # Robust conversion to numeric to resolve string dtype mean reduction error
-        if 'Assessment_Score_Pct' in assess_df.columns:
-            assess_df['Assessment_Score_Pct'] = pd.to_numeric(assess_df['Assessment_Score_Pct'], errors='coerce')
-            assess_df = assess_df.dropna(subset=['Assessment_Score_Pct'])
-
-        if 'Assessment_Score_Pct' not in school_filtered_df.columns or assess_df.empty:
-            st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
-        else:
-            a_col1, a_col2, a_col3 = st.columns(3)
-            avg_score = float(assess_df['Assessment_Score_Pct'].mean())
-            pass_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 40.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
-            high_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 75.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
-
-            a_col1.metric("Average Assessment Score", f"{avg_score:.1f}%")
-            a_col2.metric("Pass Rate (>= 40%)", f"{pass_rate:.1f}%")
-            a_col3.metric("High Performers (>= 75%)", f"{high_rate:.1f}%")
-
-            st.markdown("---")
-
-            col_a1, col_a2 = st.columns(2)
-
-            with col_a1:
-                st.subheader("📚 Subject-Wise Assessment Scores")
-                subj_score = assess_df.groupby('Subject')['Assessment_Score_Pct'].mean().reset_index()
-                fig_as = px.bar(
-                    subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject",
-                    title="Average Assessment Score by Subject (%)", text_auto=".1f"
-                )
-                fig_as.add_hline(y=75.0, line_dash="dash", line_color="green", annotation_text="Distinction Goal (75%)")
-                st.plotly_chart(fig_as, use_container_width=True)
-
-            with col_a2:
-                st.subheader("🏫 Grade-Level Performance Impact")
-                grade_score = assess_df.groupby('Grade')['Assessment_Score_Pct'].mean().reset_index()
-                fig_ag = px.bar(
-                    grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade",
-                    title="Average Assessment Score by Grade Level (%)", text_auto=".1f"
-                )
-                st.plotly_chart(fig_ag, use_container_width=True)
-
-            st.markdown("---")
-            st.subheader("📋 Granular Assessment Leaderboard")
-            display_assess_table = assess_df[['Institution', 'FullName', 'Grade', 'Subject', 'Assessment_Score_Pct']].rename(columns={
-                'Institution': 'School', 'FullName': 'Teacher Name', 'Assessment_Score_Pct': 'Average Score (%)'
-            })
-            st.dataframe(display_assess_table, use_container_width=True)
-
-            pdf_tab7 = generate_pdf_report(
-                title_text="📊 Student Assessment Outcomes Report",
-                subtitle_text=f"Period: {filter_description_text} | Total Evaluated Records: {len(assess_df)}",
-                summary_metrics={
-                    "Average Score": f"{avg_score:.1f}%",
-                    "Pass Rate": f"{pass_rate:.1f}%",
-                    "High Performers": f"{high_rate:.1f}%"
-                },
-                dataframe=display_assess_table
-            )
-            st.download_button(
-                label="📄 Download Assessment Outcomes Report (PDF)",
-                data=pdf_tab7,
-                file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
-                mime="application/pdf"
-            )
-
-    # TAB 8: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE KPI TRACKER
-    with tab8:
         st.header("📬 Live Evidence Submissions Feed & Qualitative KPI Tracker")
         if enable_qual_kpi:
             st.caption(f"Track individual teacher qualitative evidence submissions and compliance against mandatory Qualitative KPIs (Min. {target_vid_count} Activity Videos, Min. {target_writing_count} Writing Samples, Min. {target_lp_combo_count} LP / Voice Notes).")
@@ -1333,40 +1269,40 @@ else:
         if all_submissions_df.empty:
             st.info("No teacher evidence submissions match the currently selected global filter criteria.")
         else:
-            col_t8_f1, col_t8_f2, col_t8_f3 = st.columns(3)
-            with col_t8_f1:
-                t8_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
-                t8_selected_school = st.selectbox("Filter by School:", t8_schools, key="t8_school")
+            col_t7_f1, col_t7_f2, col_t7_f3 = st.columns(3)
+            with col_t7_f1:
+                t7_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
+                t7_selected_school = st.selectbox("Filter by School:", t7_schools, key="t7_school")
             
-            t8_filtered = all_submissions_df if t8_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t8_selected_school]
+            t7_filtered = all_submissions_df if t7_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t7_selected_school]
 
-            with col_t8_f2:
-                t8_teachers = ["All Teachers"] + sorted([t for t in t8_filtered['FullName'].unique() if str(t).strip()])
-                t8_selected_teacher = st.selectbox("Filter by Teacher:", t8_teachers, key="t8_teacher")
+            with col_t7_f2:
+                t7_teachers = ["All Teachers"] + sorted([t for t in t7_filtered['FullName'].unique() if str(t).strip()])
+                t7_selected_teacher = st.selectbox("Filter by Teacher:", t7_teachers, key="t7_teacher")
 
-            if t8_selected_teacher != "All Teachers":
-                t8_filtered = t8_filtered[t8_filtered['FullName'] == t8_selected_teacher]
+            if t7_selected_teacher != "All Teachers":
+                t7_filtered = t7_filtered[t7_filtered['FullName'] == t7_selected_teacher]
 
-            with col_t8_f3:
-                t8_grades = ["All Grades"] + sorted([g for g in t8_filtered['Grade'].unique() if str(g).strip()])
-                t8_selected_grade = st.selectbox("Filter by Grade:", t8_grades, key="t8_grade")
+            with col_t7_f3:
+                t7_grades = ["All Grades"] + sorted([g for g in t7_filtered['Grade'].unique() if str(g).strip()])
+                t7_selected_grade = st.selectbox("Filter by Grade:", t7_grades, key="t7_grade")
 
-            if t8_selected_grade != "All Grades":
-                t8_filtered = t8_filtered[t8_filtered['Grade'] == t8_selected_grade]
+            if t7_selected_grade != "All Grades":
+                t7_filtered = t7_filtered[t7_filtered['Grade'] == t7_selected_grade]
 
             st.markdown("---")
 
             # Metrics for Filtered Submissions
-            tot_subs = len(t8_filtered)
-            tot_audios = sum([1 for l in t8_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t8_filtered.columns else 0
-            tot_pics = sum([1 for l in t8_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t8_filtered.columns else 0
+            tot_subs = len(t7_filtered)
+            tot_audios = sum([1 for l in t7_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t7_filtered.columns else 0
+            tot_pics = sum([1 for l in t7_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t7_filtered.columns else 0
             
             tot_vids = 0
             for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
-                if vc in t8_filtered.columns:
-                    tot_vids += sum([1 for l in t8_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+                if vc in t7_filtered.columns:
+                    tot_vids += sum([1 for l in t7_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
 
-            tot_writing = sum([1 for l in t8_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t8_filtered.columns else 0
+            tot_writing = sum([1 for l in t7_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t7_filtered.columns else 0
 
             m_c1, m_c2, m_c3, m_c4, m_c5 = st.columns(5)
             m_c1.metric("📋 Total Submission Logs", tot_subs)
@@ -1383,14 +1319,14 @@ else:
                 st.caption(f"Configured Benchmark: **Min. {target_vid_count} Videos**, **Min. {target_writing_count} Writing Samples**, **Min. {target_lp_combo_count} LP / Voice Notes** per Teacher.")
 
                 teacher_kpi_records = []
-                target_roster = filtered_roster if t8_selected_school == "All Schools" else filtered_roster[filtered_roster['Institution'] == t8_selected_school]
-                if t8_selected_teacher != "All Teachers":
-                    target_roster = target_roster[target_roster['FullName'] == t8_selected_teacher]
+                target_roster = filtered_roster if t7_selected_school == "All Schools" else filtered_roster[filtered_roster['Institution'] == t7_selected_school]
+                if t7_selected_teacher != "All Teachers":
+                    target_roster = target_roster[target_roster['FullName'] == t7_selected_teacher]
 
                 for _, t_row in target_roster.iterrows():
                     t_name = t_row['FullName']
                     t_inst = t_row['Institution']
-                    sub_t_data = t8_filtered[(t8_filtered['FullName'] == t_name) & (t8_filtered['Institution'] == t_inst)]
+                    sub_t_data = t7_filtered[(t7_filtered['FullName'] == t_name) & (t7_filtered['Institution'] == t_inst)]
                     
                     v_count = 0
                     for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
@@ -1468,16 +1404,16 @@ else:
 
             # --- SECTION 2: GRANULAR SUBMISSIONS TABLE ---
             st.subheader("📋 Granular Qualitative Submissions Log")
-            t8_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
-            t8_avail = [c for c in t8_display_cols if c in t8_filtered.columns]
+            t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
+            t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
             
-            t8_table = t8_filtered[t8_avail].sort_values(by='StartTime', ascending=False)
-            st.dataframe(t8_table, use_container_width=True)
+            t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
+            st.dataframe(t7_table, use_container_width=True)
 
-            csv_t8 = t8_table.to_csv(index=False).encode('utf-8')
+            csv_t7 = t7_table.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
-                data=csv_t8,
+                data=csv_t7,
                 file_name="Teacher_Evidence_Submissions.csv",
                 mime="text/csv"
             )
