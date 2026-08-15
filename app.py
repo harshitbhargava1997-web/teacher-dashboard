@@ -214,25 +214,29 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
 st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Quantitative KPIs (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
 
-# 1. Supabase Parquet Database Manager Function
+# 1. Supabase Parquet Database Manager Function (with robust timestamp sanitization)
 def load_or_update_master_db(new_upload_dfs=None):
     master_df = fetch_master_db_from_supabase()
 
-    if not master_df.empty and 'StartTime' in master_df.columns:
-        master_df['StartTime'] = pd.to_datetime(master_df['StartTime'], errors='coerce')
+    # Sanitize datetime columns in master_df to avoid PyArrow serialization issues
+    for dt_col in ['StartTime', 'EndTime']:
+        if not master_df.empty and dt_col in master_df.columns:
+            master_df[dt_col] = pd.to_datetime(master_df[dt_col], errors='coerce')
 
     if not new_upload_dfs:
         return normalize_identity_columns(master_df) if not master_df.empty else master_df
 
     combined_new = pd.concat(new_upload_dfs, ignore_index=True)
-    if 'StartTime' in combined_new.columns:
-        combined_new['StartTime'] = pd.to_datetime(combined_new['StartTime'], errors='coerce')
+    for dt_col in ['StartTime', 'EndTime']:
+        if dt_col in combined_new.columns:
+            combined_new[dt_col] = pd.to_datetime(combined_new[dt_col], errors='coerce')
 
     all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
 
-    if 'StartTime' in all_data.columns:
-        all_data['StartTime'] = pd.to_datetime(all_data['StartTime'], errors='coerce')
+    for dt_col in ['StartTime', 'EndTime']:
+        if dt_col in all_data.columns:
+            all_data[dt_col] = pd.to_datetime(all_data[dt_col], errors='coerce')
 
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
@@ -293,8 +297,9 @@ if uploaded_files:
             if 'Type' in temp_df.columns:
                 temp_df['Type'] = temp_df['Type'].fillna('Other').astype(str)
 
-            if 'StartTime' in temp_df.columns:
-                temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
+            for dt_col in ['StartTime', 'EndTime']:
+                if dt_col in temp_df.columns:
+                    temp_df[dt_col] = pd.to_datetime(temp_df[dt_col], errors='coerce')
 
             for qual_col in ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
@@ -340,8 +345,11 @@ else:
         else:
             df['FullName'] = 'Unknown Teacher'
 
+    for dt_col in ['StartTime', 'EndTime']:
+        if dt_col in df.columns:
+            df[dt_col] = pd.to_datetime(df[dt_col], errors='coerce')
+
     if 'StartTime' in df.columns:
-        df['StartTime'] = pd.to_datetime(df['StartTime'], errors='coerce')
         df['Date'] = df['StartTime'].dt.date
         df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
         df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')
@@ -1279,11 +1287,11 @@ else:
                     else:
                         st.warning("Please enter discussion notes before saving.")
 
-                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR (FILTER & DATE AWARE) ---
-                st.markdown("##### 📱 Send Consolidated School WhatsApp Update")
+                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR ---
+                st.markdown("##### 📱 Send Consolidated Weekly School WhatsApp Update")
                 consolidated_wa_text = (
-                    f"🏫 *ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
-                    f"📅 *Observation Period:* {filter_description_text} (Call Date: {str(punched_date)})\n\n"
+                    f"🏫 *WEEKLY ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
+                    f"📅 *Observation Period:* {filter_description_text}\n\n"
                     f"📊 *1. Quantitative Execution:*\n"
                     f"• Lesson Prep Average: {sch_prep:.1f} Mins/Day\n"
                     f"• Library Usage Average: {sch_lib:.1f} Mins/Day\n\n"
@@ -1300,9 +1308,9 @@ else:
                 encoded_rep_msg = urllib.parse.quote(consolidated_wa_text)
                 
                 with st.expander("📋 Preview & Copy Consolidated WhatsApp Message"):
-                    st.text_area("WhatsApp Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
+                    st.text_area("WhatsApp Weekly Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
                     if owner_phone and owner_phone != "Not Provided":
-                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated WhatsApp Update</button></a>', unsafe_allow_html=True)
+                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated Weekly WhatsApp Update</button></a>', unsafe_allow_html=True)
 
             if st.session_state["school_call_logs_store"]:
                 st.markdown(f"##### 📋 Discussion Logs & Commitments (`{filter_description_text}`)")
@@ -1332,7 +1340,7 @@ else:
                         label="📥 Download Filtered Call & Discussion Log (CSV)",
                         data=csv_notes,
                         file_name=f"School_Call_Logs_{selected_month.replace(' ', '_')}.csv",
-                        mime="text/csv"
+                        mime="application/pdf"
                     )
                 else:
                     st.info(f"No discussion logs recorded yet for the active filter window (`{filter_description_text}`).")
