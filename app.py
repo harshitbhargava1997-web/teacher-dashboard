@@ -23,7 +23,6 @@ except Exception:
 FORM_DB_PATH = os.path.join(DATA_FOLDER, "teacher_form_submissions.xlsx")
 
 # --- SCHOOL & TEACHER DIRECTORY MAPPING ---
-# Customize this dictionary with your actual schools and their respective teachers
 SCHOOL_TEACHER_ROSTER = {
     "Delhi Public School Bhopal": ["Aarav Sharma", "Priya Verma", "Rohan Gupta", "Ananya Singh"],
     "St. Xavier's High School": ["Manish Kumar", "Neha Patel", "Amit Joshi", "Pooja Sharma"],
@@ -39,7 +38,6 @@ with st.form("teacher_submission_form", clear_on_submit=True):
     school_options = ["Select School..."] + list(SCHOOL_TEACHER_ROSTER.keys())
     school_name = st.selectbox("Select Your School / Institution *", options=school_options)
     
-    # Dynamic Teacher Selection based on School choice
     if school_name != "Select School...":
         available_teachers = ["Select Teacher..."] + SCHOOL_TEACHER_ROSTER[school_name]
         teacher_name = st.selectbox("Select Your Name *", options=available_teachers)
@@ -73,15 +71,11 @@ with st.form("teacher_submission_form", clear_on_submit=True):
             ]
         )
 
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
-        lesson_plan_number = st.text_input("Lesson Plan Number / Code * (e.g., LP-04, Ch-2)")
-    with col_l2:
-        num_activities = st.number_input("Number of Classroom Activities Conducted *", min_value=0, max_value=20, value=1, step=1)
+    lesson_plan_number = st.text_input("Lesson Plan Number *")
 
     st.markdown("---")
     st.subheader("📁 3. Direct Qualitative Evidence Uploads")
-    st.caption("Upload your files directly from your device (Audio recordings, Activity videos, Writing samples).")
+    st.caption("You can upload one or multiple files below depending on your daily session activities (Audio recordings, Activity videos, or Writing samples).")
 
     voice_note_file = st.file_uploader("🎧 Upload Voice Note / Audio Recording (.mp3, .wav, .m4a)", type=["mp3", "wav", "m4a"], key="voice_upload")
     video_file = st.file_uploader("🎥 Upload Classroom Activity Video (.mp4, .mov, .avi)", type=["mp4", "mov", "avi"], key="video_upload")
@@ -92,7 +86,6 @@ with st.form("teacher_submission_form", clear_on_submit=True):
     st.caption("Upload snapshots of evaluation result sheets, mark registers, or student performance scorecards.")
 
     result_image = st.file_uploader("📊 Upload Assessment / Result Snapshot (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"], key="result_upload")
-    assessment_score = st.number_input("Overall Calculated Assessment Score (%) - Optional", min_value=0.0, max_value=100.0, value=0.0, step=1.0)
 
     submitted = st.form_submit_button("🚀 Submit Daily Report")
 
@@ -102,12 +95,11 @@ with st.form("teacher_submission_form", clear_on_submit=True):
         elif teacher_name == "Select Teacher..." or teacher_name.startswith("Please"):
             st.error("⚠️ Please select your teacher name.")
         elif not lesson_plan_number.strip():
-            st.error("⚠️ Please enter the Lesson Plan Number / Code.")
+            st.error("⚠️ Please enter the Lesson Plan Number.")
         else:
             timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = teacher_name.strip().replace(" ", "_")
 
-            # Direct File Handling & Saving Locally
             def save_uploaded_file(uploaded_file, prefix):
                 if uploaded_file is not None:
                     ext = uploaded_file.name.split('.')[-1]
@@ -123,26 +115,23 @@ with st.form("teacher_submission_form", clear_on_submit=True):
             writing_path = save_uploaded_file(writing_file, "writing")
             result_path = save_uploaded_file(result_image, "result")
 
-            # Package submission record (mapped to main dashboard schema)
             new_entry = {
                 "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Institution": school_name,
                 "FullName": teacher_name.strip(),
                 "Grade": grade,
                 "Subject": subject,
-                "Duration_Min": 10.0,  # Standard default metric time placeholder
+                "Duration_Min": 10.0,
                 "Lesson_Plan_Num": lesson_plan_number.strip(),
-                "Num_Activities": num_activities,
                 "Type": "teacherSubmission",
                 "Voice_Note_Link": voice_path,
                 "Video_Evidence_1": video_path,
                 "Writing_Sample_Link": writing_path,
-                "Assessment_Score_Pct": assessment_score if assessment_score > 0 else None,
+                "Assessment_Score_Pct": None,
                 "Assessment_Image_Path": result_path,
                 "Portfolio_Image_Path": result_path
             }
 
-            # Append to local form storage file
             df_new = pd.DataFrame([new_entry])
             if os.path.exists(FORM_DB_PATH):
                 try:
@@ -154,7 +143,7 @@ with st.form("teacher_submission_form", clear_on_submit=True):
                 df_combined = df_new
 
             df_combined.to_excel(FORM_DB_PATH, index=False)
-            st.success(f"✅ Thank you, {teacher_name}! Your submission and direct uploads have been recorded successfully.")
+            st.success(f"✅ Thank you, {teacher_name}! Your submission and uploads have been recorded successfully.")
             st.balloons()
 
 # --- ADMIN EXPORT PANEL ---
