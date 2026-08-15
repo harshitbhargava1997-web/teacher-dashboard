@@ -10,7 +10,7 @@ st.set_page_config(page_title="Teacher Daily Evidence Portal", page_icon="📝",
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
-    SUPABASE_URL = st.secrets["supabase"]["url"]
+    SUPABASE_URL = st.secrets["supabase"]["url"].rstrip('/')
     SUPABASE_KEY = st.secrets["supabase"]["key"]
     BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
     PARQUET_FILE_NAME = "master_database.parquet"
@@ -34,21 +34,25 @@ def fetch_master_db_from_supabase():
     return pd.DataFrame()
 
 def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
-    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its public URL."""
+    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its clean direct public URL."""
     if uploaded_file is None:
         return None
     try:
+        clean_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', uploaded_file.name)
+        file_path = f"{folder_name}/{np.random.randint(10000, 99999)}_{clean_filename}"
         file_bytes = uploaded_file.getvalue()
-        file_path = f"{folder_name}/{np.random.randint(10000, 99999)}_{uploaded_file.name}"
         
         supabase.storage.from_(BUCKET_NAME).upload(
             path=file_path,
             file=file_bytes,
             file_options={"upsert": "true", "content-type": uploaded_file.type}
         )
-        return supabase.storage.from_(BUCKET_NAME).get_public_url(file_path)
-    except Exception:
-        return f"supabase://{file_path}"
+        # Construct direct public Supabase Storage URL
+        public_url = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET_NAME}/{file_path}"
+        return public_url
+    except Exception as e:
+        st.error(f"Error uploading {uploaded_file.name}: {e}")
+        return None
 
 def append_teacher_submission(new_df):
     """Downloads current master DB, aligns schemas, appends new submission, and saves back to Supabase."""
@@ -79,7 +83,9 @@ def append_teacher_submission(new_df):
     all_data.loc[all_data['FullName'] == '', 'FullName'] = 'Unknown Teacher'
     all_data['Institution'] = all_data['Institution'].fillna('Unknown School').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
 
-    master_df = all_data.drop_duplicates(subset=['FullName', 'StartTime', 'Institution', 'Type'], keep='last')
+    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
+    available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
+    master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
 
     parquet_buffer = BytesIO()
     master_df.to_parquet(parquet_buffer, index=False)
@@ -195,12 +201,12 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                     'Duration (HH:MM:SS)': "00:00:00",
                     'FullName': sub_teacher_name,
                     'Duration_Min': 0.0,
-                    'Voice_Note_Link': str(voice_url) if voice_url else None,
-                    'Lesson_Plan_Picture': str(pic_url) if pic_url else None,
-                    'Video_Evidence_1': str(vid1_url) if vid1_url else None,
-                    'Video_Evidence_2': str(vid2_url) if vid2_url else None,
-                    'Video_Evidence_3': str(vid3_url) if vid3_url else None,
-                    'Writing_Sample_Link': str(writing_url) if writing_url else None,
+                    'Voice_Note_Link': voice_url if voice_url else None,
+                    'Lesson_Plan_Picture': pic_url if pic_url else None,
+                    'Video_Evidence_1': vid1_url if vid1_url else None,
+                    'Video_Evidence_2': vid2_url if vid2_url else None,
+                    'Video_Evidence_3': vid3_url if vid3_url else None,
+                    'Writing_Sample_Link': writing_url if writing_url else None,
                     'Assessment_Score_Pct': None
                 }])
 
@@ -217,3 +223,4 @@ with st.expander("🛠️ Real-Time Roster Debugger"):
         st.write("Unique Roster Names:", master_df['FullName'].unique().tolist() if 'FullName' in master_df.columns else "No FullName")
     else:
         st.write("Cloud database is currently empty.")
+        
