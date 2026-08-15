@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 from io import BytesIO
 from supabase import create_client
 
@@ -18,19 +19,23 @@ try:
 except Exception as e:
     st.error(f"⚠️ Cloud connection configuration is missing: {e}")
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
-    """Fetches the existing master parquet file from Supabase storage with short TTL to ensure real-time sync."""
+    """Fetches the existing master parquet file from Supabase storage with instant sync TTL."""
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
-            return pd.read_parquet(BytesIO(response))
+            df = pd.read_parquet(BytesIO(response))
+            # Clean string columns immediately upon fetch with regex
+            for col in df.select_dtypes(include=['object', 'string']).columns:
+                df[col] = df[col].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+            return df
     except Exception:
         pass
     return pd.DataFrame()
 
 def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
-    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its URL/path."""
+    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its public URL."""
     if uploaded_file is None:
         return None
     try:
@@ -48,17 +53,37 @@ def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
         return f"supabase://{file_path}"
 
 def append_teacher_submission(new_df):
-    """Downloads current master DB, appends new teacher submission, deduplicates, and saves back to Supabase."""
+    """Downloads current master DB, aligns schemas, appends new submission, and saves back to Supabase."""
     master_df = fetch_master_db_from_supabase()
+
+    # Guarantee 22-column alignment exactly as expected by Admin Portal
+    expected_cols = [
+        'Institution', 'Center', 'FirstName', 'LastName', 'Role', 'Type', 
+        'Grade', 'Subject', 'Book', 'StartTime', 'EndTime', 
+        'Duration (Minutes)', 'Duration (HH:MM:SS)', 'FullName', 'Duration_Min',
+        'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 
+        'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct'
+    ]
+
+    for col in expected_cols:
+        if col not in new_df.columns:
+            new_df[col] = None
+        if not master_df.empty and col not in master_df.columns:
+            master_df[col] = None
 
     if not master_df.empty:
         all_data = pd.concat([master_df, new_df], ignore_index=True)
     else:
         all_data = new_df
 
-    dedup_cols = ['FullName', 'StartTime', 'Book', 'Institution']
-    available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
-    master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='first')
+    # Normalize FullName and Institution across all data via Regex
+    all_data['FirstName'] = all_data['FirstName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+    all_data['LastName'] = all_data['LastName'].fillna('').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+    all_data['FullName'] = (all_data['FirstName'] + " " + all_data['LastName']).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+    all_data.loc[all_data['FullName'] == '', 'FullName'] = 'Unknown Teacher'
+    all_data['Institution'] = all_data['Institution'].fillna('Unknown School').astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+
+    master_df = all_data.drop_duplicates(subset=['FullName', 'StartTime', 'Institution', 'Type'], keep='last')
 
     parquet_buffer = BytesIO()
     master_df.to_parquet(parquet_buffer, index=False)
@@ -71,29 +96,13 @@ def append_teacher_submission(new_df):
     )
     fetch_master_db_from_supabase.clear()
 
-# --- BULLETPROOF DATABASE & ROSTER CLEANING ---
+# --- BULLETPROOF DATABASE & ROSTER LOADER ---
 master_df = fetch_master_db_from_supabase()
 
 school_options = []
 if not master_df.empty:
-    for col in master_df.select_dtypes(include=['object', 'string']).columns:
-        master_df[col] = master_df[col].fillna('').astype(str).str.strip()
-
-    if 'FullName' not in master_df.columns or (master_df['FullName'] == '').all():
-        f_col = 'FirstName' if 'FirstName' in master_df.columns else ''
-        l_col = 'LastName' if 'LastName' in master_df.columns else ''
-        if f_col and l_col:
-            master_df['FullName'] = (master_df[f_col] + " " + master_df[l_col]).str.strip()
-        else:
-            master_df['FullName'] = 'Unknown Teacher'
-    
-    master_df['FullName'] = master_df['FullName'].replace('', 'Unknown Teacher')
-
-    for col in ['Institution', 'School', 'school', 'School_Name']:
-        if col in master_df.columns:
-            master_df['Institution'] = master_df[col]
-            school_options = sorted([s for s in master_df['Institution'].unique() if s and s != 'nan' and s != 'Unknown School'])
-            break
+    if 'Institution' in master_df.columns:
+        school_options = sorted([s for s in master_df['Institution'].unique() if s and s != 'nan' and s != 'Unknown School'])
 
 # --- UI FOR TEACHERS ---
 st.title("📝 Teacher Daily Evidence Portal")
@@ -108,15 +117,14 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
     
-    # --- DIRECT ROSTER FILTERING ---
+    # --- ROBUST TEACHER FILTERING ---
     filtered_teachers = []
     if sub_school != "-- Select School --" and not master_df.empty:
-        inst_col = 'Institution' if 'Institution' in master_df.columns else master_df.columns[0]
-        
-        school_subset = master_df[master_df[inst_col].astype(str).str.strip().str.lower() == sub_school.lower()]
+        # Match school case-insensitively
+        school_subset = master_df[master_df['Institution'].str.lower() == sub_school.lower()]
         
         if not school_subset.empty and 'FullName' in school_subset.columns:
-            all_names = school_subset['FullName'].astype(str).str.strip().unique().tolist()
+            all_names = school_subset['FullName'].astype(str).unique().tolist()
             filtered_teachers = [n for n in all_names if n and n.lower() not in ['nan', 'unknown teacher', '', 'none']]
 
         filtered_teachers = sorted(list(set(filtered_teachers)))
@@ -178,17 +186,21 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
                 l_name = name_parts[1] if len(name_parts) > 1 else ""
 
                 new_entry = pd.DataFrame([{
+                    'Institution': sub_school,
+                    'Center': sub_school,
                     'FirstName': f_name,
                     'LastName': l_name,
-                    'FullName': sub_teacher_name,
-                    'Institution': sub_school,
+                    'Role': 'teacher',
+                    'Type': 'lessonDelivery',
                     'Grade': sub_grade,
                     'Subject': sub_subject,
                     'Book': f"Lesson Plan #{sub_lesson_num.strip()}",
-                    'Type': 'lessonDelivery',
-                    'Duration_Min': 0.0,
-                    'Duration (HH:MM:SS)': "00:00:00",
                     'StartTime': pd.to_datetime(sub_date),
+                    'EndTime': pd.to_datetime(sub_date),
+                    'Duration (Minutes)': 0.0,
+                    'Duration (HH:MM:SS)': "00:00:00",
+                    'FullName': sub_teacher_name,
+                    'Duration_Min': 0.0,
                     'Voice_Note_Link': str(voice_url) if voice_url else None,
                     'Lesson_Plan_Picture': str(pic_url) if pic_url else None,
                     'Video_Evidence_1': str(vid1_url) if vid1_url else None,
@@ -203,11 +215,11 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
 
-# --- QUICK DIAGNOSTIC FOOTER ---
+# --- DIAGNOSTIC FOOTER ---
 with st.expander("🛠️ Real-Time Roster Debugger"):
     if not master_df.empty:
         st.write(f"Total rows in cloud DB: {len(master_df)}")
-        st.write("Available columns:", master_df.columns.tolist())
+        st.write("Unique Schools:", master_df['Institution'].unique().tolist() if 'Institution' in master_df.columns else "No Institution")
         st.write("Unique Roster Names:", master_df['FullName'].unique().tolist() if 'FullName' in master_df.columns else "No FullName")
     else:
         st.write("Cloud database is currently empty.")
