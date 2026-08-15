@@ -1,28 +1,3 @@
-# --- SAFE SUPABASE CLOUD STORAGE SETUP ---
-supabase = None
-BUCKET_NAME = "dashboard-data"
-PARQUET_FILE_NAME = "master_database.parquet"
-
-try:
-    SUPABASE_URL = st.secrets["supabase"]["url"]
-    SUPABASE_KEY = st.secrets["supabase"]["key"]
-    BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
-    st.warning("⚠️ Supabase secrets not detected. Please add them in your Streamlit Cloud Settings > Secrets to enable cloud syncing.")
-
-@st.cache_data(show_spinner=False)
-def fetch_master_db_from_supabase():
-    """Downloads and reads the master parquet file from Supabase storage into memory with caching."""
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
-        if response:
-            return pd.read_parquet(BytesIO(response))
-    except Exception:
-        pass
-    return pd.DataFrame()
 import streamlit as st
 import pandas as pd
 import numpy as np
