@@ -7,6 +7,7 @@ import os
 import glob
 import re
 import json
+import urllib.parse
 from io import BytesIO
 from supabase import create_client
 
@@ -1039,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CALL MANAGER & QUALITATIVE MATRIX)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1085,7 +1086,11 @@ else:
                     return 'Active Portfolio'
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
                 lib_ok = row['Avg_Library_Usage_Mins'] >= daily_lib_target
-                if ld_ok and lib_ok:
+                qual_ok = True
+                if enable_qual_kpi:
+                    qual_ok = (row['Activity_Videos'] >= target_vid_count) or (row['Writing_Samples'] >= target_writing_count)
+
+                if ld_ok and lib_ok and qual_ok:
                     return '🌟 Pace Setters'
                 elif ld_ok and not lib_ok:
                     return '📘 Lesson Focused'
@@ -1106,15 +1111,15 @@ else:
 
             col_top1, col_top2 = st.columns(2)
             with col_top1:
-                st.success(f"🌟 **Pace Setters ({len(pace_setters)} Schools)**\n\n*Met both Lesson Prep (>={daily_ld_target:.0f}m) & Library (>={daily_lib_target:.0f}m) KPIs*\n\n" + (", ".join(pace_setters) if pace_setters else "None"))
+                st.success(f"🌟 **Pace Setters ({len(pace_setters)} Schools)**\n\n*Met Lesson Prep, Library & Qualitative Artifact Standards*\n\n" + (", ".join(pace_setters) if pace_setters else "None"))
             with col_top2:
-                st.info(f"📘 **Lesson Focused ({len(lesson_focused)} Schools)**\n\n*Met Lesson Prep (>={daily_ld_target:.0f}m), Below Library (<{daily_lib_target:.0f}m)*\n\n" + (", ".join(lesson_focused) if lesson_focused else "None"))
+                st.info(f"📘 **Lesson Focused ({len(lesson_focused)} Schools)**\n\n*Met Lesson Prep, Below Library/Artifact Targets*\n\n" + (", ".join(lesson_focused) if lesson_focused else "None"))
 
             col_bot1, col_bot2 = st.columns(2)
             with col_bot1:
-                st.warning(f"📚 **Library Focused ({len(library_focused)} Schools)**\n\n*Met Library (>={daily_lib_target:.0f}m), Below Lesson Prep (<{daily_ld_target:.0f}m)*\n\n" + (", ".join(library_focused) if library_focused else "None"))
+                st.warning(f"📚 **Library Focused ({len(library_focused)} Schools)**\n\n*Met Library, Below Lesson Prep Targets*\n\n" + (", ".join(library_focused) if library_focused else "None"))
             with col_bot2:
-                st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below KPI Standards on both features*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
+                st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below Quantitative & Qualitative Standards*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
 
             st.markdown("---")
             st.subheader("📋 Complete School Performance Leaderboard (Quantitative & Qualitative)")
@@ -1145,6 +1150,60 @@ else:
                 file_name=f"Manager_Portfolio_Overview_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
+
+            st.markdown("---")
+
+            # --- SCHOOL OWNER CALL & DISCUSSION LOG ---
+            st.subheader("📞 School Owner Call & Discussion Notes Log")
+            st.caption("Select a school to initiate calls and record live discussion logs, action items, and next steps.")
+
+            if "school_call_notes" not in st.session_state:
+                st.session_state["school_call_notes"] = {}
+
+            call_school_list = sorted(school_stats['Institution'].unique().tolist())
+            selected_call_school = st.selectbox("Select School for Owner Discussion:", options=call_school_list, key="call_school_select")
+
+            default_owners_contacts = {
+                "Pragyanam International School": "+91 98260XXXXX",
+            }
+            owner_phone = default_owners_contacts.get(selected_call_school, "+91 99999XXXXX")
+
+            col_call_info1, col_call_info2 = st.columns([1, 2])
+            with col_call_info1:
+                st.markdown(f"**Selected School:** `{selected_call_school}`")
+                st.markdown(f"**Owner Contact:** `{owner_phone}`")
+                
+                # WhatsApp & Phone Click-to-Action Buttons
+                clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
+                wa_msg = urllib.parse.quote(f"Hello, checking in from Academic Management regarding recent portfolio execution metrics for {selected_call_school}.")
+                
+                st.markdown(f'<a href="tel:{owner_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call School Owner</button></a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="https://wa.me/{clean_phone}?text={wa_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Send WhatsApp Message</button></a>', unsafe_allow_html=True)
+
+            with col_call_info2:
+                existing_note = st.session_state["school_call_notes"].get(selected_call_school, "")
+                new_discussion_note = st.text_area(f"Discussion Notes & Action Items for {selected_call_school}:", value=existing_note, height=110, key=f"note_{selected_call_school}")
+                
+                if st.button("💾 Save Discussion Notes", key=f"save_note_{selected_call_school}"):
+                    st.session_state["school_call_notes"][selected_call_school] = new_discussion_note
+                    st.success(f"✅ Notes saved successfully for {selected_call_school}!")
+
+            if st.session_state["school_call_notes"]:
+                st.markdown("##### 📋 Summary of All Recorded School Discussions")
+                notes_summary_df = pd.DataFrame([
+                    {"School": sch, "Latest Discussion & Action Items": note} 
+                    for sch, note in st.session_state["school_call_notes"].items() if note.strip()
+                ])
+                if not notes_summary_df.empty:
+                    st.dataframe(notes_summary_df, use_container_width=True)
+                    
+                    csv_notes = notes_summary_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Call & Discussion Log (CSV)",
+                        data=csv_notes,
+                        file_name=f"School_Owner_Call_Logs_{selected_month.replace(' ', '_')}.csv",
+                        mime="text/csv"
+                    )
 
             st.markdown("---")
 
