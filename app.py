@@ -4,14 +4,40 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import glob
 from io import BytesIO
-import s3fs
+from supabase import create_client
 
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+
+# Page layout configuration (Must be the first Streamlit command)
+st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboard", layout="wide")
+
+# --- SUPABASE CLOUD STORAGE SETUP ---
+try:
+    SUPABASE_URL = st.secrets["supabase"]["url"]
+    SUPABASE_KEY = st.secrets["supabase"]["key"]
+    BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
+    PARQUET_FILE_NAME = "master_database.parquet"
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
+
+@st.cache_data(show_spinner=False)
+def fetch_master_db_from_supabase():
+    """Downloads and reads the master parquet file from Supabase storage into memory with caching."""
+    try:
+        response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
+        if response:
+            return pd.read_parquet(BytesIO(response))
+    except Exception:
+        pass
+    return pd.DataFrame()
 
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
@@ -79,36 +105,14 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
     except Exception:
         return 1
 
-# Page layout
-st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboard", layout="wide")
-
+# Page layout title
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
 st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, and **Assessment Outcomes**.")
 
-# 1. Cloud Object Storage Configuration Setup
-AWS_ACCESS_KEY = st.secrets["aws"]["aws_access_key_id"]
-AWS_SECRET_KEY = st.secrets["aws"]["aws_secret_access_key"]
-BUCKET_NAME = st.secrets["aws"]["bucket_name"]
-
-CLOUD_DB_PATH = f"s3://{BUCKET_NAME}/master_database.parquet"
-
-# Configure storage options for Pandas S3 integration
-storage_options = {
-    "key": AWS_ACCESS_KEY,
-    "secret": AWS_SECRET_KEY
-}
-
+# 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
-    """Load master database from cloud storage bucket, merge new Excel uploads, and auto-deduplicate session logs."""
-    master_df = pd.DataFrame()
-    
-    try:
-        # Check if file exists in S3 bucket and load it
-        if s3fs.S3FileSystem(**storage_options).exists(f"{BUCKET_NAME}/master_database.parquet"):
-            master_df = pd.read_parquet(CLOUD_DB_PATH, storage_options=storage_options)
-    except Exception as e:
-        st.sidebar.warning(f"Could not load existing cloud database: {e}")
-        master_df = pd.DataFrame()
+    """Load master database from Supabase, merge new Excel uploads, update cloud bucket, and clear cache."""
+    master_df = fetch_master_db_from_supabase()
 
     if new_upload_dfs:
         combined_new = pd.concat(new_upload_dfs, ignore_index=True)
@@ -123,11 +127,23 @@ def load_or_update_master_db(new_upload_dfs=None):
         
         master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='first')
         
+        # Save Parquet to BytesIO buffer and upload to Supabase Bucket
         try:
-            # Save updated dataframe directly back to Cloud Object Storage Bucket
-            master_df.to_parquet(CLOUD_DB_PATH, index=False, storage_options=storage_options)
+            parquet_buffer = BytesIO()
+            master_df.to_parquet(parquet_buffer, index=False)
+            parquet_buffer.seek(0)
+            
+            supabase.storage.from_(BUCKET_NAME).upload(
+                path=PARQUET_FILE_NAME,
+                file=parquet_buffer.getvalue(),
+                file_options={"upsert": "true", "content-type": "application/octet-stream"}
+            )
+            
+            # Clear cache so subsequent reads pull the freshly updated file from Supabase
+            fetch_master_db_from_supabase.clear()
+            st.sidebar.success("Successfully synced database to Supabase Cloud!")
         except Exception as e:
-            st.sidebar.error(f"Error saving to Cloud Parquet Bucket: {e}")
+            st.sidebar.error(f"Error saving Parquet Database to Supabase: {e}")
 
     return master_df
 
@@ -187,35 +203,32 @@ if uploaded_files:
         except Exception as e:
             st.sidebar.error(f"Error reading {file.name}: {e}")
 
-# Load or Sync Cloud Parquet Database
+# Load or Sync Supabase Parquet Database
 if new_processed_dfs:
     df = load_or_update_master_db(new_processed_dfs)
-    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Cloud Parquet DB!")
+    st.sidebar.success(f"Synced {len(uploaded_files)} file(s) into Supabase Parquet DB!")
 else:
     df = load_or_update_master_db()
 
-# 3. Database Status & Storage Controls
+# 3. Cloud Database Status & Storage Controls
 st.sidebar.markdown("---")
-st.sidebar.header("🗄️ Cloud Database Status")
+st.sidebar.header("🗄️ Supabase Cloud Database Status")
 
-db_exists_in_cloud = False
-try:
-    db_exists_in_cloud = s3fs.S3FileSystem(**storage_options).exists(f"{BUCKET_NAME}/master_database.parquet")
-except:
-    pass
+current_db_check = fetch_master_db_from_supabase()
 
-if db_exists_in_cloud and not df.empty:
-    st.sidebar.metric("Cloud DB Total Records", len(df))
+if not current_db_check.empty:
+    st.sidebar.metric("Cloud DB Total Records", len(current_db_check))
     if st.sidebar.button("🚨 Clear Cloud Database"):
         try:
-            s3fs.S3FileSystem(**storage_options).rm(f"{BUCKET_NAME}/master_database.parquet")
+            supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])
+            fetch_master_db_from_supabase.clear()
             st.sidebar.success("Cloud database cleared!")
             st.rerun()
         except Exception as e:
-            st.sidebar.error(f"Could not delete cloud database: {e}")
+            st.sidebar.error(f"Could not delete database from cloud: {e}")
 
 if df.empty:
-    st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your cloud-hosted database bucket.")
+    st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")
 else:
     # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
@@ -1102,11 +1115,3 @@ else:
                 file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
-
-    # Active Cloud Master Database File Info
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🗄️ Cloud Master Database File")
-    if db_exists_in_cloud:
-        st.sidebar.caption(f"☁️ `s3://{BUCKET_NAME}/master_database.parquet` ({len(df)} records)")
-    else:
-        st.sidebar.caption("No cloud database file initialized yet.")
