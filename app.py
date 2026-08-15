@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import os
 import glob
 import re
+import json
 from io import BytesIO
 from supabase import create_client
 
@@ -31,14 +32,35 @@ except Exception as e:
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
-    """Downloads and reads the master parquet file from Supabase storage into memory with caching."""
+    """Reads base master parquet file AND merges all isolated teacher JSON submissions in memory."""
+    base_df = pd.DataFrame()
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
-            return pd.read_parquet(BytesIO(response))
+            base_df = pd.read_parquet(BytesIO(response))
     except Exception:
         pass
-    return pd.DataFrame()
+
+    # Read all standalone JSON teacher submissions from the submissions/ folder
+    sub_records = []
+    try:
+        file_list = supabase.storage.from_(BUCKET_NAME).list("submissions")
+        if file_list:
+            for item in file_list:
+                fname = item.get('name', '')
+                if fname.endswith('.json'):
+                    raw_data = supabase.storage.from_(BUCKET_NAME).download(f"submissions/{fname}")
+                    if raw_data:
+                        sub_records.append(json.loads(raw_data.decode('utf-8')))
+    except Exception:
+        pass
+
+    if sub_records:
+        subs_df = pd.DataFrame(sub_records)
+        combined = pd.concat([base_df, subs_df], ignore_index=True) if not base_df.empty else subs_df
+        return combined
+
+    return base_df
 
 
 def _norm_text(value):
