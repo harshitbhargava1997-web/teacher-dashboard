@@ -30,7 +30,7 @@ def fetch_master_db_from_supabase():
     return pd.DataFrame()
 
 def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
-    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its public URL or path."""
+    """Uploads a Streamlit uploaded file directly to Supabase storage and returns its URL/path."""
     if uploaded_file is None:
         return None
     try:
@@ -56,12 +56,10 @@ def append_teacher_submission(new_df):
     else:
         all_data = new_df
 
-    # Deduplicate based on unique session signature
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Institution']
     available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
     master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='first')
 
-    # Convert to Parquet buffer and upload to Supabase bucket
     parquet_buffer = BytesIO()
     master_df.to_parquet(parquet_buffer, index=False)
     parquet_buffer.seek(0)
@@ -73,23 +71,28 @@ def append_teacher_submission(new_df):
     )
     fetch_master_db_from_supabase.clear()
 
-# --- ROBUST DATABASE & ROSTER LOADER ---
+# --- HARDENED DATABASE & ROSTER LOADER ---
 master_df = fetch_master_db_from_supabase()
 
 school_options = []
+inst_col = None
+name_col = None
+
 if not master_df.empty:
-    possible_school_cols = ['Institution', 'School', 'school', 'School_Name', 'school_name', 'Institution_Name']
-    for col in possible_school_cols:
+    # 1. Detect Institution Column
+    for col in ['Institution', 'School', 'school', 'School_Name', 'school_name', 'Institution_Name']:
         if col in master_df.columns:
-            school_options = sorted(master_df[col].dropna().astype(str).unique().tolist())
+            inst_col = col
+            master_df[col] = master_df[col].astype(str).str.strip()
+            school_options = sorted(master_df[col].dropna().unique().tolist())
             break
-    
-    if not school_options:
-        for col in master_df.select_dtypes(include=['object', 'string']).columns:
-            unique_vals = master_df[col].dropna().astype(str).unique().tolist()
-            if len(unique_vals) > 0 and len(unique_vals) < 50:
-                school_options = sorted(unique_vals)
-                break
+            
+    # 2. Detect Teacher Name Column
+    for col in ['FullName', 'Teacher_Name', 'teacher_name', 'Name', 'name', 'Teacher']:
+        if col in master_df.columns:
+            name_col = col
+            master_df[col] = master_df[col].astype(str).str.strip()
+            break
 
 # --- UI FOR TEACHERS ---
 st.title("📝 Teacher Daily Evidence Portal")
@@ -104,26 +107,11 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
     
-    # Filter teachers dynamically based on the selected school
+    # Dynamically filter teachers based on selected school with exact cleaning
     filtered_teachers = []
-    if sub_school != "-- Select School --" and not master_df.empty:
-        inst_col = None
-        for col in ['Institution', 'School', 'school', 'School_Name', 'school_name']:
-            if col in master_df.columns:
-                inst_col = col
-                break
-                
-        name_col = None
-        for col in ['FullName', 'Teacher_Name', 'teacher_name', 'Name', 'name', 'Teacher']:
-            if col in master_df.columns:
-                name_col = col
-                break
-                
-        if inst_col and name_col:
-            filtered_teachers = sorted(master_df[master_df[inst_col].astype(str) == sub_school][name_col].dropna().astype(str).unique().tolist())
-
-    if not filtered_teachers and sub_school != "-- Select School --":
-        filtered_teachers = ["Teacher Alpha", "Teacher Beta"]
+    if sub_school != "-- Select School --" and not master_df.empty and inst_col and name_col:
+        matched_rows = master_df[master_df[inst_col].str.lower() == sub_school.lower()]
+        filtered_teachers = sorted(matched_rows[name_col].dropna().unique().tolist())
 
     sub_teacher_name = st.selectbox(
         "Select Your Name *", 
