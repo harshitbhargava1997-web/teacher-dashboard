@@ -1040,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM, ACTION STEPS & CONSOLIDATED WHATSAPP REPORT)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & ACTION STEPS)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1220,9 +1220,9 @@ else:
 
                 existing_entry = next((item for item in st.session_state["school_call_logs_store"] if item["School"] == selected_call_school and item["Review Period"] == filter_description_text), None)
                 
-                default_note_text = existing_entry["Discussion & Action Items"] if existing_entry else ""
-                default_action_text = existing_entry["Next Action Step"] if existing_entry else ""
-                default_status_val = existing_entry["Status"] if existing_entry else "Open"
+                default_note_text = existing_entry.get("Discussion & Action Items", "") if existing_entry else ""
+                default_action_text = existing_entry.get("Next Action Step", "") if existing_entry else ""
+                default_status_val = existing_entry.get("Status", "Open") if existing_entry else "Open"
                 
                 status_options = ["Open", "In Progress", "Resolved"]
                 default_status_idx = status_options.index(default_status_val) if default_status_val in status_options else 0
