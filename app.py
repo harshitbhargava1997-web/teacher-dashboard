@@ -812,12 +812,14 @@ else:
 
             st.markdown("---")
 
-            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT
+            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT (WITH ALL-TIME FALLBACK)
             st.subheader("2. Book & Grade Digital Content Usage Report")
             teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
+            if teacher_books.empty:
+                teacher_books = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
             
             if teacher_books.empty:
-                st.info(f"No digital chapters or modules recorded for **{target_teacher}** during `{filter_description_text}`.")
+                st.info(f"No digital chapters or modules recorded for **{target_teacher}**.")
             else:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
@@ -1465,5 +1467,5 @@ else:
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
                 file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
-                mime="text/csv"
+                mime="application/pdf"
             )
