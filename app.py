@@ -62,11 +62,14 @@ def normalize_identity_columns(df):
             out[col] = ""
         out[col] = out[col].map(_norm_text)
 
+    # Prefer the already-populated FullName. Only construct it when it is missing.
     calculated_full = (
         out["FirstName"].fillna("") + " " + out["LastName"].fillna("")
     ).map(_norm_text)
     empty_full = out["FullName"].eq("")
     out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
+
+    # Keep the existing application's sentinel for genuinely missing teacher names.
     out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"
     return out
 
@@ -102,6 +105,7 @@ def build_teacher_roster(df):
 
 # 0. PDF Generator Helper Function
 def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
+    """Generates a professional PDF document in memory and returns a downloadable BytesIO buffer."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -151,17 +155,19 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe):
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
+    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
         holidays_np = [np.datetime64(d) for d in excluded_dates_list] if excluded_dates_list else []
         w_mask = '1111110' if exclude_sundays else '1111111'
-        return int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np))
+        return max(1, int(np.busday_count(start_np, end_np, weekmask=w_mask, holidays=holidays_np)))
     except Exception:
         return 1
 
+# Page layout title
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
-st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, and **Assessment Outcomes**.")
+st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily KPIs (Lesson Prep / Library)**, **360° Qualitative Evidences**, and **Live Submissions Feed**.")
 
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
@@ -307,7 +313,7 @@ else:
         df['Month_Week_Label'] = df['StartTime'].dt.strftime('%b %Y') + " - Week " + df['Week_Num'].astype(str) + " (" + df['Week_Date_Range'] + ")"
         df['Week'] = df['Month_Week_Label']
     else:
-        df['Date'] = "N/A"
+        df['Date'] = None
         df['Month_Name'] = "N/A"
         df['Week'] = "N/A"
 
@@ -317,16 +323,16 @@ else:
     else:
         master_teacher_roster = master_teacher_roster[['Institution', 'FullName']].drop_duplicates()
 
-    # Sidebar Review Filters
+    # --- 1. GLOBAL SCHOOL FILTER ---
     st.sidebar.markdown("---")
-    st.sidebar.header("🔍 Review Filters")
+    st.sidebar.header("🔍 Global Filters")
     all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
     school_filtered_df = df[df['Institution'].isin(selected_schools)]
 
-    # Calendar & Holiday Manager
+    # --- 2. GLOBAL CALENDAR & HOLIDAY MANAGER ---
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -350,20 +356,21 @@ else:
             format_func=lambda x: x.strftime('%Y-%m-%d')
         )
 
-    # Dynamic KPI Controls
+    # --- 3. DYNAMIC KPI BENCHMARK CONTROLS ---
     st.sidebar.markdown("---")
     st.sidebar.header("🎯 KPI Benchmark Controls")
 
     daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
     daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)
 
+    # --- 4. GRANULARITY & CUSTOM DATE RANGE SELECTOR ---
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
     
-    view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review"])
+    view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review", "Custom Date Range"])
     
-    if month_filtered_df.empty:
+    if month_filtered_df.empty and view_mode != "Custom Date Range":
         filtered_df = month_filtered_df
         selected_num_days = 1
         filter_description_text = f"Full Month: {selected_month} (0 Records)"
@@ -371,7 +378,6 @@ else:
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
-        
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
@@ -379,33 +385,46 @@ else:
         w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
-        
-    else:
+    elif view_mode == "Single Day Review":
         selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
         selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"
+    else:  # Custom Date Range
+        min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
+        max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
+        
+        custom_date_range = st.sidebar.date_input("Select Custom Date Range:", value=(min_avail, max_avail), min_value=min_avail, max_value=max_avail)
+        if isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 2:
+            c_start, c_end = custom_date_range
+        elif isinstance(custom_date_range, (tuple, list)) and len(custom_date_range) == 1:
+            c_start = c_end = custom_date_range[0]
+        else:
+            c_start = c_end = custom_date_range
+            
+        filtered_df = school_filtered_df[(school_filtered_df['Date'] >= c_start) & (school_filtered_df['Date'] <= c_end)]
+        selected_num_days = get_working_days(c_start, c_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
+        filter_description_text = f"Custom Range: {c_start} to {c_end} ({selected_num_days} Working Day(s))"
 
     calc_ld_kpi = daily_ld_target * selected_num_days
     calc_lib_kpi = daily_lib_target * selected_num_days
 
-    # Teacher Filter
+    # --- 5. GLOBAL TEACHER FILTER ---
     available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique() if str(t).strip()])
     selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
     
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 8 Dedicated Review Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    # 7 Dedicated Active Tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📘 1. Daily Lesson Plan KPI", 
         "📚 2. Daily Library KPI", 
         "📖 3. Daily Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📊 7. Student Assessment Outcomes",
-        "📬 8. Live Evidence Submissions Feed"
+        "📬 7. Live Evidence Submissions Feed"
     ])
 
     # TAB 1: DAILY LESSON PLAN COMPLIANCE
@@ -533,15 +552,11 @@ else:
             st.info("No specific chapter/book access logs found in the uploaded data for the selected global filters.")
         else:
             col_f1, col_f2, col_f3 = st.columns(3)
-            
             with col_f1:
                 t3_school_opt = ["All Selected Schools"] + sorted(content_df['Institution'].unique().tolist())
                 t3_school = st.selectbox("🏫 Select School:", t3_school_opt, key="t3_school")
                 
-            if t3_school != "All Selected Schools":
-                t3_df = content_df[content_df['Institution'] == t3_school]
-            else:
-                t3_df = content_df
+            t3_df = content_df if t3_school == "All Selected Schools" else content_df[content_df['Institution'] == t3_school]
 
             with col_f2:
                 t3_teacher_opt = ["All Teachers"] + sorted(t3_df['FullName'].unique().tolist())
@@ -568,7 +583,6 @@ else:
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
 
                 col_c1, col_c2 = st.columns(2)
-
                 with col_c1:
                     if t3_teacher != "All Teachers":
                         ch_summary = t3_df.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()
@@ -637,7 +651,7 @@ else:
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
-        st.caption("Teacher evidence submitted from the Teacher Portal is synchronized into the shared master database and appears here automatically for the selected teacher and period.")
+        st.caption("Review qualitative lesson artifacts, voice recordings, classroom videos, and KPI progress for the selected teacher.")
 
         all_roster_teachers = sorted(school_master_roster['FullName'].unique())
         
@@ -646,7 +660,6 @@ else:
         else:
             target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers)
             
-            # Period-scoped data for benchmarks vs all-time records for submitted evidences
             teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
             teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
             teacher_school = school_master_roster[school_master_roster['FullName'] == target_teacher]['Institution'].values[0] if not school_master_roster[school_master_roster['FullName'] == target_teacher].empty else "N/A"
@@ -721,14 +734,12 @@ else:
 
             # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT
             st.subheader("2. Book & Grade Digital Content Usage Report")
-            
             teacher_books = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
             
             if teacher_books.empty:
                 st.info(f"No specific digital books or chapters were accessed by **{target_teacher}** during `{filter_description_text}`.")
             else:
                 col_b1, col_b2 = st.columns(2)
-                
                 with col_b1:
                     t_book_summary = teacher_books.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()
                     fig_tb_bar = px.bar(
@@ -742,7 +753,6 @@ else:
                     
                 with col_b2:
                     t_grade_summary = teacher_books.groupby('Grade')['Duration_Min'].sum().reset_index()
-                    
                     fig_tg_pie = px.pie(
                         t_grade_summary, names="Grade", values="Duration_Min",
                         title=f"Grade-Level Digital Time Share & Duration for {target_teacher}"
@@ -763,7 +773,6 @@ else:
 
             evidence_source = teacher_all_data if not teacher_all_data.empty else teacher_date_data
             
-            # Helper function to extract (URL, Date, Lesson Label)
             def extract_evidence_items(df_src, col_name):
                 if col_name not in df_src.columns:
                     return []
@@ -774,7 +783,6 @@ else:
                         d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
                         b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Activity"
                         items.append({'url': val, 'date': d_str, 'lesson': b_str})
-                # Deduplicate by url
                 seen = set()
                 deduped = []
                 for item in items:
@@ -790,7 +798,6 @@ else:
             v_vid = []
             for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
                 v_vid.extend(extract_evidence_items(evidence_source, col))
-            # Deduplicate videos by url
             seen_v = set()
             deduped_v = []
             for item in v_vid:
@@ -1125,84 +1132,13 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: STUDENT ASSESSMENT OUTCOMES & ACADEMIC IMPACT (TYPEERROR FIX INCLUDED)
+    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED
     with tab7:
-        st.header("📊 Student Assessment Outcomes & Impact Analysis")
-        st.caption("Track student assessment scores (periodic, monthly, summative) and analyze impact across schools, grades, subjects, and teacher execution tiers.")
-
-        assess_df = school_filtered_df.copy()
-        
-        # Robust conversion to numeric to resolve string dtype mean reduction error
-        if 'Assessment_Score_Pct' in assess_df.columns:
-            assess_df['Assessment_Score_Pct'] = pd.to_numeric(assess_df['Assessment_Score_Pct'], errors='coerce')
-            assess_df = assess_df.dropna(subset=['Assessment_Score_Pct'])
-
-        if 'Assessment_Score_Pct' not in school_filtered_df.columns or assess_df.empty:
-            st.info("👋 No student assessment score data uploaded yet. When you upload files containing `Assessment_Score_Pct`, outcome analytics will automatically render here.")
-        else:
-            a_col1, a_col2, a_col3 = st.columns(3)
-            avg_score = float(assess_df['Assessment_Score_Pct'].mean())
-            pass_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 40.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
-            high_rate = (len(assess_df[assess_df['Assessment_Score_Pct'] >= 75.0]) / len(assess_df)) * 100 if len(assess_df) > 0 else 0.0
-
-            a_col1.metric("Average Assessment Score", f"{avg_score:.1f}%")
-            a_col2.metric("Pass Rate (>= 40%)", f"{pass_rate:.1f}%")
-            a_col3.metric("High Performers (>= 75%)", f"{high_rate:.1f}%")
-
-            st.markdown("---")
-
-            col_a1, col_a2 = st.columns(2)
-
-            with col_a1:
-                st.subheader("📚 Subject-Wise Assessment Scores")
-                subj_score = assess_df.groupby('Subject')['Assessment_Score_Pct'].mean().reset_index()
-                fig_as = px.bar(
-                    subj_score, x="Subject", y="Assessment_Score_Pct", color="Subject",
-                    title="Average Assessment Score by Subject (%)", text_auto=".1f"
-                )
-                fig_as.add_hline(y=75.0, line_dash="dash", line_color="green", annotation_text="Distinction Goal (75%)")
-                st.plotly_chart(fig_as, use_container_width=True)
-
-            with col_a2:
-                st.subheader("🏫 Grade-Level Performance Impact")
-                grade_score = assess_df.groupby('Grade')['Assessment_Score_Pct'].mean().reset_index()
-                fig_ag = px.bar(
-                    grade_score, x="Grade", y="Assessment_Score_Pct", color="Grade",
-                    title="Average Assessment Score by Grade Level (%)", text_auto=".1f"
-                )
-                st.plotly_chart(fig_ag, use_container_width=True)
-
-            st.markdown("---")
-            st.subheader("📋 Granular Assessment Leaderboard")
-            display_assess_table = assess_df[['Institution', 'FullName', 'Grade', 'Subject', 'Assessment_Score_Pct']].rename(columns={
-                'Institution': 'School', 'FullName': 'Teacher Name', 'Assessment_Score_Pct': 'Average Score (%)'
-            })
-            st.dataframe(display_assess_table, use_container_width=True)
-
-            pdf_tab7 = generate_pdf_report(
-                title_text="📊 Student Assessment Outcomes Report",
-                subtitle_text=f"Period: {filter_description_text} | Total Evaluated Records: {len(assess_df)}",
-                summary_metrics={
-                    "Average Score": f"{avg_score:.1f}%",
-                    "Pass Rate": f"{pass_rate:.1f}%",
-                    "High Performers": f"{high_rate:.1f}%"
-                },
-                dataframe=display_assess_table
-            )
-            st.download_button(
-                label="📄 Download Assessment Outcomes Report (PDF)",
-                data=pdf_tab7,
-                file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
-                mime="application/pdf"
-            )
-
-    # TAB 8: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED (Independent of Global Filters)
-    with tab8:
         st.header("📬 Live Evidence Submissions Feed")
-        st.caption("Complete, unfiltered log of all qualitative evidence submissions from the Teacher Portal across the entire master database.")
+        st.caption("Complete log of all qualitative evidence submissions from the Teacher Portal across the filtered database.")
 
         evidence_cols = ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
-        avail_ev_cols = [c for c in evidence_cols if c in df.columns]
+        avail_ev_cols = [c for c in evidence_cols if c in filtered_df.columns]
 
         def has_valid_evidence(row):
             for col in avail_ev_cols:
@@ -1211,46 +1147,45 @@ else:
                     return True
             return False
 
-        all_submissions_df = df[df.apply(has_valid_evidence, axis=1)].copy() if not df.empty and avail_ev_cols else pd.DataFrame()
+        all_submissions_df = filtered_df[filtered_df.apply(has_valid_evidence, axis=1)].copy() if not filtered_df.empty and avail_ev_cols else pd.DataFrame()
 
         if all_submissions_df.empty:
-            st.info("No teacher evidence submissions found yet in the cloud database.")
+            st.info("No teacher evidence submissions match the currently selected global filter criteria.")
         else:
-            # Independent In-Tab Drilldown Filters
-            col_t8_f1, col_t8_f2, col_t8_f3 = st.columns(3)
-            with col_t8_f1:
-                t8_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
-                t8_selected_school = st.selectbox("Filter by School:", t8_schools, key="t8_school")
+            col_t7_f1, col_t7_f2, col_t7_f3 = st.columns(3)
+            with col_t7_f1:
+                t7_schools = ["All Schools"] + sorted([s for s in all_submissions_df['Institution'].unique() if str(s).strip()])
+                t7_selected_school = st.selectbox("Filter by School:", t7_schools, key="t7_school")
             
-            t8_filtered = all_submissions_df if t8_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t8_selected_school]
+            t7_filtered = all_submissions_df if t7_selected_school == "All Schools" else all_submissions_df[all_submissions_df['Institution'] == t7_selected_school]
 
-            with col_t8_f2:
-                t8_teachers = ["All Teachers"] + sorted([t for t in t8_filtered['FullName'].unique() if str(t).strip()])
-                t8_selected_teacher = st.selectbox("Filter by Teacher:", t8_teachers, key="t8_teacher")
+            with col_t7_f2:
+                t7_teachers = ["All Teachers"] + sorted([t for t in t7_filtered['FullName'].unique() if str(t).strip()])
+                t7_selected_teacher = st.selectbox("Filter by Teacher:", t7_teachers, key="t7_teacher")
 
-            if t8_selected_teacher != "All Teachers":
-                t8_filtered = t8_filtered[t8_filtered['FullName'] == t8_selected_teacher]
+            if t7_selected_teacher != "All Teachers":
+                t7_filtered = t7_filtered[t7_filtered['FullName'] == t7_selected_teacher]
 
-            with col_t8_f3:
-                t8_grades = ["All Grades"] + sorted([g for g in t8_filtered['Grade'].unique() if str(g).strip()])
-                t8_selected_grade = st.selectbox("Filter by Grade:", t8_grades, key="t8_grade")
+            with col_t7_f3:
+                t7_grades = ["All Grades"] + sorted([g for g in t7_filtered['Grade'].unique() if str(g).strip()])
+                t7_selected_grade = st.selectbox("Filter by Grade:", t7_grades, key="t7_grade")
 
-            if t8_selected_grade != "All Grades":
-                t8_filtered = t8_filtered[t8_filtered['Grade'] == t8_selected_grade]
+            if t7_selected_grade != "All Grades":
+                t7_filtered = t7_filtered[t7_filtered['Grade'] == t7_selected_grade]
 
             st.markdown("---")
 
             # Metrics for Filtered Submissions
-            tot_subs = len(t8_filtered)
-            tot_audios = sum([1 for l in t8_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t8_filtered.columns else 0
-            tot_pics = sum([1 for l in t8_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t8_filtered.columns else 0
+            tot_subs = len(t7_filtered)
+            tot_audios = sum([1 for l in t7_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t7_filtered.columns else 0
+            tot_pics = sum([1 for l in t7_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t7_filtered.columns else 0
             
             tot_vids = 0
             for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
-                if vc in t8_filtered.columns:
-                    tot_vids += sum([1 for l in t8_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+                if vc in t7_filtered.columns:
+                    tot_vids += sum([1 for l in t7_filtered[vc] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
 
-            tot_writing = sum([1 for l in t8_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t8_filtered.columns else 0
+            tot_writing = sum([1 for l in t7_filtered['Writing_Sample_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in t7_filtered.columns else 0
 
             m_c1, m_c2, m_c3, m_c4, m_c5 = st.columns(5)
             m_c1.metric("📋 Total Submission Logs", tot_subs)
@@ -1262,17 +1197,16 @@ else:
             st.markdown("---")
 
             # Submissions Display Table
-            t8_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
-            t8_avail = [c for c in t8_display_cols if c in t8_filtered.columns]
+            t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
+            t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
             
-            t8_table = t8_filtered[t8_avail].sort_values(by='StartTime', ascending=False)
-            st.dataframe(t8_table, use_container_width=True)
+            t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
+            st.dataframe(t7_table, use_container_width=True)
 
-            # Download CSV Button
-            csv_t8 = t8_table.to_csv(index=False).encode('utf-8')
+            csv_t7 = t7_table.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
-                data=csv_t8,
-                file_name="All_Teacher_Evidence_Submissions.csv",
+                data=csv_t7,
+                file_name="Teacher_Evidence_Submissions.csv",
                 mime="text/csv"
             )
