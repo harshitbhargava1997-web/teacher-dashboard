@@ -15,7 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout configuration (Must be the first Streamlit command)
-st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Dashboard", layout="wide")
+st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review Dashboard", layout="wide")
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
@@ -121,6 +121,13 @@ def load_or_update_master_db(new_upload_dfs=None):
         else:
             all_data = combined_new
 
+        # Ensure FullName is normalized across all records
+        if 'FirstName' in all_data.columns and 'LastName' in all_data.columns:
+            all_data['FirstName'] = all_data['FirstName'].fillna('').astype(str).str.strip()
+            all_data['LastName'] = all_data['LastName'].fillna('').astype(str).str.strip()
+            all_data['FullName'] = (all_data['FirstName'] + " " + all_data['LastName']).str.strip()
+            all_data.loc[all_data['FullName'] == '', 'FullName'] = 'Unknown Teacher'
+
         # Deduplicate based on unique session signature
         dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
         available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
@@ -157,7 +164,7 @@ if uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
             
-            # Cleaning & Data Normalization
+            # --- CLEANING & NORMALIZATION FIX (Combined FullName) ---
             temp_df['FirstName'] = temp_df['FirstName'].fillna('').astype(str).str.strip() if 'FirstName' in temp_df.columns else ''
             temp_df['LastName'] = temp_df['LastName'].fillna('').astype(str).str.strip() if 'LastName' in temp_df.columns else ''
             temp_df['FullName'] = (temp_df['FirstName'] + " " + temp_df['LastName']).str.strip()
@@ -195,7 +202,7 @@ if uploaded_files:
                 temp_df['StartTime'] = pd.to_datetime(temp_df['StartTime'], errors='coerce')
 
             # Optional Qualitative Link Columns
-            for qual_col in ['Voice_Note_Link', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
+            for qual_col in ['Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 'Assessment_Score_Pct']:
                 if qual_col not in temp_df.columns:
                     temp_df[qual_col] = None
 
@@ -230,6 +237,13 @@ if not current_db_check.empty:
 if df.empty:
     st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")
 else:
+    # Ensure FullName is present in main df if loaded from cloud
+    if 'FullName' not in df.columns:
+        if 'FirstName' in df.columns and 'LastName' in df.columns:
+            df['FullName'] = (df['FirstName'].fillna('').astype(str).str.strip() + " " + df['LastName'].fillna('').astype(str).str.strip()).str.strip()
+        else:
+            df['FullName'] = 'Unknown Teacher'
+
     # Build Date, Month, and Enhanced Month-Based Week Columns
     if 'StartTime' in df.columns:
         df['Date'] = df['StartTime'].dt.date
@@ -720,50 +734,73 @@ else:
 
             # SECTION 3: QUALITATIVE EVIDENCE HUB
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-            st.caption("Review authentic teacher pre-class voice notes, in-class classroom activity videos, and student writing samples.")
+            st.caption("Review authentic teacher pre-class voice notes, lesson plan pictures, in-class classroom activity videos, and student writing samples.")
 
-            v_cols = st.columns(3)
+            v_cols = st.columns(4)
             
             voice_links = teacher_date_data['Voice_Note_Link'].dropna().unique().tolist() if 'Voice_Note_Link' in teacher_date_data.columns else []
-            v_cols[0].metric("🎧 Voice Notes Submitted", len(voice_links))
+            v_cols[0].metric("🎧 Voice Notes", len(voice_links))
+
+            pic_links = teacher_date_data['Lesson_Plan_Picture'].dropna().unique().tolist() if 'Lesson_Plan_Picture' in teacher_date_data.columns else []
+            v_cols[1].metric("🖼️ LP Pictures", len(pic_links))
             
             video_cols_exist = [c for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in teacher_date_data.columns]
             video_count = 0
             if video_cols_exist:
                 video_count = teacher_date_data[video_cols_exist].notna().sum().sum()
-            v_cols[1].metric("🎥 Classroom Videos Uploaded", video_count)
+            v_cols[2].metric("🎥 Videos", video_count)
 
             writing_links = teacher_date_data['Writing_Sample_Link'].dropna().unique().tolist() if 'Writing_Sample_Link' in teacher_date_data.columns else []
-            v_cols[2].metric("📝 Student Writing Artifacts", len(writing_links))
+            v_cols[3].metric("📝 Writing Samples", len(writing_links))
 
-            with st.expander("🔍 View & Audit Submitted Artifact Links"):
-                q_cols1, q_cols2, q_cols3 = st.columns(3)
+            with st.expander("🔍 View & Audit Submitted Artifact Files & Links"):
+                q_cols1, q_cols2, q_cols3, q_cols4 = st.columns(4)
                 
                 with q_cols1:
-                    st.markdown("##### 🎧 Daily Voice Notes")
+                    st.markdown("##### 🎧 Voice Notes")
                     if voice_links:
                         for idx, link in enumerate(voice_links, 1):
-                            st.markdown(f"• [Listen to Voice Note #{idx}]({link})")
+                            if str(link).startswith("http"):
+                                st.markdown(f"• [Listen #{idx}]({link})")
+                            else:
+                                st.text(f"• File #{idx}")
                     else:
-                        st.caption("No voice notes uploaded for this period.")
+                        st.caption("None uploaded.")
 
                 with q_cols2:
-                    st.markdown("##### 🎥 Classroom Activity Videos")
+                    st.markdown("##### 🖼️ Lesson Pictures")
+                    if pic_links:
+                        for idx, link in enumerate(pic_links, 1):
+                            if str(link).startswith("http"):
+                                st.markdown(f"• [View Pic #{idx}]({link})")
+                            else:
+                                st.text(f"• File #{idx}")
+                    else:
+                        st.caption("None uploaded.")
+
+                with q_cols3:
+                    st.markdown("##### 🎥 Activity Videos")
                     if video_count > 0:
                         for col in video_cols_exist:
                             v_list = teacher_date_data[col].dropna().unique().tolist()
                             for idx, link in enumerate(v_list, 1):
-                                st.markdown(f"• [{col.replace('_', ' ')} #{idx}]({link})")
+                                if str(link).startswith("http"):
+                                    st.markdown(f"• [Video #{idx}]({link})")
+                                else:
+                                    st.text(f"• Video #{idx}")
                     else:
-                        st.caption("No classroom videos uploaded for this period.")
+                        st.caption("None uploaded.")
 
-                with q_cols3:
+                with q_cols4:
                     st.markdown("##### 📝 Writing Samples")
                     if writing_links:
                         for idx, link in enumerate(writing_links, 1):
-                            st.markdown(f"• [View Writing Sample #{idx}]({link})")
+                            if str(link).startswith("http"):
+                                st.markdown(f"• [Sample #{idx}]({link})")
+                            else:
+                                st.text(f"• Sample #{idx}")
                     else:
-                        st.caption("No writing samples uploaded for this period.")
+                        st.caption("None uploaded.")
 
             st.markdown("---")
 
