@@ -42,11 +42,9 @@ def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
             file=file_bytes,
             file_options={"upsert": "true", "content-type": uploaded_file.type}
         )
-        # Get public URL or return file path reference
         public_url_response = supabase.storage.from_(BUCKET_NAME).get_public_url(file_path)
         return public_url_response
-    except Exception as e:
-        # Fallback if public URL generation fails, return the path string
+    except Exception:
         return f"supabase://{file_path}"
 
 def append_teacher_submission(new_df):
@@ -75,26 +73,33 @@ def append_teacher_submission(new_df):
     )
     fetch_master_db_from_supabase.clear()
 
-# --- LOAD DATABASE FOR DYNAMIC MAPPING ---
+# --- ROBUST DATABASE & ROSTER LOADER ---
 master_df = fetch_master_db_from_supabase()
 
-# Extract dynamic school list safely
 school_options = []
 if not master_df.empty:
-    for col in ['Institution', 'School', 'School_Name']:
+    possible_school_cols = ['Institution', 'School', 'school', 'School_Name', 'school_name', 'Institution_Name']
+    for col in possible_school_cols:
         if col in master_df.columns:
             school_options = sorted(master_df[col].dropna().astype(str).unique().tolist())
             break
+    
+    if not school_options:
+        for col in master_df.select_dtypes(include=['object', 'string']).columns:
+            unique_vals = master_df[col].dropna().astype(str).unique().tolist()
+            if len(unique_vals) > 0 and len(unique_vals) < 50:
+                school_options = sorted(unique_vals)
+                break
 
 # --- UI FOR TEACHERS ---
 st.title("📝 Teacher Daily Evidence Portal")
-st.markdown("Select your school and name, fill out your lesson details, and upload your qualitative evidence files directly.")
+st.markdown("Select your school and name from the roster, fill out your lesson details, and upload your qualitative evidence files directly.")
 
 with st.form("standalone_teacher_form", clear_on_submit=True):
     st.subheader("1. School & Teacher Roster Selection")
     
     if not school_options:
-        st.warning("⚠️ No school data found in the central database yet. Using sample fallback options.")
+        st.warning("⚠️ No school data found in the central database yet. Please ensure your admin database has initial roster data loaded.")
         school_options = ["Default School"]
 
     sub_school = st.selectbox("Select School / Institution *", options=["-- Select School --"] + school_options)
@@ -102,13 +107,23 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
     # Filter teachers dynamically based on the selected school
     filtered_teachers = []
     if sub_school != "-- Select School --" and not master_df.empty:
-        inst_col = 'Institution' if 'Institution' in master_df.columns else ('School' if 'School' in master_df.columns else 'School_Name')
-        name_col = 'FullName' if 'FullName' in master_df.columns else 'Teacher_Name'
-        if inst_col in master_df.columns and name_col in master_df.columns:
+        inst_col = None
+        for col in ['Institution', 'School', 'school', 'School_Name', 'school_name']:
+            if col in master_df.columns:
+                inst_col = col
+                break
+                
+        name_col = None
+        for col in ['FullName', 'Teacher_Name', 'teacher_name', 'Name', 'name', 'Teacher']:
+            if col in master_df.columns:
+                name_col = col
+                break
+                
+        if inst_col and name_col:
             filtered_teachers = sorted(master_df[master_df[inst_col].astype(str) == sub_school][name_col].dropna().astype(str).unique().tolist())
 
     if not filtered_teachers and sub_school != "-- Select School --":
-        filtered_teachers = ["Teacher Alpha", "Teacher Beta"] # Fallback if specific roster mapping is empty
+        filtered_teachers = ["Teacher Alpha", "Teacher Beta"]
 
     sub_teacher_name = st.selectbox(
         "Select Your Name *", 
@@ -121,15 +136,12 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
     st.subheader("2. Academic Lesson Details")
     col_a1, col_a2 = st.columns(2)
     with col_a1:
-        # Standardized Grade Dropdown from Nursery to Grade 5
         grade_options = ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]
         sub_grade = st.selectbox("Select Grade *", options=grade_options)
     with col_a2:
-        # Standardized Subject Dropdown
         subject_options = ["Mathematics", "English", "Hindi", "Environmental Studies (EVS)", "Science", "General Knowledge"]
         sub_subject = st.selectbox("Select Subject *", options=subject_options)
 
-    # Lesson Plan Number instead of title/chapter name
     sub_lesson_num = st.text_input("Lesson Plan Number (e.g., Lesson 4) *")
 
     st.subheader("3. Direct Qualitative Evidence Uploads")
@@ -158,7 +170,6 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
         else:
             try:
                 with st.spinner("Uploading files securely to cloud storage..."):
-                    # Process and upload files directly to Supabase storage
                     voice_url = upload_file_to_supabase(uploaded_voice, "voice_notes")
                     pic_url = upload_file_to_supabase(uploaded_pic, "pictures")
                     vid1_url = upload_file_to_supabase(uploaded_vid1, "videos")
@@ -166,7 +177,6 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
                     vid3_url = upload_file_to_supabase(uploaded_vid3, "videos")
                     writing_url = upload_file_to_supabase(uploaded_writing, "writing_samples")
 
-                # Split FullName into First and Last name
                 name_parts = sub_teacher_name.split(" ", 1)
                 f_name = name_parts[0]
                 l_name = name_parts[1] if len(name_parts) > 1 else ""
@@ -193,6 +203,6 @@ with st.form("standalone_teacher_form", clear_on_submit=True):
                 }])
 
                 append_teacher_submission(new_entry)
-                st.success(f"✅ Success! All evidence files for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced to the admin dashboard.")
+                st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced to the admin dashboard.")
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
