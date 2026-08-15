@@ -1040,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & FILTER-AWARE DISCUSSION LOGS)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM, ACTION STEPS & CONSOLIDATED WHATSAPP REPORT)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1086,7 +1086,6 @@ else:
                     return 'Active Portfolio'
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
                 lib_ok = row['Avg_Library_Usage_Mins'] >= daily_lib_target
-                
                 qual_ok = True
                 if enable_qual_kpi:
                     qual_ok = (row['Activity_Videos'] >= target_vid_count) or (row['Writing_Samples'] >= target_writing_count)
@@ -1154,9 +1153,9 @@ else:
 
             st.markdown("---")
 
-            # --- SCHOOL OWNER CRM CONTACT DIRECTORY & CALL LOG ---
-            st.subheader("📞 School Owner CRM, Call Script & Discussion Notes Log")
-            st.caption(f"Active Observation Window: `{filter_description_text}`. Generate a data-driven talking script, call owners, and record date-stamped discussions.")
+            # --- SCHOOL OWNER CRM CONTACT DIRECTORY, SCRIPT, & ACTION STEP LOG ---
+            st.subheader("📞 School Owner CRM, Call Script & Next-Step Accountability")
+            st.caption(f"Active Observation Window: `{filter_description_text}`. Generate data-driven scripts, track commitments, and log discussion notes.")
 
             if "school_contacts_directory" not in st.session_state:
                 st.session_state["school_contacts_directory"] = {
@@ -1220,34 +1219,72 @@ else:
                     """)
 
                 existing_entry = next((item for item in st.session_state["school_call_logs_store"] if item["School"] == selected_call_school and item["Review Period"] == filter_description_text), None)
-                default_note_text = existing_entry["Discussion & Action Items"] if existing_entry else ""
-
-                new_discussion_note = st.text_area(f"Discussion Notes & Action Items ({filter_description_text}):", value=default_note_text, height=110, key=f"note_{selected_call_school}_{filter_description_text}")
                 
-                col_save_b1, col_save_b2 = st.columns([1, 1])
-                with col_save_b1:
-                    punched_date = st.date_input("Call Date Stamp:", value=pd.Timestamp.now().date(), key=f"date_{selected_call_school}_{filter_description_text}")
-                with col_save_b2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("💾 Save Discussion Log", key=f"save_note_{selected_call_school}_{filter_description_text}"):
-                        if new_discussion_note.strip():
-                            st.session_state["school_call_logs_store"] = [
-                                item for item in st.session_state["school_call_logs_store"] 
-                                if not (item["School"] == selected_call_school and item["Review Period"] == filter_description_text)
-                            ]
+                default_note_text = existing_entry["Discussion & Action Items"] if existing_entry else ""
+                default_action_text = existing_entry["Next Action Step"] if existing_entry else ""
+                default_status_val = existing_entry["Status"] if existing_entry else "Open"
+                
+                status_options = ["Open", "In Progress", "Resolved"]
+                default_status_idx = status_options.index(default_status_val) if default_status_val in status_options else 0
 
-                            st.session_state["school_call_logs_store"].append({
-                                "School": selected_call_school,
-                                "Review Period": filter_description_text,
-                                "Call Date": str(punched_date),
-                                "Discussion & Action Items": new_discussion_note.strip()
-                            })
-                            st.success(f"✅ Discussion log saved for {selected_call_school} ({filter_description_text})!")
-                        else:
-                            st.warning("Please enter discussion notes before saving.")
+                new_discussion_note = st.text_area(f"Discussion Notes ({filter_description_text}):", value=default_note_text, height=80, key=f"note_{selected_call_school}_{filter_description_text}")
+                new_next_action = st.text_input(f"Next Action Step / Commitment:", value=default_action_text, key=f"action_{selected_call_school}_{filter_description_text}")
+                
+                col_sub_b1, col_sub_b2, col_sub_b3 = st.columns(3)
+                with col_sub_b1:
+                    punched_date = st.date_input("Call Date Stamp:", value=pd.Timestamp.now().date(), key=f"date_{selected_call_school}_{filter_description_text}")
+                with col_sub_b2:
+                    followup_date = st.date_input("Follow-up Target Date:", value=pd.Timestamp.now().date() + pd.Timedelta(days=7), key=f"fu_date_{selected_call_school}_{filter_description_text}")
+                with col_sub_b3:
+                    action_status = st.selectbox("Commitment Status:", options=status_options, index=default_status_idx, key=f"status_{selected_call_school}_{filter_description_text}")
+
+                if st.button("💾 Save Discussion Log & Action Step", key=f"save_note_{selected_call_school}_{filter_description_text}"):
+                    if new_discussion_note.strip():
+                        st.session_state["school_call_logs_store"] = [
+                            item for item in st.session_state["school_call_logs_store"] 
+                            if not (item["School"] == selected_call_school and item["Review Period"] == filter_description_text)
+                        ]
+
+                        st.session_state["school_call_logs_store"].append({
+                            "School": selected_call_school,
+                            "Review Period": filter_description_text,
+                            "Call Date": str(punched_date),
+                            "Discussion & Action Items": new_discussion_note.strip(),
+                            "Next Action Step": new_next_action.strip(),
+                            "Follow-up Date": str(followup_date),
+                            "Status": action_status
+                        })
+                        st.success(f"✅ Discussion log & next-step commitment saved for {selected_call_school}!")
+                    else:
+                        st.warning("Please enter discussion notes before saving.")
+
+                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR ---
+                st.markdown("##### 📱 Send Consolidated Weekly School WhatsApp Update")
+                consolidated_wa_text = (
+                    f"🏫 *WEEKLY ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
+                    f"📅 *Observation Period:* {filter_description_text}\n\n"
+                    f"📊 *1. Quantitative Execution:*\n"
+                    f"• Lesson Prep Average: {sch_prep:.1f} Mins/Day\n"
+                    f"• Library Usage Average: {sch_lib:.1f} Mins/Day\n\n"
+                    f"🎨 *2. Qualitative Evidence & Artifacts:*\n"
+                    f"• Lesson Plans / Voice Notes: {sch_lp} verified\n"
+                    f"• Activity Videos: {sch_vids} audited\n"
+                    f"• Writing Practice Samples: {sch_writing} submitted\n\n"
+                    f"📌 *3. Agreed Next Action Step:*\n"
+                    f"• {new_next_action if new_next_action else 'Review upcoming week deliverables'}\n"
+                    f"• *Target Follow-up:* {str(followup_date)}\n\n"
+                    f"💡 *Status:* Portfolio Classification is currently *{sch_class}*."
+                )
+                clean_phone_rep = re.sub(r'[^0-9+]', '', owner_phone)
+                encoded_rep_msg = urllib.parse.quote(consolidated_wa_text)
+                
+                with st.expander("📋 Preview & Copy Consolidated WhatsApp Message"):
+                    st.text_area("WhatsApp Weekly Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
+                    if owner_phone and owner_phone != "Not Provided":
+                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated Weekly WhatsApp Update</button></a>', unsafe_allow_html=True)
 
             if st.session_state["school_call_logs_store"]:
-                st.markdown(f"##### 📋 Discussion Logs for Active View (`{filter_description_text}`)")
+                st.markdown(f"##### 📋 Discussion Logs & Commitments (`{filter_description_text}`)")
                 
                 current_school_names = school_stats['Institution'].tolist()
                 filtered_logs = [
@@ -1257,7 +1294,7 @@ else:
 
                 if filtered_logs:
                     notes_summary_df = pd.DataFrame(filtered_logs)
-                    st.dataframe(notes_summary_df[['School', 'Call Date', 'Review Period', 'Discussion & Action Items']], use_container_width=True)
+                    st.dataframe(notes_summary_df[['School', 'Call Date', 'Discussion & Action Items', 'Next Action Step', 'Follow-up Date', 'Status']], use_container_width=True)
                     
                     csv_notes = notes_summary_df.to_csv(index=False).encode('utf-8')
                     st.download_button(
