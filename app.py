@@ -1,3 +1,8 @@
+Library
+/
+app_production.py
+
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -35,26 +40,34 @@ MASTER_TABLE = "master_session_logs"
 USER_METRICS_TABLE = "user_metrics"
 SUBMISSIONS_TABLE = "teacher_submissions"
 BATCH_SIZE = 500
+SUPABASE_PAGE_SIZE = 1000
 
+# These are the real UserMetrics fields observed in the supplied workbooks.
+# Optional fields are deliberately allowed to be absent in older exports.
 MASTER_ALLOWED_COLUMNS = [
-    "FirstName", "LastName", "FullName", "Institution", "Grade", "Subject", "Book",
-    "StartTime", "Duration_Min", "Duration (HH:MM:SS)", "Duration (Minutes)", "Type",
+    "FirstName", "LastName", "FullName", "Institution", "Center", "Role", "Type",
+    "Grade", "Subject", "Book", "StartTime", "EndTime",
+    "Duration (Minutes)", "Duration (HH:MM:SS)", "Duration_Min",
     "Voice_Note_Link", "Video_Evidence_1", "Video_Evidence_2", "Video_Evidence_3",
     "Writing_Sample_Link", "Assessment_Score_Pct", "session_signature",
     "source", "submission_signature",
 ]
 
 USER_METRIC_ALLOWED_COLUMNS = [
-    "FirstName", "LastName", "FullName", "Institution", "Grade", "Subject",
-    "user_signature",
+    "FirstName", "LastName", "FullName", "Institution", "Center", "Role",
+    "Grade", "Subject", "user_signature",
 ]
+
+REQUIRED_USERMETRICS_COLUMNS = {
+    "Institution", "FirstName", "LastName", "Role", "Type",
+    "StartTime", "EndTime", "Duration (Minutes)", "Duration (HH:MM:SS)",
+}
 
 
 # =============================================================================
 # 1. SUPABASE CONNECTION
 # =============================================================================
 def _secret(name: str, default=None):
-    """Read Streamlit secrets safely, with an environment-independent fallback."""
     try:
         return st.secrets[name]
     except Exception:
@@ -67,7 +80,7 @@ SUPABASE_KEY = _secret("SUPABASE_KEY") or _secret("SUPABASE_SERVICE_ROLE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     st.error(
         "Supabase is not configured. Add `SUPABASE_URL` and `SUPABASE_KEY` "
-        "to `.streamlit/secrets.toml` before running the application."
+        "to Streamlit Secrets."
     )
     st.stop()
 
@@ -81,23 +94,28 @@ supabase = get_supabase_client()
 
 
 # =============================================================================
-# 2. DATA ACCESS LAYER
+# 2. DATA ACCESS + USERMETRICS INGESTION LAYER
 # =============================================================================
 def _clean_for_supabase(value):
     """Convert pandas/numpy values into JSON-safe PostgreSQL values."""
     if value is None:
         return None
-    if pd.isna(value):
-        return None
-    if isinstance(value, (pd.Timestamp, datetime)):
+    try:
         if pd.isna(value):
             return None
+    except Exception:
+        pass
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.isoformat()
+    if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, (np.integer,)):
         return int(value)
     if isinstance(value, (np.floating,)):
         return None if np.isnan(value) else float(value)
-    if isinstance(value, (np.bool_,)):
+    if isinstance(value, np.bool_):
         return bool(value)
     if isinstance(value, Decimal):
         return float(value)
@@ -107,10 +125,10 @@ def _clean_for_supabase(value):
 def _records_from_df(dataframe: pd.DataFrame):
     if dataframe is None or dataframe.empty:
         return []
-    records = []
-    for record in dataframe.to_dict(orient="records"):
-        records.append({k: _clean_for_supabase(v) for k, v in record.items()})
-    return records
+    return [
+        {k: _clean_for_supabase(v) for k, v in row.items()}
+        for row in dataframe.to_dict(orient="records")
+    ]
 
 
 def _batched(items, batch_size=BATCH_SIZE):
@@ -118,11 +136,93 @@ def _batched(items, batch_size=BATCH_SIZE):
         yield items[i:i + batch_size]
 
 
-def _normalize_session_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Normalize uploaded/API data into the dashboard's canonical columns."""
-    df = dataframe.copy()
+def _fetch_all_rows(table_name: str, page_size: int = SUPABASE_PAGE_SIZE) -> list:
+    """
+    Fetch every row from a Supabase table using PostgREST pagination.
 
-    for col in ["FirstName", "LastName"]:
+    This is important because Supabase/PostgREST commonly limits a response to
+    1,000 rows. The supplied UserMetrics files already contain 438 and 738 rows,
+    and production history can easily exceed 1,000 rows.
+    """
+    rows = []
+    offset = 0
+    while True:
+        response = (
+            supabase.table(table_name)
+            .select("*")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = response.data or []
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
+def _first_existing_column(df, candidates):
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _parse_duration_minutes(value):
+    """Parse either numeric minutes or HH:MM:SS into decimal minutes."""
+    if value is None:
+        return 0.0
+    try:
+        if pd.isna(value):
+            return 0.0
+    except Exception:
+        pass
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if ":" in text:
+        parts = text.split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 60 + int(parts[1]) + float(parts[2]) / 60.0
+            if len(parts) == 2:
+                return int(parts[0]) + float(parts[1]) / 60.0
+        except Exception:
+            return 0.0
+    try:
+        return float(text)
+    except Exception:
+        return 0.0
+
+
+def _normalise_optional_text(df, column, default=""):
+    if column not in df.columns:
+        df[column] = default
+    df[column] = df[column].fillna(default).astype(str).str.strip()
+    return df
+
+
+def _normalize_session_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize the actual UserMetrics exports into the dashboard's canonical model.
+
+    Supported supplied workbook variants:
+      - 10-column export: Institution, Center, FirstName, LastName, Role, Type,
+        StartTime, EndTime, Duration (Minutes), Duration (HH:MM:SS)
+      - 13-column export: same fields plus Grade, Subject and Book.
+
+    The function never requires Grade/Subject/Book and never invents them.
+    """
+    if dataframe is None:
+        return pd.DataFrame()
+
+    df = dataframe.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Identity / roster fields.
+    for col in ["FirstName", "LastName", "Institution", "Center", "Role", "Type"]:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].fillna("").astype(str).str.strip()
@@ -133,166 +233,112 @@ def _normalize_session_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
     generated_name = (df["FirstName"] + " " + df["LastName"]).str.strip()
     df.loc[df["FullName"] == "", "FullName"] = generated_name
     df.loc[df["FullName"] == "", "FullName"] = "Unknown Teacher"
+    df.loc[df["Institution"] == "", "Institution"] = "Unknown School"
 
-    if "Institution" not in df.columns:
-        df["Institution"] = "Default School"
-    df["Institution"] = df["Institution"].fillna("Unknown School").astype(str).str.strip()
-
+    # These are optional in the 10-column workbook.
     for col in ["Grade", "Subject", "Book"]:
+        _normalise_optional_text(df, col, "")
+
+    # Preserve the two source duration columns and choose numeric minutes as the
+    # authoritative source when it exists. Fall back to HH:MM:SS only if needed.
+    if "Duration (Minutes)" not in df.columns:
+        df["Duration (Minutes)"] = np.nan
+    if "Duration (HH:MM:SS)" not in df.columns:
+        df["Duration (HH:MM:SS)"] = ""
+
+    numeric_minutes = pd.to_numeric(df["Duration (Minutes)"], errors="coerce")
+    fallback_minutes = df["Duration (HH:MM:SS)"].apply(_parse_duration_minutes)
+    df["Duration_Min"] = numeric_minutes.where(numeric_minutes.notna(), fallback_minutes)
+    df["Duration_Min"] = pd.to_numeric(df["Duration_Min"], errors="coerce").fillna(0.0).clip(lower=0)
+    df["Duration (Minutes)"] = numeric_minutes.where(numeric_minutes.notna(), df["Duration_Min"])
+
+    # Timestamp normalization. UTC is used internally so Supabase and Streamlit
+    # behave consistently; the displayed calendar date follows the timestamp.
+    for col in ["StartTime", "EndTime"]:
         if col not in df.columns:
-            df[col] = ""
-        df[col] = df[col].fillna("").astype(str).str.strip()
+            df[col] = pd.NaT
+        df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
 
-    def parse_time_mins(value):
-        if value is None or (isinstance(value, float) and np.isnan(value)):
-            return 0.0
-        try:
-            if isinstance(value, (int, float, np.integer, np.floating)):
-                return float(value)
-            text = str(value).strip()
-            parts = text.split(":")
-            if len(parts) == 3:
-                return int(parts[0]) * 60 + int(parts[1]) + float(parts[2]) / 60.0
-            return float(text)
-        except Exception:
-            return 0.0
-
-    if "Duration_Min" not in df.columns:
-        if "Duration (HH:MM:SS)" in df.columns:
-            df["Duration_Min"] = df["Duration (HH:MM:SS)"].apply(parse_time_mins)
-        elif "Duration (Minutes)" in df.columns:
-            df["Duration_Min"] = pd.to_numeric(
-                df["Duration (Minutes)"], errors="coerce"
-            ).fillna(0.0)
-        else:
-            df["Duration_Min"] = 0.0
-
-    df["Duration_Min"] = pd.to_numeric(
-        df["Duration_Min"], errors="coerce"
-    ).fillna(0.0)
-
-    if "Type" not in df.columns:
-        df["Type"] = "Other"
-    df["Type"] = df["Type"].fillna("Other").astype(str).str.strip()
-
-    if "StartTime" not in df.columns:
-        df["StartTime"] = pd.NaT
-    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce", utc=True)
-
-    # Keep the original optional qualitative fields used by the existing 360° tab.
     for qual_col in [
-        "Voice_Note_Link",
-        "Video_Evidence_1",
-        "Video_Evidence_2",
-        "Video_Evidence_3",
-        "Writing_Sample_Link",
-        "Assessment_Score_Pct",
+        "Voice_Note_Link", "Video_Evidence_1", "Video_Evidence_2",
+        "Video_Evidence_3", "Writing_Sample_Link", "Assessment_Score_Pct",
     ]:
         if qual_col not in df.columns:
             df[qual_col] = None
 
     df["Assessment_Score_Pct"] = pd.to_numeric(
         df["Assessment_Score_Pct"], errors="coerce"
-    )
+    ).clip(lower=0, upper=100)
 
-    # Stable database-level duplicate key.
+    # One deterministic signature per source activity row.
     df["session_signature"] = df.apply(
         lambda r: make_session_signature(
-            r.get("FullName"),
-            r.get("StartTime"),
-            r.get("Book"),
-            r.get("Type"),
-            r.get("Duration_Min"),
-            r.get("Institution"),
-            r.get("Grade"),
-            r.get("Subject"),
+            r.get("FullName"), r.get("StartTime"), r.get("Book"), r.get("Type"),
+            r.get("Duration_Min"), r.get("Institution"), r.get("Grade"),
+            r.get("Subject"), r.get("EndTime"), r.get("Center"), r.get("Role")
         ),
         axis=1,
     )
+    df["source"] = "user_metrics_upload"
     return df
 
 
 def make_session_signature(
-    full_name,
-    start_time,
-    book,
-    session_type,
-    duration_min,
-    institution,
-    grade="",
-    subject="",
+    full_name, start_time, book, session_type, duration_min, institution,
+    grade="", subject="", end_time="", center="", role=""
 ):
-    payload = "|".join(
-        [
-            str(institution or "").strip().lower(),
-            str(full_name or "").strip().lower(),
-            str(start_time or "").strip(),
-            str(session_type or "").strip().lower(),
-            str(book or "").strip().lower(),
-            str(grade or "").strip().lower(),
-            str(subject or "").strip().lower(),
-            f"{float(duration_min or 0):.4f}",
-        ]
-    )
+    payload = "|".join([
+        str(institution or "").strip().lower(),
+        str(center or "").strip().lower(),
+        str(full_name or "").strip().lower(),
+        str(role or "").strip().lower(),
+        str(start_time or "").strip(),
+        str(end_time or "").strip(),
+        str(session_type or "").strip().lower(),
+        str(book or "").strip().lower(),
+        str(grade or "").strip().lower(),
+        str(subject or "").strip().lower(),
+        f"{float(duration_min or 0):.4f}",
+    ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def make_submission_signature(
-    teacher_name,
-    school,
-    submission_date,
-    grade,
-    subject,
-    book,
-    lesson_minutes,
-    library_minutes,
+    teacher_name, school, submission_date, grade, subject, book,
+    lesson_minutes, library_minutes
 ):
-    payload = "|".join(
-        [
-            str(teacher_name).strip().lower(),
-            str(school).strip().lower(),
-            str(submission_date),
-            str(grade).strip().lower(),
-            str(subject).strip().lower(),
-            str(book).strip().lower(),
-            f"{float(lesson_minutes):.2f}",
-            f"{float(library_minutes):.2f}",
-        ]
-    )
+    payload = "|".join([
+        str(teacher_name).strip().lower(), str(school).strip().lower(),
+        str(submission_date), str(grade).strip().lower(), str(subject).strip().lower(),
+        str(book).strip().lower(), f"{float(lesson_minutes):.2f}",
+        f"{float(library_minutes):.2f}",
+    ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_master_session_logs() -> pd.DataFrame:
-    """Fetch the master session log table directly from Supabase."""
-    response = supabase.table(MASTER_TABLE).select("*").execute()
-    data = response.data or []
-    return pd.DataFrame(data)
+    return pd.DataFrame(_fetch_all_rows(MASTER_TABLE))
 
 
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_user_metrics() -> pd.DataFrame:
-    """Fetch the current teacher/user roster from Supabase."""
-    response = supabase.table(USER_METRICS_TABLE).select("*").execute()
-    return pd.DataFrame(response.data or [])
+    return pd.DataFrame(_fetch_all_rows(USER_METRICS_TABLE))
 
 
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_qualitative_evidences() -> pd.DataFrame:
-    """Fetch teacher submissions/evidence records directly from Supabase."""
-    response = supabase.table(SUBMISSIONS_TABLE).select("*").execute()
-    return pd.DataFrame(response.data or [])
+    return pd.DataFrame(_fetch_all_rows(SUBMISSIONS_TABLE))
 
 
 def write_master_session_logs(dataframe: pd.DataFrame) -> int:
-    """Insert/update session logs in Supabase with DB-level deduplication."""
+    """Idempotently upsert normalized UserMetrics activity rows."""
     normalized = _normalize_session_dataframe(dataframe)
     keep = [c for c in MASTER_ALLOWED_COLUMNS if c in normalized.columns]
     records = _records_from_df(normalized[keep])
     if not records:
         return 0
 
-    # Upsert is safe because session_signature has a UNIQUE constraint.
     written = 0
     for batch in _batched(records):
         result = (
@@ -306,22 +352,24 @@ def write_master_session_logs(dataframe: pd.DataFrame) -> int:
 
 
 def write_user_metrics(dataframe: pd.DataFrame) -> int:
-    """Upsert roster/user metrics directly into Supabase."""
+    """Upsert teacher roster metadata; optional Grade/Subject do not block ingestion."""
     if dataframe is None or dataframe.empty:
         return 0
 
-    roster = dataframe.copy()
-    roster = _normalize_session_dataframe(roster)
-
-    # A roster key keeps repeated Excel uploads idempotent.
+    roster = _normalize_session_dataframe(dataframe)
     roster["user_signature"] = roster.apply(
         lambda r: hashlib.sha256(
-            f"{r['Institution']}|{r['FullName']}".lower().encode("utf-8")
-        ).hexdigest(),
-        axis=1,
+            "|".join([
+                str(r.get("Institution", "")).strip().lower(),
+                str(r.get("FullName", "")).strip().lower(),
+                str(r.get("Role", "")).strip().lower(),
+                str(r.get("Grade", "")).strip().lower(),
+                str(r.get("Subject", "")).strip().lower(),
+            ]).encode("utf-8")
+        ).hexdigest(), axis=1
     )
     keep = [c for c in USER_METRIC_ALLOWED_COLUMNS if c in roster.columns]
-    records = _records_from_df(roster[keep])
+    records = _records_from_df(roster[keep].drop_duplicates(subset=["user_signature"]))
     written = 0
     for batch in _batched(records):
         result = (
@@ -335,51 +383,55 @@ def write_user_metrics(dataframe: pd.DataFrame) -> int:
 
 
 def write_teacher_submission(payload: dict):
-    """
-    Persist a teacher submission through a single PostgreSQL transaction.
-    The SQL RPC performs duplicate detection and creates the two KPI mirror rows
-    atomically, so the form cannot leave half-written data.
-    """
     submission_signature = make_submission_signature(
-        payload["teacher_name"],
-        payload["school"],
-        payload["submission_date"],
-        payload["grade"],
-        payload["subject"],
-        payload["book"],
-        payload["lesson_minutes"],
-        payload["library_minutes"],
+        payload["teacher_name"], payload["school"], payload["submission_date"],
+        payload["grade"], payload["subject"], payload["book"],
+        payload["lesson_minutes"], payload["library_minutes"],
     )
-
-    rpc_payload = {
-        **payload,
-        "submission_signature": submission_signature,
-    }
-
-    result = supabase.rpc(
-        "submit_teacher_submission",
-        {"payload": rpc_payload},
-    ).execute()
-
+    rpc_payload = {**payload, "submission_signature": submission_signature}
+    result = supabase.rpc("submit_teacher_submission", {"payload": rpc_payload}).execute()
     result_data = result.data
-    if isinstance(result_data, dict):
-        if result_data.get("duplicate"):
-            return False, "A submission with the same teacher/date/content signature already exists."
-        if result_data.get("success"):
-            fetch_master_session_logs.clear()
-            fetch_qualitative_evidences.clear()
-            return True, "Submission saved successfully."
+    if isinstance(result_data, dict) and result_data.get("duplicate"):
+        return False, "A submission with the same teacher/date/content signature already exists."
+    if isinstance(result_data, dict) and result_data.get("success"):
+        fetch_master_session_logs.clear()
+        fetch_qualitative_evidences.clear()
+        return True, "Submission saved successfully."
+    return False, "Supabase did not confirm the submission."
 
-    # Be defensive if the RPC returns an unexpected response.
-    fetch_master_session_logs.clear()
-    fetch_qualitative_evidences.clear()
-    return True, "Submission saved successfully."
 
 def refresh_all_data():
     fetch_master_session_logs.clear()
     fetch_user_metrics.clear()
     fetch_qualitative_evidences.clear()
 
+
+def _read_usermetrics_workbook(uploaded_file) -> pd.DataFrame:
+    """Read the exact UserMetrics sheet used by the supplied workbooks."""
+    uploaded_file.seek(0)
+    excel = pd.ExcelFile(uploaded_file)
+    sheet = "UserMetrics" if "UserMetrics" in excel.sheet_names else excel.sheet_names[0]
+    uploaded_file.seek(0)
+    raw = pd.read_excel(uploaded_file, sheet_name=sheet)
+    raw.columns = [str(c).strip() for c in raw.columns]
+
+    missing = sorted(REQUIRED_USERMETRICS_COLUMNS - set(raw.columns))
+    if missing:
+        raise ValueError(
+            "This workbook does not match the UserMetrics export format. "
+            f"Missing required columns: {', '.join(missing)}. "
+            "Grade, Subject and Book are optional and may be absent."
+        )
+    if raw.empty:
+        raise ValueError("The UserMetrics sheet is empty.")
+    return raw
+
+
+def _upload_fingerprint(uploaded_file) -> str:
+    uploaded_file.seek(0)
+    content = uploaded_file.getvalue()
+    uploaded_file.seek(0)
+    return hashlib.sha256(content).hexdigest()
 
 # =============================================================================
 # 3. PDF GENERATOR
@@ -676,45 +728,71 @@ if app_mode == "📝 Teacher Submission Portal":
 # 6. MANAGER DATA UPLOAD / SUPABASE SYNC
 # =============================================================================
 st.sidebar.header("📁 Data Upload & Supabase Sync")
+st.sidebar.caption(
+    "Accepts both your 10-column daily/weekly UserMetrics export and the "
+    "13-column book/grade/subject export. Uploads are idempotent."
+)
 uploaded_files = st.sidebar.file_uploader(
     "Upload UserMetrics Excel (.xlsx)",
     type=["xlsx"],
     accept_multiple_files=True,
 )
 
+if "synced_upload_fingerprints" not in st.session_state:
+    st.session_state.synced_upload_fingerprints = set()
+
 if uploaded_files:
     for file in uploaded_files:
         try:
-            temp_df = pd.read_excel(file, sheet_name="UserMetrics")
-            normalized = _normalize_session_dataframe(temp_df)
+            fingerprint = _upload_fingerprint(file)
+            if fingerprint in st.session_state.synced_upload_fingerprints:
+                continue
 
-            # Session/activity records.
+            raw_df = _read_usermetrics_workbook(file)
+            normalized = _normalize_session_dataframe(raw_df)
+
+            # Source activity records drive all seven dashboard tabs.
             session_count = write_master_session_logs(normalized)
 
-            # Teacher roster.
-            roster_cols = [
-                c for c in
-                ["Institution", "FullName", "FirstName", "LastName", "Grade", "Subject"]
-                if c in normalized.columns
-            ]
-            if roster_cols:
-                write_user_metrics(normalized[roster_cols].drop_duplicates())
+            # Teacher roster is maintained separately so the dashboard can show
+            # inactive teachers who have no activity in the selected period.
+            roster_source = normalized[
+                [c for c in USER_METRIC_ALLOWED_COLUMNS if c != "user_signature" and c in normalized.columns]
+            ].drop_duplicates()
+            roster_count = write_user_metrics(roster_source)
 
+            st.session_state.synced_upload_fingerprints.add(fingerprint)
             st.sidebar.success(
-                f"✅ {file.name}: {session_count} session records synced to Supabase."
+                f"✅ {file.name}: {len(raw_df):,} source rows processed → "
+                f"{session_count:,} session records; {roster_count:,} roster records."
             )
             refresh_all_data()
-            df = fetch_master_session_logs()
-            user_metrics_df = fetch_user_metrics()
 
         except Exception as exc:
-            st.sidebar.error(f"Error syncing {file.name}: {exc}")
+            st.sidebar.error(f"❌ Error syncing {file.name}: {exc}")
+
+# Always fetch fresh post-upload data after the upload block.
+try:
+    df = fetch_master_session_logs()
+except Exception as exc:
+    st.error(f"Could not fetch master session logs from Supabase: {exc}")
+    st.stop()
+
+try:
+    user_metrics_df = fetch_user_metrics()
+except Exception:
+    user_metrics_df = pd.DataFrame()
+
+try:
+    qualitative_df = fetch_qualitative_evidences()
+except Exception:
+    qualitative_df = pd.DataFrame()
 
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Supabase Database Status")
-st.sidebar.metric("Master Session Records", len(df))
-st.sidebar.metric("Teacher/User Metrics", len(user_metrics_df))
-st.sidebar.metric("Teacher Submissions", len(qualitative_df))
+st.sidebar.metric("Master Session Records", f"{len(df):,}")
+st.sidebar.metric("Teacher/User Metrics", f"{len(user_metrics_df):,}")
+st.sidebar.metric("Teacher Submissions", f"{len(qualitative_df):,}")
 
 if st.sidebar.button("🔄 Refresh Supabase Data", use_container_width=True):
     refresh_all_data()
@@ -727,7 +805,6 @@ if df.empty:
         "through the Teacher Submission Portal after the roster is loaded."
     )
     st.stop()
-
 
 # =============================================================================
 # 7. NORMALIZE DATABASE DATA FOR THE EXISTING REVIEW ENGINE
@@ -1688,4 +1765,3 @@ with tab7:
             file_name=f"Assessment_Outcomes_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
-
