@@ -53,19 +53,20 @@ SCHOOL_TEACHER_ROSTER = {
     "Arhamn International School": ["ANURAG JAIN", "CHANCHAL VIDHYARTHI", "JYOTI BALA YADAV", "Khushi Patil", "PALLAVI RAWAT", "Prachi chouhan", "Priti Bhawsar", "Rashmi Verma", "Yashaswi Girnar", "pooja Chouhan"]
 }
 
-# Form Input Fields
-with st.form("teacher_submission_form", clear_on_submit=True):
-    st.subheader("🏫 1. School & Teacher Details")
-    
-    school_options = ["Select School..."] + list(SCHOOL_TEACHER_ROSTER.keys())
-    school_name = st.selectbox("Select Your School / Institution *", options=school_options)
-    
-    if school_name != "Select School...":
-        available_teachers = ["Select Teacher..."] + SCHOOL_TEACHER_ROSTER[school_name]
-        teacher_name = st.selectbox("Select Your Name *", options=available_teachers)
-    else:
-        teacher_name = st.selectbox("Select Your Name *", options=["Please select a school first..."])
+# --- SCHOOL & TEACHER SELECTION (OUTSIDE FORM FOR DYNAMIC FILTERING) ---
+st.subheader("🏫 1. School & Teacher Details")
 
+school_options = ["Select School..."] + list(SCHOOL_TEACHER_ROSTER.keys())
+selected_school = st.selectbox("Select Your School / Institution *", options=school_options, key="form_school_select")
+
+if selected_school != "Select School...":
+    available_teachers = ["Select Teacher..."] + SCHOOL_TEACHER_ROSTER[selected_school]
+    selected_teacher = st.selectbox("Select Your Name *", options=available_teachers, key="form_teacher_select")
+else:
+    selected_teacher = st.selectbox("Select Your Name *", options=["Please select a school first..."], key="form_teacher_select_disabled", disabled=True)
+
+# --- FORM SUBMISSION WRAPPER ---
+with st.form("teacher_submission_form", clear_on_submit=False):
     st.markdown("---")
     st.subheader("📚 2. Class & Academic Details")
     
@@ -104,6 +105,9 @@ with st.form("teacher_submission_form", clear_on_submit=True):
     submitted = st.form_submit_button("🚀 Submit Daily Report")
 
     if submitted:
+        school_name = selected_school
+        teacher_name = selected_teacher
+
         if school_name == "Select School...":
             st.error("⚠️ Please select your school.")
         elif teacher_name == "Select Teacher..." or teacher_name.startswith("Please"):
@@ -160,7 +164,7 @@ with st.form("teacher_submission_form", clear_on_submit=True):
 # --- ADMIN EXPORT PANEL ---
 st.markdown("---")
 with st.expander("🔐 Academic Manager Export Panel"):
-    st.caption("Download collected submissions as Excel/CSV for dashboard sync.")
+    st.caption("Download collected submissions as CSV for dashboard sync.")
     if os.path.exists(FORM_DB_PATH):
         try:
             admin_df = pd.read_excel(FORM_DB_PATH)
