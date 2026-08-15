@@ -218,12 +218,21 @@ st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **T
 def load_or_update_master_db(new_upload_dfs=None):
     master_df = fetch_master_db_from_supabase()
 
+    if not master_df.empty and 'StartTime' in master_df.columns:
+        master_df['StartTime'] = pd.to_datetime(master_df['StartTime'], errors='coerce')
+
     if not new_upload_dfs:
         return normalize_identity_columns(master_df) if not master_df.empty else master_df
 
     combined_new = pd.concat(new_upload_dfs, ignore_index=True)
+    if 'StartTime' in combined_new.columns:
+        combined_new['StartTime'] = pd.to_datetime(combined_new['StartTime'], errors='coerce')
+
     all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
+
+    if 'StartTime' in all_data.columns:
+        all_data['StartTime'] = pd.to_datetime(all_data['StartTime'], errors='coerce')
 
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
@@ -317,7 +326,7 @@ if not current_db_check.empty:
         try:
             supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])
             fetch_master_db_from_supabase.clear()
-            st.sidebar.success("Cloud database cleared!")
+            st.sidebar.error("Cloud database cleared!")
             st.rerun()
         except Exception as e:
             st.sidebar.error(f"Could not delete database from cloud: {e}")
