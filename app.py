@@ -211,7 +211,7 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
 
 # Page layout title
 st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
-st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Daily Quantitative KPIs (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
+st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Quantitative KPIs (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
 
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
@@ -403,8 +403,14 @@ else:
     # --- 3. DYNAMIC KPI BENCHMARK CONTROLS (QUANTITATIVE & QUALITATIVE) ---
     st.sidebar.markdown("---")
     st.sidebar.header("🎯 Quantitative KPI Controls")
-    daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
-    daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)
+    enable_quant_kpi = st.sidebar.checkbox("Enable Quantitative KPI Benchmarks", value=True, help="Toggle on/off quantitative minutes benchmark targets.")
+    
+    if enable_quant_kpi:
+        daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
+        daily_lib_target = st.sidebar.number_input("Library Usage Target (Mins/Day)", min_value=0.0, max_value=120.0, value=30.0, step=5.0)
+    else:
+        daily_ld_target = 0.0
+        daily_lib_target = 0.0
 
     st.sidebar.markdown("---")
     st.sidebar.header("🎨 Qualitative Artifact KPI Controls")
@@ -472,63 +478,71 @@ else:
     filtered_roster = school_master_roster[school_master_roster['FullName'].isin(selected_teachers)]
     filtered_df = filtered_df[filtered_df['FullName'].isin(selected_teachers)]
 
-    # 7 Dedicated Active Tabs (Student Assessment Outcomes removed as requested)
+    # 7 Dedicated Active Tabs
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📘 1. Daily Lesson Plan KPI", 
-        "📚 2. Daily Library KPI", 
-        "📖 3. Daily Content & Chapters", 
+        "📘 1. Lesson Plan Preparation Tracker", 
+        "📚 2. Library Usage Tracker", 
+        "📖 3. Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
         "📬 7. Live Evidence Submissions Feed"
     ])
 
-    # TAB 1: DAILY LESSON PLAN COMPLIANCE
+    # TAB 1: LESSON PLAN PREPARATION TRACKER
     with tab1:
-        st.header("📘 Daily Lesson Plan Preparation Tracker")
-        st.caption(f"KPI Benchmark: **At least {calc_ld_kpi:.0f} Minutes** ({daily_ld_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        st.header("📘 Lesson Plan Preparation Tracker")
+        if enable_quant_kpi and calc_ld_kpi > 0:
+            st.caption(f"Benchmark Standard: **At least {calc_ld_kpi:.0f} Minutes** ({daily_ld_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        else:
+            st.caption(f"Reviewing cumulative minutes prepared across {selected_num_days} working day(s).")
 
         ld_df = filtered_df[filtered_df['Type'] == 'lessonDelivery']
         ld_usage = ld_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()
         ld_daily = filtered_roster.merge(ld_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)
         
         def get_ld_status(x):
-            if calc_ld_kpi == 0: return '✅ Holiday / No-Class (0m Req)'
-            if x >= calc_ld_kpi: return f'✅ Met KPI (>= {calc_ld_kpi:.0f}m)'
-            elif x > 0.0: return f'⚠️ Below KPI (< {calc_ld_kpi:.0f}m)'
-            else: return '❌ Inactive (0 Mins)'
+            if not enable_quant_kpi or calc_ld_kpi == 0: 
+                return 'Activity Logged' if x > 0 else 'No Activity Logged'
+            if x >= calc_ld_kpi: 
+                return f'✅ Met KPI (>= {calc_ld_kpi:.0f}m)'
+            elif x > 0.0: 
+                return f'⚠️ Below KPI (< {calc_ld_kpi:.0f}m)'
+            else: 
+                return '❌ Inactive (0 Mins)'
         
         ld_daily['KPI Status'] = ld_daily['Duration_Min'].apply(get_ld_status)
 
         c1, c2, c3, c4 = st.columns(4)
         total_teachers = len(ld_daily)
-        met_count = len(ld_daily[ld_daily['Duration_Min'] >= calc_ld_kpi]) if calc_ld_kpi > 0 else total_teachers
+        met_count = len(ld_daily[ld_daily['Duration_Min'] >= calc_ld_kpi]) if (enable_quant_kpi and calc_ld_kpi > 0) else len(ld_daily[ld_daily['Duration_Min'] > 0])
         inactive_count = len(ld_daily[ld_daily['Duration_Min'] == 0.0])
         
         c1.metric("Total Roster Teachers", total_teachers)
-        c2.metric(f"Met {calc_ld_kpi:.0f}m KPI", f"{met_count} / {total_teachers}")
+        c2.metric(f"Met Standard ({calc_ld_kpi:.0f}m)" if enable_quant_kpi else "Active Teachers", f"{met_count} / {total_teachers}")
         c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
-        c4.metric("KPI Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
+        c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
         fig_ld = px.bar(
             ld_daily, x="FullName", y="Duration_Min", color="KPI Status",
-            title=f"Lesson Prep Minutes per Teacher vs. {calc_ld_kpi:.0f} Min KPI Standard",
+            title=f"Lesson Prep Minutes per Teacher" + (f" vs. {calc_ld_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Prepared"},
             text_auto=".1f"
         )
-        fig_ld.add_hline(y=calc_ld_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_ld_kpi:.0f} mins)")
+        if enable_quant_kpi and calc_ld_kpi > 0:
+            fig_ld.add_hline(y=calc_ld_kpi, line_dash="dash", line_color="black", annotation_text=f"Guideline ({calc_ld_kpi:.0f} mins)")
         st.plotly_chart(fig_ld, use_container_width=True)
 
-        st.subheader("📋 Lesson Plan KPI Review Table")
+        st.subheader("📋 Lesson Plan Preparation Table")
         display_ld_table = ld_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})
         st.dataframe(display_ld_table, use_container_width=True)
 
         pdf_tab1 = generate_pdf_report(
-            title_text="📘 Daily Lesson Plan Preparation Report",
+            title_text="📘 Lesson Plan Preparation Report",
             subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {total_teachers}",
             summary_metrics={
                 "Total Teachers": total_teachers,
-                "Met KPI Standard": f"{met_count} / {total_teachers}",
+                "Active Teachers": f"{met_count} / {total_teachers}",
                 "Compliance Rate": f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
             },
             dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
@@ -536,71 +550,79 @@ else:
         st.download_button(
             label="📄 Download Tab 1 Report (PDF)",
             data=pdf_tab1,
-            file_name=f"Lesson_Plan_KPI_Report_{selected_month.replace(' ', '_')}.pdf",
+            file_name=f"Lesson_Plan_Prep_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
 
-    # TAB 2: DAILY LIBRARY KPI
+    # TAB 2: LIBRARY USAGE TRACKER
     with tab2:
-        st.header("📚 Daily Library Usage Tracker")
-        st.caption(f"KPI Benchmark: **At least {calc_lib_kpi:.0f} Minutes** ({daily_lib_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        st.header("📚 Library Usage Tracker")
+        if enable_quant_kpi and calc_lib_kpi > 0:
+            st.caption(f"Benchmark Standard: **At least {calc_lib_kpi:.0f} Minutes** ({daily_lib_target:.0f} mins/day across {selected_num_days} working day(s)).")
+        else:
+            st.caption(f"Reviewing cumulative library usage minutes across {selected_num_days} working day(s).")
 
         lib_df = filtered_df[filtered_df['Type'] == 'library']
         lib_usage = lib_df.groupby(['Institution', 'FullName'])['Duration_Min'].sum().reset_index()
         lib_daily = filtered_roster.merge(lib_usage, on=['Institution', 'FullName'], how='left').fillna(0.0)
         
         def get_lib_status(x):
-            if calc_lib_kpi == 0: return '✅ Holiday / No-Class (0m Req)'
-            if x >= calc_lib_kpi: return f'✅ Met KPI (>= {calc_lib_kpi:.0f}m)'
-            elif x > 0.0: return f'⚠️ Below KPI (< {calc_lib_kpi:.0f}m)'
-            else: return '❌ Inactive (0 Mins)'
+            if not enable_quant_kpi or calc_lib_kpi == 0: 
+                return 'Activity Logged' if x > 0 else 'No Activity Logged'
+            if x >= calc_lib_kpi: 
+                return f'✅ Met KPI (>= {calc_lib_kpi:.0f}m)'
+            elif x > 0.0: 
+                return f'⚠️ Below KPI (< {calc_lib_kpi:.0f}m)'
+            else: 
+                return '❌ Inactive (0 Mins)'
 
         lib_daily['KPI Status'] = lib_daily['Duration_Min'].apply(get_lib_status)
 
         m1, m2, m3, m4 = st.columns(4)
         lib_total_teachers = len(lib_daily)
-        lib_met_count = len(lib_daily[lib_daily['Duration_Min'] >= calc_lib_kpi]) if calc_lib_kpi > 0 else lib_total_teachers
+        lib_met_count = len(lib_daily[lib_daily['Duration_Min'] >= calc_lib_kpi]) if (enable_quant_kpi and calc_lib_kpi > 0) else len(lib_daily[lib_daily['Duration_Min'] > 0])
         lib_inactive_count = len(lib_daily[lib_daily['Duration_Min'] == 0.0])
         
         m1.metric("Total Roster Teachers", lib_total_teachers)
-        m2.metric(f"Met {calc_lib_kpi:.0f}m KPI", f"{lib_met_count} / {lib_total_teachers}")
+        m2.metric(f"Met Standard ({calc_lib_kpi:.0f}m)" if enable_quant_kpi else "Active Teachers", f"{lib_met_count} / {lib_total_teachers}")
         m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
-        m4.metric("Library KPI Compliance Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
+        m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
 
         fig_lib = px.bar(
             lib_daily, x="FullName", y="Duration_Min", color="KPI Status",
-            title=f"Library Minutes per Teacher vs. {calc_lib_kpi:.0f} Min KPI Standard",
+            title=f"Library Usage Minutes per Teacher" + (f" vs. {calc_lib_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Logged"},
             text_auto=".1f"
         )
-        fig_lib.add_hline(y=calc_lib_kpi, line_dash="dash", line_color="black", annotation_text=f"KPI Standard ({calc_lib_kpi:.0f} mins)")
+        if enable_quant_kpi and calc_lib_kpi > 0:
+            fig_lib.add_hline(y=calc_lib_kpi, line_dash="dash", line_color="black", annotation_text=f"Guideline ({calc_lib_kpi:.0f} mins)")
         st.plotly_chart(fig_lib, use_container_width=True)
 
-        st.subheader("📋 Library KPI Review Table")
+        st.subheader("📋 Library Usage Table")
         display_lib_table = lib_daily.rename(columns={'Institution': 'School', 'FullName': 'Teacher Name', 'Duration_Min': 'Minutes Logged'}).round({'Minutes Logged': 1})
         st.dataframe(display_lib_table, use_container_width=True)
 
         pdf_tab2 = generate_pdf_report(
-            title_text="📚 Daily Library Usage Report",
+            title_text="📚 Library Usage Report",
             subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {lib_total_teachers}",
             summary_metrics={
                 "Total Teachers": lib_total_teachers,
-                "Met KPI Standard": f"{lib_met_count} / {lib_total_teachers}",
-                "Compliance Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
+                "Active Teachers": f"{lib_met_count} / {lib_total_teachers}",
+                "Engagement Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
             },
             dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
         )
         st.download_button(
             label="📄 Download Tab 2 Report (PDF)",
             data=pdf_tab2,
-            file_name=f"Library_KPI_Report_{selected_month.replace(' ', '_')}.pdf",
+            file_name=f"Library_Usage_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
 
-    # TAB 3: CHAPTERS & RESOURCE BREAKDOWN
+    # TAB 3: CONTENT & CHAPTERS
     with tab3:
-        st.header("📖 Chapters & Content Modules Opened")
-        st.caption(f"Track specific books, subjects, and themes during `{filter_description_text}`.")
+        st.header("📖 Content & Chapters")
+        st.caption(f"Track specific books, subjects, and instructional modules opened during `{filter_description_text}`.")
 
         content_df = filtered_df[filtered_df['Book'].str.len() > 0]
 
@@ -747,8 +769,8 @@ else:
             with col_sum1:
                 st.markdown("##### 📌 Quantitative KPI Overview")
                 s1, s2 = st.columns(2)
-                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard")
-                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard")
+                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
+                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
                 
                 st.markdown("##### 💡 Academic Consultant Observation")
                 if calc_ld_kpi == 0 and calc_lib_kpi == 0:
@@ -766,7 +788,8 @@ else:
             with col_sum2:
                 st.markdown("##### 📊 KPI Achievement Comparison")
                 ach_df = pd.DataFrame({
-                    'KPI Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)', f'Library Usage ({calc_lib_kpi:.0f}m)'],
+                    'KPI Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
+                                     f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
                     'Logged Minutes': [t_day_ld, t_day_lib],
                     'KPI Standard': [calc_ld_kpi, calc_lib_kpi]
                 })
@@ -776,10 +799,11 @@ else:
                     x=ach_df['KPI Category'], y=ach_df['Logged Minutes'],
                     name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
                 ))
-                fig_ach.add_trace(go.Bar(
-                    x=ach_df['KPI Category'], y=ach_df['KPI Standard'],
-                    name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['KPI Standard']], textposition='auto'
-                ))
+                if enable_quant_kpi:
+                    fig_ach.add_trace(go.Bar(
+                        x=ach_df['KPI Category'], y=ach_df['KPI Standard'],
+                        name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['KPI Standard']], textposition='auto'
+                    ))
                 fig_ach.update_layout(
                     barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
                     height=280, margin=dict(l=20, r=20, t=40, b=20)
@@ -920,8 +944,8 @@ else:
 
             pdf_custom_sections = {
                 "1. Quantitative Delivery & Planning Highlights": [
-                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
-                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes ({lib_pct:.0f}% of Academic Benchmark)",
+                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
                     f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
                 ],
                 "2. Digital Content & Curriculum Pacing": [
@@ -965,8 +989,8 @@ else:
                     f"🏛️ *School:* {teacher_school}\n"
                     f"📅 *Review Period:* {filter_description_text}\n\n"
                     f"📊 *1. Quantitative Engagement:*\n"
-                    f"• Lesson Prep: {t_day_ld:.1f} Mins ({ld_pct:.0f}% of Guideline)\n"
-                    f"• Library Usage: {t_day_lib:.1f} Mins ({lib_pct:.0f}% of Guideline)\n\n"
+                    f"• Lesson Prep: {t_day_ld:.1f} Mins\n"
+                    f"• Library Usage: {t_day_lib:.1f} Mins\n\n"
                     f"📖 *2. Curriculum & Digital Coverage:*\n"
                     f"• Books & Modules Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}\n\n"
                     f"🎨 *3. Qualitative Evidence & Pedagogy:*\n"
@@ -1016,7 +1040,7 @@ else:
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
-        st.caption("High-level classification and Week-on-Week Velocity tracking across your school portfolio.")
+        st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
 
         if school_filtered_df.empty:
             st.warning("No data available for the selected school filter.")
@@ -1032,7 +1056,31 @@ else:
             school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
             school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
 
+            # Compute Qualitative Artifact Counts per School
+            qual_agg = []
+            for s_name in school_stats['Institution'].unique():
+                s_data = school_filtered_df[school_filtered_df['Institution'] == s_name]
+                s_vids = 0
+                for vc in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+                    if vc in s_data.columns:
+                        s_vids += len([l for l in s_data[vc].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+                s_w = len([l for l in s_data['Writing_Sample_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in s_data.columns else 0
+                s_lp = len([l for l in s_data['Lesson_Plan_Picture'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in s_data.columns else 0
+                s_vn = len([l for l in s_data['Voice_Note_Link'].dropna().unique() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in s_data.columns else 0
+                
+                qual_agg.append({
+                    'Institution': s_name,
+                    'Activity_Videos': s_vids,
+                    'Writing_Samples': s_w,
+                    'LP_Audio_Submissions': s_lp + s_vn
+                })
+            
+            qual_df_school = pd.DataFrame(qual_agg)
+            school_stats = school_stats.merge(qual_df_school, on='Institution', how='left').fillna(0)
+
             def classify_school(row):
+                if not enable_quant_kpi:
+                    return 'Active Portfolio'
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
                 lib_ok = row['Avg_Library_Usage_Mins'] >= daily_lib_target
                 if ld_ok and lib_ok:
@@ -1067,22 +1115,24 @@ else:
                 st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below KPI Standards on both features*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
 
             st.markdown("---")
-            st.subheader("📋 Complete School Performance Leaderboard")
-            display_qtable = school_stats[['Institution', 'Roster_Teachers', 'Avg_Lesson_Prep_Mins', 'Avg_Library_Usage_Mins', 'Classification']].rename(columns={
+            st.subheader("📋 Complete School Performance Leaderboard (Quantitative & Qualitative)")
+            display_qtable = school_stats[['Institution', 'Roster_Teachers', 'Avg_Lesson_Prep_Mins', 'Avg_Library_Usage_Mins', 'LP_Audio_Submissions', 'Activity_Videos', 'Writing_Samples', 'Classification']].rename(columns={
                 'Institution': 'School Name',
                 'Roster_Teachers': 'Active Teachers',
                 'Avg_Lesson_Prep_Mins': 'Prep (m/day)',
-                'Avg_Library_Usage_Mins': 'Library (m/day)'
+                'Avg_Library_Usage_Mins': 'Library (m/day)',
+                'LP_Audio_Submissions': 'LP/Voice Notes',
+                'Activity_Videos': 'Activity Videos',
+                'Writing_Samples': 'Writing Samples'
             })
             st.dataframe(display_qtable, use_container_width=True)
 
             pdf_tab5 = generate_pdf_report(
                 title_text="🏛️ Academic Manager Portfolio Review",
-                subtitle_text=f"Portfolio Classification for {selected_month} ({selected_num_days} Working Days)",
+                subtitle_text=f"Portfolio Performance Leaderboard ({selected_num_days} Working Days)",
                 summary_metrics={
+                    "Total Schools": len(school_stats),
                     "Pace Setters": len(pace_setters),
-                    "Lesson Focused": len(lesson_focused),
-                    "Library Focused": len(library_focused),
                     "Priority Focus": len(priority_focus)
                 },
                 dataframe=display_qtable
@@ -1414,6 +1464,6 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name="Teacher_Evidence_Submissions.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
                 mime="text/csv"
             )
