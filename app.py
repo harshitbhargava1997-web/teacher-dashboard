@@ -51,13 +51,31 @@ with st.form("teacher_submission_form", clear_on_submit=True):
     
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        grade = st.selectbox("Grade / Class *", options=["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"])
+        grade = st.selectbox(
+            "Grade / Class *", 
+            options=["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]
+        )
     with col_g2:
-        subject = st.selectbox("Subject *", options=["Mathematics", "Science", "English", "Social Studies", "Hindi", "Environmental Studies (EVS)", "Computer Science"])
+        subject = st.selectbox(
+            "Subject *", 
+            options=[
+                "Maths / Numeracy", 
+                "EVS", 
+                "Literacy / English", 
+                "Hindi", 
+                "Science", 
+                "Social Science", 
+                "Computer", 
+                "GK", 
+                "Grammar", 
+                "Pre-Primary Play Activities", 
+                "Pre-Primary Art & Craft Activities"
+            ]
+        )
 
     col_l1, col_l2 = st.columns(2)
     with col_l1:
-        lesson_plan_mins = st.number_input("Lesson Preparation Time (Minutes) *", min_value=0.0, max_value=300.0, value=10.0, step=5.0)
+        lesson_plan_number = st.text_input("Lesson Plan Number / Code * (e.g., LP-04, Ch-2)")
     with col_l2:
         num_activities = st.number_input("Number of Classroom Activities Conducted *", min_value=0, max_value=20, value=1, step=1)
 
@@ -83,6 +101,8 @@ with st.form("teacher_submission_form", clear_on_submit=True):
             st.error("⚠️ Please select your school.")
         elif teacher_name == "Select Teacher..." or teacher_name.startswith("Please"):
             st.error("⚠️ Please select your teacher name.")
+        elif not lesson_plan_number.strip():
+            st.error("⚠️ Please enter the Lesson Plan Number / Code.")
         else:
             timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = teacher_name.strip().replace(" ", "_")
@@ -103,14 +123,15 @@ with st.form("teacher_submission_form", clear_on_submit=True):
             writing_path = save_uploaded_file(writing_file, "writing")
             result_path = save_uploaded_file(result_image, "result")
 
-            # Package submission record
+            # Package submission record (mapped to main dashboard schema)
             new_entry = {
                 "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Institution": school_name,
                 "FullName": teacher_name.strip(),
                 "Grade": grade,
                 "Subject": subject,
-                "Duration_Min": lesson_plan_mins,
+                "Duration_Min": 10.0,  # Standard default metric time placeholder
+                "Lesson_Plan_Num": lesson_plan_number.strip(),
                 "Num_Activities": num_activities,
                 "Type": "teacherSubmission",
                 "Voice_Note_Link": voice_path,
