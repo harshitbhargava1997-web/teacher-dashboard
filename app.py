@@ -1040,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CALL MANAGER & QUALITATIVE MATRIX)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1086,6 +1086,7 @@ else:
                     return 'Active Portfolio'
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
                 lib_ok = row['Avg_Library_Usage_Mins'] >= daily_lib_target
+                
                 qual_ok = True
                 if enable_qual_kpi:
                     qual_ok = (row['Activity_Videos'] >= target_vid_count) or (row['Writing_Samples'] >= target_writing_count)
@@ -1173,7 +1174,6 @@ else:
                 st.markdown(f"**Selected School:** `{selected_call_school}`")
                 st.markdown(f"**Owner Contact:** `{owner_phone}`")
                 
-                # WhatsApp & Phone Click-to-Action Buttons
                 clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
                 wa_msg = urllib.parse.quote(f"Hello, checking in from Academic Management regarding recent portfolio execution metrics for {selected_call_school}.")
                 
