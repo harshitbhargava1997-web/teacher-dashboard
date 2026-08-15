@@ -1293,7 +1293,18 @@ else:
                 ]
 
                 if filtered_logs:
-                    notes_summary_df = pd.DataFrame(filtered_logs)
+                    # Safely construct DataFrame ensuring all columns exist even with legacy logs
+                    normalized_logs = []
+                    for log in filtered_logs:
+                        normalized_logs.append({
+                            'School': log.get('School', 'N/A'),
+                            'Call Date': log.get('Call Date', 'N/A'),
+                            'Discussion & Action Items': log.get('Discussion & Action Items', ''),
+                            'Next Action Step': log.get('Next Action Step', ''),
+                            'Follow-up Date': log.get('Follow-up Date', 'N/A'),
+                            'Status': log.get('Status', 'Open')
+                        })
+                    notes_summary_df = pd.DataFrame(normalized_logs)
                     st.dataframe(notes_summary_df[['School', 'Call Date', 'Discussion & Action Items', 'Next Action Step', 'Follow-up Date', 'Status']], use_container_width=True)
                     
                     csv_notes = notes_summary_df.to_csv(index=False).encode('utf-8')
