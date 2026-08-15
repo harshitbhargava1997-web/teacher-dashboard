@@ -1040,7 +1040,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH AI CALL SCRIPT GENERATOR & CRM)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (WITH CRM & FILTERED DISCUSSION LOGS)
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1086,6 +1086,7 @@ else:
                     return 'Active Portfolio'
                 ld_ok = row['Avg_Lesson_Prep_Mins'] >= daily_ld_target
                 lib_ok = row['Avg_Library_Usage_Mins'] >= daily_lib_target
+                
                 qual_ok = True
                 if enable_qual_kpi:
                     qual_ok = (row['Activity_Videos'] >= target_vid_count) or (row['Writing_Samples'] >= target_writing_count)
@@ -1153,7 +1154,7 @@ else:
 
             st.markdown("---")
 
-            # --- SCHOOL OWNER CRM CONTACT DIRECTORY & CALL SCRIPT GENERATOR ---
+            # --- SCHOOL OWNER CRM CONTACT DIRECTORY & FILTER-AWARE CALL LOG ---
             st.subheader("📞 School Owner CRM, Call Script & Discussion Notes Log")
             st.caption(f"Active Observation Window: `{filter_description_text}`. Generate a data-driven talking script, call owners, and record date-stamped discussions.")
 
@@ -1179,7 +1180,6 @@ else:
             selected_call_school = st.selectbox("Select School for Owner Discussion & CRM Call:", options=all_portfolio_schools, key="call_school_select")
             owner_phone = st.session_state["school_contacts_directory"].get(selected_call_school, "Not Provided")
 
-            # Extract specific school metrics for automated script generation
             sch_row = school_stats[school_stats['Institution'] == selected_call_school]
             sch_prep = float(sch_row['Avg_Lesson_Prep_Mins'].values[0]) if not sch_row.empty else 0.0
             sch_lib = float(sch_row['Avg_Library_Usage_Mins'].values[0]) if not sch_row.empty else 0.0
@@ -1220,7 +1220,7 @@ else:
                     """)
 
                 existing_entry = next((item for item in st.session_state["school_call_logs_store"] if item["School"] == selected_call_school and item["Review Period"] == filter_description_text), None)
-                default_note_text = existing_entry["Notes"] if existing_entry else ""
+                default_note_text = existing_entry["Discussion & Action Items"] if existing_entry else ""
 
                 new_discussion_note = st.text_area(f"Discussion Notes & Action Items ({filter_description_text}):", value=default_note_text, height=110, key=f"note_{selected_call_school}_{filter_description_text}")
                 
