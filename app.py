@@ -11,6 +11,9 @@ import urllib.parse
 from io import BytesIO
 from supabase import create_client
 
+# Google GenAI SDK
+from google import genai
+
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -20,16 +23,22 @@ from reportlab.lib import colors
 # Page layout configuration (Must be the first Streamlit command)
 st.set_page_config(page_title="Academic Manager Portfolio & Teacher Performance Indicator Review Dashboard", layout="wide")
 
-# --- SUPABASE CLOUD STORAGE SETUP ---
+# --- SUPABASE & GEMINI CLOUD SETUP ---
 try:
     SUPABASE_URL = st.secrets["supabase"]["url"].rstrip('/')
     SUPABASE_KEY = st.secrets["supabase"]["key"]
     BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
     PARQUET_FILE_NAME = "master_database.parquet"
-
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
+
+# Initialize Gemini Client using google-genai SDK
+try:
+    GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
+    ai_client = genai.Client(api_key=GEMINI_API_KEY)
+except Exception:
+    ai_client = None
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
@@ -119,9 +128,74 @@ def build_teacher_roster(df):
 
     return candidate.reset_index(drop=True)
 
+
+# --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
+def get_gemini_summary(context_prompt):
+    """Sends a summary prompt to Gemini 2.0 Flash and returns the intelligent text summary."""
+    if not ai_client:
+        return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=context_prompt
+        )
+        return response.text
+    except Exception as e:
+        return f"Could not generate AI summary: {e}"
+
+
+def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
+    """Universal CRM and WhatsApp Message Generator integrated across all tabs."""
+    st.markdown("---")
+    st.subheader(f"📞 Universal School Owner CRM & AI WhatsApp Generator ({tab_name})")
+    
+    if "school_contacts_directory" not in st.session_state:
+        st.session_state["school_contacts_directory"] = {"Pragyanam International School": "+91 98260XXXXX"}
+    if "school_call_logs_store" not in st.session_state:
+        st.session_state["school_call_logs_store"] = []
+
+    c_col1, c_col2 = st.columns([1, 2])
+    with c_col1:
+        target_crm_school = st.selectbox("Select School for CRM Outreach:", options=[school_name_default] if isinstance(school_name_default, str) else school_name_default, key=f"crm_school_{tab_name}")
+        owner_phone = st.session_state["school_contacts_directory"].get(target_crm_school, "Not Provided")
+        st.markdown(f"**Assigned Contact:** `{owner_phone}`")
+        
+        if owner_phone and owner_phone != "Not Provided":
+            clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
+            wa_msg = urllib.parse.quote(f"Hello, checking in from Academic Management regarding execution metrics for {target_crm_school}.")
+            st.markdown(f'<a href="tel:{owner_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call School Owner</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={wa_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Send WhatsApp Message</button></a>', unsafe_allow_html=True)
+        else:
+            st.warning("Punch contact number in Sidebar or CRM directory.")
+
+    with c_col2:
+        st.markdown("##### 🤖 Gemini AI Smart WhatsApp Message Generator")
+        custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
+        
+        if st.button("✨ Generate AI WhatsApp Message", key=f"gen_wa_{tab_name}"):
+            prompt = f"""
+            Write a professional WhatsApp message for a school owner/principal regarding their school's academic performance.
+            School Name: {target_crm_school}
+            Module Tab: {tab_name}
+            Performance Metrics: {metrics_summary_text}
+            Tone: {custom_tone}
+            Keep it concise, actionable, and formatted nicely with emojis for WhatsApp.
+            """
+            with st.spinner("Generating AI message with Gemini..."):
+                ai_msg = get_gemini_summary(prompt)
+                st.session_state[f"ai_wa_draft_{tab_name}"] = ai_msg
+
+        draft_msg = st.session_state.get(f"ai_wa_draft_{tab_name}", f"Hello from Academic Management regarding {target_crm_school}. Performance highlights: {metrics_summary_text}")
+        final_wa_text = st.text_area("Editable WhatsApp Message Draft:", value=draft_msg, height=120, key=f"wa_textarea_{tab_name}")
+        
+        if owner_phone and owner_phone != "Not Provided":
+            clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
+            encoded_text = urllib.parse.quote(final_wa_text)
+            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Generated WhatsApp Message</button></a>', unsafe_allow_html=True)
+
+
 # 0. Highly Visual Executive PDF Report Generator Helper
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
-    """Generates an exceptionally styled, highly visual executive PDF document in memory matching dashboard aesthetics."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -551,6 +625,14 @@ else:
         c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
         c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
+        # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 1 ---
+        with st.expander("✨ Gemini AI Intelligent Lesson Prep Analysis", expanded=False):
+            if st.button("Generate AI Lesson Prep Summary", key="ai_btn_tab1"):
+                with st.spinner("Analyzing lesson prep metrics with Gemini..."):
+                    summary_prompt = f"Analyze these lesson prep statistics: Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}. Provide 3 key actionable takeaways for the academic manager."
+                    ai_text = get_gemini_summary(summary_prompt)
+                    st.markdown(ai_text)
+
         fig_ld = px.bar(
             ld_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Lesson Prep Minutes per Teacher" + (f" vs. {calc_ld_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
@@ -582,6 +664,8 @@ else:
             file_name=f"Lesson_Plan_Prep_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
+
+        render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, f"Total Teachers: {total_teachers}, Active: {met_count}, Compliance: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
     # TAB 2: LIBRARY USAGE TRACKER
     with tab2:
@@ -617,6 +701,14 @@ else:
         m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
         m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
 
+        # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 2 ---
+        with st.expander("✨ Gemini AI Intelligent Library Usage Analysis", expanded=False):
+            if st.button("Generate AI Library Summary", key="ai_btn_tab2"):
+                with st.spinner("Analyzing library engagement with Gemini..."):
+                    summary_prompt = f"Analyze these library usage statistics: Total Teachers: {lib_total_teachers}, Met Standard: {lib_met_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%. Provide 3 key recommendations."
+                    ai_text = get_gemini_summary(summary_prompt)
+                    st.markdown(ai_text)
+
         fig_lib = px.bar(
             lib_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Library Usage Minutes per Teacher" + (f" vs. {calc_lib_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
@@ -648,6 +740,8 @@ else:
             file_name=f"Library_Usage_Report_{selected_month.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
+
+        render_universal_crm_box("Library Usage Tracker", selected_schools, f"Total Teachers: {lib_total_teachers}, Active: {lib_met_count}, Engagement: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
 
     # TAB 3: CONTENT & CHAPTERS
     with tab3:
@@ -690,6 +784,14 @@ else:
                 k1.metric("Textbooks / Chapters Opened", t3_df['Book'].nunique())
                 k2.metric("Subjects Taught", t3_df['Subject'].nunique())
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
+
+                # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 3 ---
+                with st.expander("✨ Gemini AI Curriculum Pacing Analysis", expanded=False):
+                    if st.button("Generate AI Content Summary", key="ai_btn_tab3"):
+                        with st.spinner("Analyzing curriculum usage with Gemini..."):
+                            summary_prompt = f"Analyze textbook and subject distribution: Unique Chapters: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Time: {t3_df['Duration_Min'].sum():.1f} mins. Provide pacing insights."
+                            ai_text = get_gemini_summary(summary_prompt)
+                            st.markdown(ai_text)
 
                 col_c1, col_c2 = st.columns(2)
                 with col_c1:
@@ -757,6 +859,8 @@ else:
                         file_name=f"Content_Usage_Report_{selected_month.replace(' ', '_')}.pdf",
                         mime="application/pdf"
                     )
+
+                render_universal_crm_box("Content & Chapters", t3_school, f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins")
 
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (COMPLETE WITH DETAILED BOOKS/TIME & ARBITRARY SUBMISSION BREAKDOWN)
     with tab4:
@@ -836,7 +940,6 @@ else:
 
             lp_combo_total = len(v_voice) + len(v_pic)
 
-            # Build detailed text and link summaries for PDF export
             pdf_book_items = []
             if not teacher_books.empty:
                 b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
@@ -847,13 +950,13 @@ else:
 
             pdf_link_items = []
             for item in v_voice:
-                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
+                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_pic:
-                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
+                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_vid:
-                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
+                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_writing:
-                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
+                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
 
             pdf_custom_sections = {
                 "1. Quantitative Delivery & Planning Highlights": [
@@ -890,6 +993,14 @@ else:
                 )
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
+
+            # --- GEMINI AI INTELLIGENT 360 REVIEW GENERATOR ---
+            with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
+                if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
+                    with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
+                        review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Lesson plans/audio notes: {lp_combo_total}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback and coaching recommendations."
+                        ai_eval = get_gemini_summary(review_prompt)
+                        st.markdown(ai_eval)
 
             st.subheader("1. Quantitative Performance Indicator Summary")
             st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
@@ -1041,6 +1152,8 @@ else:
                         mime="text/csv"
                     )
 
+            render_universal_crm_box("Teacher 360 Profile", teacher_school, f"Teacher: {target_teacher}, Lesson Prep: {t_day_ld:.1f}m, Library: {t_day_lib:.1f}m, Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}")
+
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
@@ -1126,6 +1239,14 @@ else:
             with col_bot2:
                 st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below Quantitative & Qualitative Standards*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
 
+            # --- GEMINI AI PORTFOLIO STRATEGY INSIGHT ---
+            with st.expander("✨ Gemini AI Portfolio Health Analysis", expanded=False):
+                if st.button("Generate AI Portfolio Summary", key="ai_btn_tab5"):
+                    with st.spinner("Analyzing multi-school portfolio health with Gemini..."):
+                        p_prompt = f"Analyze portfolio distribution: Pace Setters: {len(pace_setters)}, Lesson Focused: {len(lesson_focused)}, Library Focused: {len(library_focused)}, Priority Focus: {len(priority_focus)}. Provide strategic management focus areas."
+                        ai_portfolio_text = get_gemini_summary(p_prompt)
+                        st.markdown(ai_portfolio_text)
+
             st.markdown("---")
             st.subheader("📋 Complete School Performance Leaderboard (Quantitative & Qualitative)")
             display_qtable = school_stats[['Institution', 'Roster_Teachers', 'Avg_Lesson_Prep_Mins', 'Avg_Library_Usage_Mins', 'LP_Audio_Submissions', 'Activity_Videos', 'Writing_Samples', 'Classification']].rename(columns={
@@ -1157,217 +1278,7 @@ else:
                 mime="application/pdf"
             )
 
-            st.markdown("---")
-
-            st.subheader("📞 School Owner CRM, Call Script & Next-Step Accountability")
-            st.caption(f"Active Observation Window: `{filter_description_text}`. Generate data-driven scripts, track commitments, and log discussion notes.")
-
-            if "school_contacts_directory" not in st.session_state:
-                st.session_state["school_contacts_directory"] = {
-                    "Pragyanam International School": "+91 98260XXXXX"
-                }
-
-            if "school_call_logs_store" not in st.session_state:
-                st.session_state["school_call_logs_store"] = []
-
-            all_portfolio_schools = sorted(school_stats['Institution'].unique().tolist())
-
-            with st.expander("⚙️ Manage School Owner Contact Numbers (CRM Directory)", expanded=False):
-                st.markdown("Update or punch phone numbers for your school portfolio:")
-                for sch in all_portfolio_schools:
-                    current_num = st.session_state["school_contacts_directory"].get(sch, "")
-                    new_num = st.text_input(f"Owner Phone for {sch}:", value=current_num, key=f"dir_phone_{sch}")
-                    st.session_state["school_contacts_directory"][sch] = new_num
-
-            st.markdown("---")
-
-            selected_call_school = st.selectbox("Select School for Owner Discussion & CRM Call:", options=all_portfolio_schools, key="call_school_select")
-            owner_phone = st.session_state["school_contacts_directory"].get(selected_call_school, "Not Provided")
-
-            sch_row = school_stats[school_stats['Institution'] == selected_call_school]
-            sch_prep = float(sch_row['Avg_Lesson_Prep_Mins'].values[0]) if not sch_row.empty else 0.0
-            sch_lib = float(sch_row['Avg_Library_Usage_Mins'].values[0]) if not sch_row.empty else 0.0
-            sch_vids = int(sch_row['Activity_Videos'].values[0]) if not sch_row.empty else 0
-            sch_writing = int(sch_row['Writing_Samples'].values[0]) if not sch_row.empty else 0
-            sch_lp = int(sch_row['LP_Audio_Submissions'].values[0]) if not sch_row.empty else 0
-            sch_class = sch_row['Classification'].values[0] if not sch_row.empty else "Active Portfolio"
-
-            col_call_info1, col_call_info2 = st.columns([1, 2])
-            with col_call_info1:
-                st.markdown(f"**Selected School:** `{selected_call_school}`")
-                st.markdown(f"**Owner Contact:** `{owner_phone}`")
-                st.markdown(f"**Portfolio Status:** `{sch_class}`")
-                
-                if owner_phone and owner_phone != "Not Provided":
-                    clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
-                    wa_msg = urllib.parse.quote(f"Hello, checking in from Academic Management regarding recent portfolio execution metrics for {selected_call_school} during {filter_description_text}.")
-                    
-                    st.markdown(f'<a href="tel:{owner_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call School Owner</button></a>', unsafe_allow_html=True)
-                    st.markdown(f'<a href="https://wa.me/{clean_phone}?text={wa_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Send WhatsApp Message</button></a>', unsafe_allow_html=True)
-                else:
-                    st.warning("Please punch a valid phone number in the CRM Directory above to enable direct calling/WhatsApp buttons.")
-
-            with col_call_info2:
-                with st.expander(f"🤖 View Generated Talking Script for {selected_call_school}", expanded=True):
-                    st.markdown(f"""
-                    **Phase 1 & 2: Data-Driven Talking Points ({filter_description_text})**
-                    1. **Opening:** *"Hi [Principal/Owner Name], I was reviewing our portfolio dashboard for {selected_call_school} during {filter_description_text}. Overall status is currently classified as **{sch_class}**."*
-                    2. **Lesson Prep Review:** *"Teachers averaged **{sch_prep:.1f} mins/day** in lesson preparation. {'Great consistency!' if sch_prep >= daily_ld_target else 'Let us discuss how we can support teachers in locking in prep times.'}"*
-                    3. **Library Usage Review:** *"Library engagement stands at **{sch_lib:.1f} mins/day**."*
-                    4. **Lesson Plans & Voice Notes:** *"{sch_lp} verified pre-class voice reflections and lesson plan pictures have been logged."*
-                    5. **Activity Videos:** *"{sch_vids} classroom activity execution video(s) have been audited."*
-                    6. **Student Writing Practice:** *"{sch_writing} writing sample submission(s) recorded. Let us ensure notebook checks remain consistent next week."*
-                    
-                    **Phase 3: Closing & Action Item**
-                    * *"To summarize, our main focus for next week will be balancing preparation with consistent artifact submissions. I will record our action items here."*
-                    """)
-
-                existing_entry = next((item for item in st.session_state["school_call_logs_store"] if item["School"] == selected_call_school and item["Review Period"] == filter_description_text), None)
-                
-                default_note_text = existing_entry.get("Discussion & Action Items", "") if existing_entry else ""
-                default_action_text = existing_entry.get("Next Action Step", "") if existing_entry else ""
-                default_status_val = existing_entry.get("Status", "Open") if existing_entry else "Open"
-                
-                status_options = ["Open", "In Progress", "Resolved"]
-                default_status_idx = status_options.index(default_status_val) if default_status_val in status_options else 0
-
-                new_discussion_note = st.text_area(f"Discussion Notes ({filter_description_text}):", value=default_note_text, height=80, key=f"note_{selected_call_school}_{filter_description_text}")
-                new_next_action = st.text_input(f"Next Action Step / Commitment:", value=default_action_text, key=f"action_{selected_call_school}_{filter_description_text}")
-                
-                col_sub_b1, col_sub_b2, col_sub_b3 = st.columns(3)
-                with col_sub_b1:
-                    punched_date = st.date_input("Call Date Stamp:", value=pd.Timestamp.now().date(), key=f"date_{selected_call_school}_{filter_description_text}")
-                with col_sub_b2:
-                    followup_date = st.date_input("Follow-up Target Date:", value=pd.Timestamp.now().date() + pd.Timedelta(days=7), key=f"fu_date_{selected_call_school}_{filter_description_text}")
-                with col_sub_b3:
-                    action_status = st.selectbox("Commitment Status:", options=status_options, index=default_status_idx, key=f"status_{selected_call_school}_{filter_description_text}")
-
-                if st.button("💾 Save Discussion Log & Action Step", key=f"save_note_{selected_call_school}_{filter_description_text}"):
-                    if new_discussion_note.strip():
-                        st.session_state["school_call_logs_store"] = [
-                            item for item in st.session_state["school_call_logs_store"] 
-                            if not (item["School"] == selected_call_school and item["Review Period"] == filter_description_text)
-                        ]
-
-                        st.session_state["school_call_logs_store"].append({
-                            "School": selected_call_school,
-                            "Review Period": filter_description_text,
-                            "Call Date": str(punched_date),
-                            "Discussion & Action Items": new_discussion_note.strip(),
-                            "Next Action Step": new_next_action.strip(),
-                            "Follow-up Date": str(followup_date),
-                            "Status": action_status
-                        })
-                        st.success(f"✅ Discussion log & next-step commitment saved for {selected_call_school}!")
-                    else:
-                        st.warning("Please enter discussion notes before saving.")
-
-                st.markdown("##### 📱 Send Consolidated Weekly School WhatsApp Update")
-                consolidated_wa_text = (
-                    f"🏫 *WEEKLY ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
-                    f"📅 *Observation Period:* {filter_description_text}\n\n"
-                    f"📊 *1. Quantitative Execution:*\n"
-                    f"• Lesson Prep Average: {sch_prep:.1f} Mins/Day\n"
-                    f"• Library Usage Average: {sch_lib:.1f} Mins/Day\n\n"
-                    f"🎨 *2. Qualitative Evidence & Artifacts:*\n"
-                    f"• Lesson Plans / Voice Notes: {sch_lp} verified\n"
-                    f"• Activity Videos: {sch_vids} audited\n"
-                    f"• Writing Practice Samples: {sch_writing} submitted\n\n"
-                    f"📌 *3. Agreed Next Action Step:*\n"
-                    f"• {new_next_action if new_next_action else 'Review upcoming week deliverables'}\n"
-                    f"• *Target Follow-up:* {str(followup_date)}\n\n"
-                    f"💡 *Status:* Portfolio Classification is currently *{sch_class}*."
-                )
-                clean_phone_rep = re.sub(r'[^0-9+]', '', owner_phone)
-                encoded_rep_msg = urllib.parse.quote(consolidated_wa_text)
-                
-                with st.expander("📋 Preview & Copy Consolidated WhatsApp Message"):
-                    st.text_area("WhatsApp Weekly Summary Snippet", value=consolidated_wa_text, height=160, key=f"wa_rep_{selected_call_school}")
-                    if owner_phone and owner_phone != "Not Provided":
-                        st.markdown(f'<a href="https://wa.me/{clean_phone_rep}?text={encoded_rep_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Consolidated Weekly WhatsApp Update</button></a>', unsafe_allow_html=True)
-
-            if st.session_state["school_call_logs_store"]:
-                st.markdown(f"##### 📋 Discussion Logs & Commitments (`{filter_description_text}`)")
-                
-                current_school_names = school_stats['Institution'].tolist()
-                filtered_logs = [
-                    item for item in st.session_state["school_call_logs_store"] 
-                    if item["School"] in current_school_names and item["Review Period"] == filter_description_text
-                ]
-
-                if filtered_logs:
-                    normalized_logs = []
-                    for log in filtered_logs:
-                        normalized_logs.append({
-                            'School': log.get('School', 'N/A'),
-                            'Call Date': log.get('Call Date', 'N/A'),
-                            'Discussion & Action Items': log.get('Discussion & Action Items', ''),
-                            'Next Action Step': log.get('Next Action Step', ''),
-                            'Follow-up Date': log.get('Follow-up Date', 'N/A'),
-                            'Status': log.get('Status', 'Open')
-                        })
-                    notes_summary_df = pd.DataFrame(normalized_logs)
-                    st.dataframe(notes_summary_df[['School', 'Call Date', 'Discussion & Action Items', 'Next Action Step', 'Follow-up Date', 'Status']], use_container_width=True)
-                    
-                    csv_notes = notes_summary_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Filtered Call & Discussion Log (CSV)",
-                        data=csv_notes,
-                        file_name=f"School_Call_Logs_{selected_month.replace(' ', '_')}.csv",
-                        mime="application/pdf"
-                    )
-                else:
-                    st.info(f"No discussion logs recorded yet for the active filter window (`{filter_description_text}`).")
-
-            st.markdown("---")
-
-            st.subheader("🚀 Week-on-Week (WoW) Portfolio Velocity")
-            
-            if 'Week' in school_filtered_df.columns and school_filtered_df['Week'].nunique() >= 2:
-                weeks_sorted = sorted(school_filtered_df['Week'].unique())
-                latest_week = weeks_sorted[-1]
-                prev_week = weeks_sorted[-2]
-
-                st.caption(f"Comparing `{latest_week}` vs. `{prev_week}`")
-
-                weekly_school = school_filtered_df.groupby(['Week', 'Institution'])['Duration_Min'].sum().unstack(level=0, fill_value=0.0).reset_index()
-                
-                if latest_week in weekly_school.columns and prev_week in weekly_school.columns:
-                    weekly_school['WoW_Growth_Mins'] = weekly_school[latest_week] - weekly_school[prev_week]
-                    weekly_school['WoW_Growth_Pct'] = np.where(
-                        weekly_school[prev_week] > 0, 
-                        (weekly_school['WoW_Growth_Mins'] / weekly_school[prev_week]) * 100, 
-                        100.0
-                    )
-
-                    col_v1, col_v2 = st.columns(2)
-
-                    with col_v1:
-                        st.success("🔥 Top 5 Most Improved Schools (Highest WoW Growth)")
-                        top_improved = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=False).head(5)
-                        fig_top = px.bar(
-                            top_improved, x="WoW_Growth_Mins", y="Institution", orientation="h",
-                            title="Top Accelerated Schools (+Mins)",
-                            labels={"WoW_Growth_Mins": "Added Minutes Logged", "Institution": "School"},
-                            color_discrete_sequence=['#2CA02C'], text_auto=".1f"
-                        )
-                        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_top, use_container_width=True)
-
-                    with col_v2:
-                        st.error("🚨 Top 5 Priority Intervention Schools (Highest Usage Drop)")
-                        top_declining = weekly_school.sort_values(by='WoW_Growth_Mins', ascending=True).head(5)
-                        fig_bot = px.bar(
-                            top_declining, x="WoW_Growth_Mins", y="Institution", orientation="h",
-                            title="Highest Usage Drop Schools (-Mins)",
-                            labels={"WoW_Growth_Mins": "Dropped Minutes Logged", "Institution": "School"},
-                            color_discrete_sequence=['#D62728'], text_auto=".1f"
-                        )
-                        fig_bot.update_layout(yaxis={'categoryorder':'total descending'})
-                        st.plotly_chart(fig_bot, use_container_width=True)
-
-            else:
-                st.info("Upload data covering at least 2 weeks to unlock Week-on-Week Velocity rankings.")
+            render_universal_crm_box("Manager Portfolio", selected_schools, f"Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}, Total Schools: {len(school_stats)}")
 
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
@@ -1446,31 +1357,7 @@ else:
                 mime="application/pdf"
             )
 
-            st.markdown("---")
-
-            st.subheader("2. Grade & Subject Digital Content Coverage")
-
-            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:
-                st.info("No chapter or book usage logs recorded for this school.")
-            else:
-                col_t6_g1, col_t6_g2 = st.columns(2)
-
-                with col_t6_g1:
-                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()
-                    fig_g6 = px.bar(
-                        grade_t6, x="Grade", y="Duration_Min", color="Grade",
-                        title="Digital Classroom Time by Grade Level (Mins)",
-                        text_auto=".1f"
-                    )
-                    st.plotly_chart(fig_g6, use_container_width=True)
-
-                with col_t6_g2:
-                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()
-                    fig_s6 = px.pie(
-                        subj_t6, names="Subject", values="Duration_Min",
-                        title="Subject / Module Distribution in School"
-                    )
-                    st.plotly_chart(fig_s6, use_container_width=True)
+            render_universal_crm_box("School Inspection", target_school_t6, f"Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}")
 
     # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
@@ -1638,6 +1525,8 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
                 mime="application/pdf"
             )
+
+            render_universal_crm_box("Live Evidence Feed", t7_selected_school, f"Total Submissions: {tot_subs}, Audio: {tot_audios}, Videos: {tot_vids}, Writing: {tot_writing}")
