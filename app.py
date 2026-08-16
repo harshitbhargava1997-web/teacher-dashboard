@@ -34,7 +34,7 @@ try:
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
 
-# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5/3.7 Flash)
+# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5 / 3.7 Flash)
 try:
     GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -73,20 +73,20 @@ def fetch_master_db_from_supabase():
     return base_df
 
 
-# --- SUPABASE PERSISTENCE FOR CRM CONTACTS & CALL LOGS ---
+# --- SUPABASE PERSISTENCE FOR CRM CONTACTS & DIRECTORY ---
 def load_crm_data_from_supabase():
-    """Loads saved school contacts, principal/owner vs teacher details, and call logs from Supabase."""
+    """Loads saved school contacts directory from Supabase cloud storage."""
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(CRM_FILE_NAME)
         if response:
             return json.loads(response.decode('utf-8'))
     except Exception:
         pass
-    return {"contacts": {}, "logs": []}
+    return {"contacts": {}}
 
 
 def save_crm_data_to_supabase(crm_data):
-    """Saves updated school contacts and call logs back to Supabase cloud storage."""
+    """Saves updated school contacts directory back to Supabase cloud storage."""
     try:
         crm_buffer = BytesIO(json.dumps(crm_data, indent=2).encode('utf-8'))
         supabase.storage.from_(BUCKET_NAME).upload(
@@ -171,9 +171,9 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
-    """Advanced Universal CRM with dual WhatsApp generators (AI vs Template) and persistent Supabase contact/role storage."""
+    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Teacher) and dual reliable WhatsApp generators."""
     st.markdown("---")
-    st.subheader(f"📞 Universal School Contact CRM & Dual WhatsApp Generators ({tab_name})")
+    st.subheader(f"📞 Universal School & Teacher CRM & Dual WhatsApp Generators ({tab_name})")
     
     # Load persistent CRM database from Supabase
     if "crm_cloud_data" not in st.session_state:
@@ -182,41 +182,46 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
     crm_data = st.session_state["crm_cloud_data"]
     if "contacts" not in crm_data:
         crm_data["contacts"] = {}
-    if "logs" not in crm_data:
-        crm_data["logs"] = []
 
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
         schools_list = [school_name_default] if isinstance(school_name_default, str) else list(school_name_default)
         if not schools_list:
             schools_list = ["Default School"]
-        target_crm_school = st.selectbox("Select School for CRM Outreach:", options=schools_list, key=f"crm_school_{tab_name}")
+        target_crm_school = st.selectbox("Select School:", options=schools_list, key=f"crm_school_{tab_name}")
         
-        # Retrieve stored school contact record or defaults
-        school_contact_rec = crm_data["contacts"].get(target_crm_school, {"contact_name": "Principal / Owner", "role": "Principal / Owner", "phone": ""})
-        
-        st.markdown("##### 👤 Contact Details & Role")
-        input_contact_name = st.text_input("Contact Name:", value=school_contact_rec.get("contact_name", ""), key=f"cname_{tab_name}")
-        input_role = st.selectbox("Entity Type / Role:", options=["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"], index=["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"].index(school_contact_rec.get("role", "Principal / Owner")) if school_contact_rec.get("role", "Principal / Owner") in ["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"] else 0, key=f"crole_{tab_name}")
-        input_phone = st.text_input("Mobile Number (+91...):", value=school_contact_rec.get("phone", ""), key=f"cphone_{tab_name}")
-
-        if st.button("💾 Save Contact to Supabase", key=f"save_contact_btn_{tab_name}"):
+        # Initialize school contacts bucket if missing
+        if target_crm_school not in crm_data["contacts"]:
             crm_data["contacts"][target_crm_school] = {
-                "contact_name": input_contact_name,
-                "role": input_role,
+                "Principal": {"name": "", "phone": ""},
+                "Owner": {"name": "", "phone": ""},
+                "Teacher": {"name": "", "phone": ""}
+            }
+
+        st.markdown("##### 👥 Select Entity & Contact Details")
+        selected_entity_type = st.selectbox("Target Entity Type:", options=["Principal", "Owner", "Teacher"], key=f"entity_type_{tab_name}")
+        
+        current_entity_data = crm_data["contacts"][target_crm_school].get(selected_entity_type, {"name": "", "phone": ""})
+        
+        input_contact_name = st.text_input(f"{selected_entity_type} Name:", value=current_entity_data.get("name", ""), key=f"cname_{tab_name}_{selected_entity_type}")
+        input_phone = st.text_input(f"{selected_entity_type} Mobile (+91...):", value=current_entity_data.get("phone", ""), key=f"cphone_{tab_name}_{selected_entity_type}")
+
+        if st.button(f"💾 Save {selected_entity_type} Contact to Supabase", key=f"save_contact_btn_{tab_name}_{selected_entity_type}"):
+            crm_data["contacts"][target_crm_school][selected_entity_type] = {
+                "name": input_contact_name,
                 "phone": input_phone
             }
             save_crm_data_to_supabase(crm_data)
-            st.success(f"Successfully saved {input_role} details for {target_crm_school} to Supabase Cloud!")
+            st.success(f"Successfully saved {selected_entity_type} details for {target_crm_school}!")
 
         active_phone = input_phone.strip()
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
-            quick_wa = urllib.parse.quote(f"Hello {input_contact_name}, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
-            st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {input_role}</button></a>', unsafe_allow_html=True)
+            quick_wa = urllib.parse.quote(f"Hello {input_contact_name or selected_entity_type}, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
+            st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {selected_entity_type}</button></a>', unsafe_allow_html=True)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
-            st.warning("Please enter and save a valid mobile number above.")
+            st.warning(f"Please enter and save a mobile number for the selected {selected_entity_type}.")
 
     with c_col2:
         st.markdown("##### 💬 Dual WhatsApp Message Generators")
@@ -224,12 +229,13 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        draft_key = f"wa_draft_{tab_name}_{target_crm_school}"
+        draft_key = f"wa_draft_{tab_name}_{target_crm_school}_{selected_entity_type}"
 
+        # Robust event-driven state updates for generators
         if gen_mode.startswith("✨"):
             if st.button("✨ Generate AI WhatsApp Message", key=f"gen_ai_wa_{tab_name}"):
                 ai_prompt = f"""
-                Write a professional, structured WhatsApp message for a school {input_role} named {input_contact_name} at {target_crm_school}.
+                Write a professional, structured WhatsApp message for a school {selected_entity_type} named {input_contact_name or 'Stakeholder'} at {target_crm_school}.
                 Module Tab Context: {tab_name}
                 Complete Tab Performance Report & Metrics: {metrics_summary_text}
                 Tone: {custom_tone}
@@ -242,19 +248,24 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
             if st.button("📝 Generate Template Message", key=f"gen_tmpl_wa_{tab_name}"):
                 template_result = (
                     f"🏫 *ACADEMIC PERFORMANCE UPDATE - {target_crm_school.upper()}*\n"
-                    f"👤 *Addressed To:* {input_contact_name} ({input_role})\n"
+                    f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type})\n"
                     f"📊 *Module Summary ({tab_name}):*\n{metrics_summary_text}\n\n"
                     f"💡 *Tone:* {custom_tone}. Please review these figures and let us know your feedback!"
                 )
                 st.session_state[draft_key] = template_result
 
-        default_draft_content = st.session_state.get(draft_key, f"Hello {input_contact_name}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}")
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=default_draft_content, height=130, key=f"wa_textarea_{tab_name}")
+        # Guaranteed state fallback so textarea never fails or blanks out
+        if draft_key not in st.session_state:
+            st.session_state[draft_key] = f"Hello {input_contact_name or selected_entity_type}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}"
+
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_key], height=140, key=f"wa_textarea_{tab_name}")
 
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
             encoded_final_text = urllib.parse.quote(editable_wa_area)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Final WhatsApp Message</button></a>', unsafe_allow_html=True)
+        else:
+            st.info("Save a valid phone number on the left to activate the WhatsApp sending action button.")
 
 
 # 0. Highly Visual Executive PDF Report Generator Helper
