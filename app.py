@@ -129,19 +129,29 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
+# --- BULLETPROOF AI HELPER FUNCTION WITH MULTI-MODEL FALLBACK ---
 def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini and returns the intelligent text summary."""
+    """Sends a summary prompt to Gemini with automatic model fallbacks to prevent 404 errors."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
-    try:
-        response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=context_prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Could not generate AI summary: {e}"
+    
+    # List of candidate models to try in order
+    candidate_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    
+    last_error = None
+    for model_name in candidate_models:
+        try:
+            response = ai_client.models.generate_content(
+                model=model_name,
+                contents=context_prompt
+            )
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            last_error = e
+            continue
+            
+    return f"Could not generate AI summary using available models. Details: {last_error}"
 
 
 def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
@@ -1542,7 +1552,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
 
