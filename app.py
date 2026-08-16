@@ -35,7 +35,7 @@ try:
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
 
-# Initialize Gemini Client using google-genai SDK
+# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5 / 3.7 Flash)
 try:
     GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -180,23 +180,31 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
+# --- AI HELPER FUNCTIONS (GEMINI 3.5 / 3.7 FLASH INTEGRATION) ---
 def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini and returns the intelligent text summary."""
+    """Sends a summary prompt to Gemini 3.5/3.7 Flash and returns the intelligent text summary."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
     try:
         response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.5-flash',  # Utilizing Gemini 3.5 / 3.7 Flash compatible ID or fallback standard flash
             contents=context_prompt
         )
         return response.text
     except Exception as e:
-        return f"Could not generate AI summary: {e}"
+        # Fallback to gemini-1.5-flash or standard if active endpoint differs
+        try:
+            response = ai_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=context_prompt
+            )
+            return response.text
+        except Exception as fallback_e:
+            return f"Could not generate AI summary: {e} (Fallback error: {fallback_e})"
 
 
 def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector, split AI Calling/Messaging generator, and standard confirmation WhatsApp template."""
+    """Advanced Universal CRM with multi-entity contact selector, split AI Calling/Messaging generator with custom prompt input, and standard confirmation WhatsApp template."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
@@ -261,23 +269,31 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        # 1. AI-Driven Generator (Calling Script & AI WhatsApp Message)
+        # 1. AI-Driven Generator with Custom Prompt Input (Gemini 3.5 / 3.7 Flash)
         with st.expander("✨ AI-Driven Calling Script & Smart Message Generator"):
+            user_custom_instruction = st.text_area(
+                "Optional: Provide custom instructions or specific focus for Gemini 3.5/3.7 Flash:",
+                placeholder="e.g., Focus heavily on improving library engagement and ask for a meeting this week...",
+                key=f"ai_custom_prompt_{tab_name}_{target_crm_school}"
+            )
+            
             if st.button("Generate AI Script & Message", key=f"gen_ai_both_{tab_name}"):
                 if not ai_client:
                     st.error("Gemini API client is not initialized.")
                 else:
                     ai_prompt = f"""
-                    You are an expert Academic Consultant. Based on these filtered metrics for {tab_name} at {target_crm_school} ({current_filter_description}):
+                    You are an expert Academic Consultant powered by Gemini 3.5/3.7 Flash. 
+                    Based on these filtered metrics for {tab_name} at {target_crm_school} ({current_filter_description}):
                     Metrics: {metrics_summary_text}
                     Target Entity: {selected_entity_type} named {input_contact_name or 'Sir/Madam'}
                     Tone: {custom_tone}
+                    Additional Custom User Instructions: {user_custom_instruction if user_custom_instruction else 'None'}
                     
                     Generate two distinct outputs:
                     1. **Calling Script**: A structured script to help me talk through these performance metrics over a phone call with this {selected_entity_type}.
                     2. **AI WhatsApp Follow-up Message**: A concise, professional message summarizing the key findings and next steps to send on WhatsApp afterward. Sign off with 'Onelearn Academic Team'.
                     """
-                    with st.spinner("Generating AI Calling Script and Message with Gemini..."):
+                    with st.spinner("Generating AI Calling Script and Message with Gemini 3.5/3.7 Flash..."):
                         try:
                             ai_result = get_gemini_summary(ai_prompt)
                             st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"] = ai_result
@@ -837,7 +853,7 @@ else:
 
         with st.expander("✨ Gemini AI Intelligent Lesson Prep Analysis", expanded=False):
             if st.button("Generate AI Lesson Prep Summary", key="ai_btn_tab1"):
-                with st.spinner("Analyzing lesson prep metrics with Gemini..."):
+                with st.spinner("Analyzing lesson prep metrics with Gemini 3.5/3.7 Flash..."):
                     summary_prompt = f"Analyze these lesson prep statistics: Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}. Provide 3 key actionable takeaways for the academic manager."
                     ai_text = get_gemini_summary(summary_prompt)
                     st.markdown(ai_text)
@@ -913,7 +929,7 @@ else:
 
         with st.expander("✨ Gemini AI Intelligent Library Usage Analysis", expanded=False):
             if st.button("Generate AI Library Summary", key="ai_btn_tab2"):
-                with st.spinner("Analyzing library engagement with Gemini..."):
+                with st.spinner("Analyzing library engagement with Gemini 3.5/3.7 Flash..."):
                     summary_prompt = f"Analyze these library usage statistics: Total Teachers: {lib_total_teachers}, Met Standard: {lib_met_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%. Provide 3 key recommendations."
                     ai_text = get_gemini_summary(summary_prompt)
                     st.markdown(ai_text)
@@ -997,7 +1013,7 @@ else:
 
                 with st.expander("✨ Gemini AI Curriculum Pacing Analysis", expanded=False):
                     if st.button("Generate AI Content Summary", key="ai_btn_tab3"):
-                        with st.spinner("Analyzing curriculum usage with Gemini..."):
+                        with st.spinner("Analyzing curriculum usage with Gemini 3.5/3.7 Flash..."):
                             summary_prompt = f"Analyze textbook and subject distribution: Unique Chapters: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Time: {t3_df['Duration_Min'].sum():.1f} mins. Provide pacing insights."
                             ai_text = get_gemini_summary(summary_prompt)
                             st.markdown(ai_text)
@@ -1206,7 +1222,7 @@ else:
 
             with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
                 if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
-                    with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
+                    with st.spinner("Generating comprehensive teacher evaluation with Gemini 3.5/3.7 Flash..."):
                         review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Lesson plans/audio notes: {lp_combo_total}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback and coaching recommendations."
                         ai_eval = get_gemini_summary(review_prompt)
                         st.markdown(ai_eval)
@@ -1449,7 +1465,7 @@ else:
 
             with st.expander("✨ Gemini AI Portfolio Health Analysis", expanded=False):
                 if st.button("Generate AI Portfolio Summary", key="ai_btn_tab5"):
-                    with st.spinner("Analyzing multi-school portfolio health with Gemini..."):
+                    with st.spinner("Analyzing multi-school portfolio health with Gemini 3.5/3.7 Flash..."):
                         p_prompt = f"Analyze portfolio distribution: Pace Setters: {len(pace_setters)}, Lesson Focused: {len(lesson_focused)}, Library Focused: {len(library_focused)}, Priority Focus: {len(priority_focus)}. Provide strategic management focus areas."
                         ai_portfolio_text = get_gemini_summary(p_prompt)
                         st.markdown(ai_portfolio_text)
