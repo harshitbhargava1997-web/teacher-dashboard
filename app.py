@@ -264,7 +264,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Fully synchronized default message template incorporating tab-level metrics and filter timeframe/scope
         display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
         default_template_string = (
             f"Namaste{display_contact_name_str} {selected_entity_type} ji,\n\n"
@@ -366,35 +365,51 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         f_col1, f_col2, f_col3 = st.columns(3)
         with f_col1:
-            log_school_filter = st.selectbox("Filter Logs by School:", options=["All Schools"] + sorted(logs_df['School'].unique().tolist()), key=f"log_sch_filt_{tab_name}")
+            log_school_filter = st.selectbox("Filter Logs by School:", options=["All Schools"] + sorted(logs_df['School'].unique().tolist() if 'School' in logs_df.columns else []), key=f"log_sch_filt_{tab_name}")
         with f_col2:
-            log_entity_filter = st.selectbox("Filter by Entity:", options=["All Entities"] + sorted(logs_df['Entity Type'].unique().tolist()), key=f"log_ent_filt_{tab_name}")
+            log_entity_filter = st.selectbox("Filter by Entity:", options=["All Entities"] + sorted(logs_df['Entity Type'].unique().tolist() if 'Entity Type' in logs_df.columns else []), key=f"log_ent_filt_{tab_name}")
         with f_col3:
             log_time_filter = st.selectbox("Filter by Period:", options=["All Time", "Today / Recent", "Upcoming Follow-ups"], key=f"log_time_filt_{tab_name}")
 
         filtered_logs_df = logs_df.copy()
-        if log_school_filter != "All Schools":
+        if log_school_filter != "All Schools" and 'School' in filtered_logs_df.columns:
             filtered_logs_df = filtered_logs_df[filtered_logs_df['School'] == log_school_filter]
-        if log_entity_filter != "All Entities":
+        if log_entity_filter != "All Entities" and 'Entity Type' in filtered_logs_df.columns:
             filtered_logs_df = filtered_logs_df[filtered_logs_df['Entity Type'] == log_entity_filter]
             
         if not filtered_logs_df.empty:
-            st.dataframe(filtered_logs_df[['School', 'Entity Type', 'Contact Name', 'Module Tab', 'Filter Window', 'Call Date', 'Discussion Notes', 'Next Follow-up Date', 'Status']], use_container_width=True)
+            desired_cols = ['School', 'Entity Type', 'Contact Name', 'Module Tab', 'Filter Window', 'Call Date', 'Discussion Notes', 'Next Follow-up Date', 'Status']
+            available_log_cols = [c for c in desired_cols if c in filtered_logs_df.columns]
             
-            output_buffer = BytesIO()
-            with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
-                filtered_logs_df.to_excel(writer, index=False, sheet_name='Call_Discussion_Logs')
-            output_buffer.seek(0)
+            st.dataframe(filtered_logs_df[available_log_cols], use_container_width=True)
             
-            st.download_button(
-                label="📥 Download Filtered Call Logs (Excel)",
-                data=output_buffer,
-                file_name=f"School_CRM_Call_Logs_{target_crm_school.replace(' ', '_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_excel_{tab_name}"
-            )
+            dl_col1, dl_col2 = st.columns(2)
+            with dl_col1:
+                output_buffer = BytesIO()
+                with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                    filtered_logs_df[available_log_cols].to_excel(writer, index=False, sheet_name='Call_Discussion_Logs')
+                output_buffer.seek(0)
+                
+                st.download_button(
+                    label="📥 Download Filtered Call Logs (Excel)",
+                    data=output_buffer,
+                    file_name=f"School_CRM_Call_Logs_{target_crm_school.replace(' ', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_excel_{tab_name}"
+                )
+            with dl_col2:
+                if st.button("🗑️ Clear All Saved Call Logs from Supabase", key=f"clear_logs_btn_{tab_name}"):
+                    st.session_state["crm_call_logs_store"] = []
+                    save_call_logs_to_supabase([])
+                    st.success("Successfully cleared all call logs from Supabase!")
+                    st.rerun()
         else:
             st.info("No call logs match the selected filter criteria.")
+            if st.button("🗑️ Clear All Saved Call Logs from Supabase", key=f"clear_empty_logs_btn_{tab_name}"):
+                st.session_state["crm_call_logs_store"] = []
+                save_call_logs_to_supabase([])
+                st.success("Successfully cleared all call logs from Supabase!")
+                st.rerun()
 
 
 # 0. Highly Visual Executive PDF Report Generator Helper
