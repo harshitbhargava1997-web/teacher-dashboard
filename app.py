@@ -30,6 +30,7 @@ try:
     BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
     PARQUET_FILE_NAME = "master_database.parquet"
     CRM_FILE_NAME = "school_crm_data.json"
+    CALL_LOGS_FILE_NAME = "school_call_logs_store.json"
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
@@ -73,7 +74,7 @@ def fetch_master_db_from_supabase():
     return base_df
 
 
-# --- SUPABASE PERSISTENCE FOR CRM CONTACTS & DIRECTORY ---
+# --- SUPABASE PERSISTENCE FOR CRM CONTACTS & CALL LOGS ---
 def load_crm_data_from_supabase():
     """Loads saved global school contacts directory from Supabase cloud storage."""
     try:
@@ -96,6 +97,30 @@ def save_crm_data_to_supabase(crm_data):
         )
     except Exception as e:
         st.error(f"Could not sync CRM data to Supabase: {e}")
+
+
+def load_call_logs_from_supabase():
+    """Loads persistent call discussion logs and notes from Supabase cloud storage."""
+    try:
+        response = supabase.storage.from_(BUCKET_NAME).download(CALL_LOGS_FILE_NAME)
+        if response:
+            return json.loads(response.decode('utf-8'))
+    except Exception:
+        pass
+    return []
+
+
+def save_call_logs_to_supabase(logs_list):
+    """Saves updated call discussion logs back to Supabase cloud storage."""
+    try:
+        logs_buffer = BytesIO(json.dumps(logs_list, indent=2).encode('utf-8'))
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=CALL_LOGS_FILE_NAME,
+            file=logs_buffer.getvalue(),
+            file_options={"upsert": "true", "content-type": "application/json"}
+        )
+    except Exception as e:
+        st.error(f"Could not sync call discussion logs to Supabase: {e}")
 
 
 def _norm_text(value):
@@ -171,13 +196,16 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
-    """Global Supabase-backed CRM with entity selector and fully functional dual WhatsApp generators."""
+    """Advanced Universal CRM with multi-entity contact selector, dual reliable WhatsApp generators, and Supabase-synced call logs/notes with global filtering & Excel export."""
     st.markdown("---")
-    st.subheader(f"📞 Universal School & Teacher CRM & Dual WhatsApp Generators ({tab_name})")
+    st.subheader(f"📞 Universal School & Teacher CRM, Call Notes & Dual WhatsApp Generators ({tab_name})")
     
     # Load global persistent CRM database from Supabase into session state if not present
     if "crm_global_data" not in st.session_state:
         st.session_state["crm_global_data"] = load_crm_data_from_supabase()
+
+    if "crm_call_logs_store" not in st.session_state:
+        st.session_state["crm_call_logs_store"] = load_call_logs_from_supabase()
 
     crm_data = st.session_state["crm_global_data"]
     if "contacts" not in crm_data:
@@ -185,7 +213,6 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
 
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
-        # Determine available schools list from global filter input
         if isinstance(school_names_input, str):
             schools_list = [school_names_input]
         elif isinstance(school_names_input, (list, tuple, pd.Series, np.ndarray)):
@@ -198,7 +225,6 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
 
         target_crm_school = st.selectbox("Select School:", options=schools_list, key=f"crm_school_{tab_name}")
         
-        # Ensure dictionary keys exist for this school and entity
         if target_crm_school not in crm_data["contacts"]:
             crm_data["contacts"][target_crm_school] = {
                 "Principal": {"name": "", "phone": ""},
@@ -220,7 +246,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                 "phone": input_phone
             }
             save_crm_data_to_supabase(crm_data)
-            st.success(f"Successfully saved {selected_entity_type} details for {target_crm_school} across all tabs!")
+            st.success(f"Successfully saved {selected_entity_type} details for {target_crm_school} to Supabase!")
 
         active_phone = input_phone.strip()
         if active_phone:
@@ -239,7 +265,6 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Initialize draft text in session state if not present
         if draft_state_key not in st.session_state:
             st.session_state[draft_state_key] = f"Hello {input_contact_name or selected_entity_type}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}"
 
@@ -269,9 +294,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                 st.session_state[draft_state_key] = template_result
                 st.rerun()
 
-        # Text area bound cleanly to session state
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}")
-        # Keep session state synced with user edits
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=120, key=f"wa_textarea_{tab_name}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
@@ -280,6 +303,77 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Final WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
             st.info("Save a valid phone number on the left to activate the WhatsApp sending action button.")
+
+    # --- CALL DISCUSSION NOTES & FOLLOW-UP SYNC TO SUPABASE ---
+    st.markdown("---")
+    st.markdown(f"##### 📝 Post-Call Discussion Notes & Follow-up Scheduler ({target_crm_school} - {selected_entity_type})")
+    
+    with st.form(key=f"call_log_form_{tab_name}_{target_crm_school}_{selected_entity_type}"):
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            call_date_punched = st.date_input("Call Conducted Date:", value=pd.Timestamp.now().date(), key=f"cdate_{tab_name}")
+        with col_f2:
+            next_followup_date = st.date_input("Next Scheduled Follow-up Date:", value=pd.Timestamp.now().date() + pd.Timedelta(days=7), key=f"fdate_{tab_name}")
+            
+        discussion_notes = st.text_area("Discussion Summary / Notes from Call:", placeholder="Punch key talking points, agreed commitments, and action items...", key=f"dnotes_{tab_name}")
+        call_status_opt = st.selectbox("Call Status / Resolution:", options=["Open Action Item", "In Progress", "Successfully Resolved"], key=f"cstat_{tab_name}")
+        
+        submit_call_log = st.form_submit_button("💾 Save Call Note & Sync to Supabase Cloud")
+        
+        if submit_call_log:
+            if discussion_notes.strip():
+                new_log_entry = {
+                    "School": target_crm_school,
+                    "Entity Type": selected_entity_type,
+                    "Contact Name": input_contact_name or "N/A",
+                    "Module Tab": tab_name,
+                    "Call Date": str(call_date_punched),
+                    "Discussion Notes": discussion_notes.strip(),
+                    "Next Follow-up Date": str(next_followup_date),
+                    "Status": call_status_opt
+                }
+                st.session_state["crm_call_logs_store"].append(new_log_entry)
+                save_call_logs_to_supabase(st.session_state["crm_call_logs_store"])
+                st.success("✅ Call notes and follow-up schedule successfully saved and synced to Supabase Cloud!")
+            else:
+                st.warning("Please enter discussion notes before saving.")
+
+    # --- FILTERABLE CALL LOGS & EXCEL/CSV EXPORT ---
+    if st.session_state["crm_call_logs_store"]:
+        st.markdown("##### 📊 Filterable Call Discussion Logs & Audit Trail")
+        logs_df = pd.DataFrame(st.session_state["crm_call_logs_store"])
+        
+        f_col1, f_col2, f_col3 = st.columns(3)
+        with f_col1:
+            log_school_filter = st.selectbox("Filter Logs by School:", options=["All Schools"] + sorted(logs_df['School'].unique().tolist()), key=f"log_sch_filt_{tab_name}")
+        with f_col2:
+            log_entity_filter = st.selectbox("Filter by Entity:", options=["All Entities"] + sorted(logs_df['Entity Type'].unique().tolist()), key=f"log_ent_filt_{tab_name}")
+        with f_col3:
+            log_time_filter = st.selectbox("Filter by Period:", options=["All Time", "Today / Recent", "Upcoming Follow-ups"], key=f"log_time_filt_{tab_name}")
+
+        filtered_logs_df = logs_df.copy()
+        if log_school_filter != "All Schools":
+            filtered_logs_df = filtered_logs_df[filtered_logs_df['School'] == log_school_filter]
+        if log_entity_filter != "All Entities":
+            filtered_logs_df = filtered_logs_df[filtered_logs_df['Entity Type'] == log_entity_filter]
+            
+        if not filtered_logs_df.empty:
+            st.dataframe(filtered_logs_df[['School', 'Entity Type', 'Contact Name', 'Module Tab', 'Call Date', 'Discussion Notes', 'Next Follow-up Date', 'Status']], use_container_width=True)
+            
+            output_buffer = BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                filtered_logs_df.to_excel(writer, index=False, sheet_name='Call_Discussion_Logs')
+            output_buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Download Filtered Call Logs (Excel)",
+                data=output_buffer,
+                file_name=f"School_CRM_Call_Logs_{target_crm_school.replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_excel_{tab_name}"
+            )
+        else:
+            st.info("No call logs match the selected filter criteria.")
 
 
 # 0. Highly Visual Executive PDF Report Generator Helper
@@ -1638,7 +1732,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
 
