@@ -75,7 +75,7 @@ def fetch_master_db_from_supabase():
 
 # --- SUPABASE PERSISTENCE FOR CRM CONTACTS & DIRECTORY ---
 def load_crm_data_from_supabase():
-    """Loads saved school contacts directory from Supabase cloud storage."""
+    """Loads saved global school contacts directory from Supabase cloud storage."""
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(CRM_FILE_NAME)
         if response:
@@ -86,7 +86,7 @@ def load_crm_data_from_supabase():
 
 
 def save_crm_data_to_supabase(crm_data):
-    """Saves updated school contacts directory back to Supabase cloud storage."""
+    """Saves updated global school contacts directory back to Supabase cloud storage."""
     try:
         crm_buffer = BytesIO(json.dumps(crm_data, indent=2).encode('utf-8'))
         supabase.storage.from_(BUCKET_NAME).upload(
@@ -170,27 +170,35 @@ def get_gemini_summary(context_prompt):
         return f"Could not generate AI summary: {e}"
 
 
-def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Teacher) and dual reliable WhatsApp generators."""
+def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
+    """Global Supabase-backed CRM with entity selector and fully functional dual WhatsApp generators."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Teacher CRM & Dual WhatsApp Generators ({tab_name})")
     
-    # Load persistent CRM database from Supabase
-    if "crm_cloud_data" not in st.session_state:
-        st.session_state["crm_cloud_data"] = load_crm_data_from_supabase()
+    # Load global persistent CRM database from Supabase into session state if not present
+    if "crm_global_data" not in st.session_state:
+        st.session_state["crm_global_data"] = load_crm_data_from_supabase()
 
-    crm_data = st.session_state["crm_cloud_data"]
+    crm_data = st.session_state["crm_global_data"]
     if "contacts" not in crm_data:
         crm_data["contacts"] = {}
 
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
-        schools_list = [school_name_default] if isinstance(school_name_default, str) else list(school_name_default)
+        # Determine available schools list from global filter input
+        if isinstance(school_names_input, str):
+            schools_list = [school_names_input]
+        elif isinstance(school_names_input, (list, tuple, pd.Series, np.ndarray)):
+            schools_list = [str(s) for s in school_names_input if str(s).strip()]
+        else:
+            schools_list = ["Default School"]
+            
         if not schools_list:
             schools_list = ["Default School"]
+
         target_crm_school = st.selectbox("Select School:", options=schools_list, key=f"crm_school_{tab_name}")
         
-        # Initialize school contacts bucket if missing
+        # Ensure dictionary keys exist for this school and entity
         if target_crm_school not in crm_data["contacts"]:
             crm_data["contacts"][target_crm_school] = {
                 "Principal": {"name": "", "phone": ""},
@@ -212,7 +220,7 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
                 "phone": input_phone
             }
             save_crm_data_to_supabase(crm_data)
-            st.success(f"Successfully saved {selected_entity_type} details for {target_crm_school}!")
+            st.success(f"Successfully saved {selected_entity_type} details for {target_crm_school} across all tabs!")
 
         active_phone = input_phone.strip()
         if active_phone:
@@ -229,11 +237,15 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        draft_key = f"wa_draft_{tab_name}_{target_crm_school}_{selected_entity_type}"
+        draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
+        
+        # Initialize draft text in session state if not present
+        if draft_state_key not in st.session_state:
+            st.session_state[draft_state_key] = f"Hello {input_contact_name or selected_entity_type}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}"
 
-        # Robust event-driven state updates for generators
-        if gen_mode.startswith("✨"):
-            if st.button("✨ Generate AI WhatsApp Message", key=f"gen_ai_wa_{tab_name}"):
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            if st.button("✨ Generate AI Message", key=f"gen_ai_wa_{tab_name}"):
                 ai_prompt = f"""
                 Write a professional, structured WhatsApp message for a school {selected_entity_type} named {input_contact_name or 'Stakeholder'} at {target_crm_school}.
                 Module Tab Context: {tab_name}
@@ -243,22 +255,24 @@ def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text
                 """
                 with st.spinner("Generating AI message with Gemini 3.5 Flash..."):
                     ai_result = get_gemini_summary(ai_prompt)
-                    st.session_state[draft_key] = ai_result
-        else:
-            if st.button("📝 Generate Template Message", key=f"gen_tmpl_wa_{tab_name}"):
+                    st.session_state[draft_state_key] = ai_result
+                    st.rerun()
+
+        with col_b2:
+            if st.button("📝 Generate Template", key=f"gen_tmpl_wa_{tab_name}"):
                 template_result = (
                     f"🏫 *ACADEMIC PERFORMANCE UPDATE - {target_crm_school.upper()}*\n"
                     f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type})\n"
                     f"📊 *Module Summary ({tab_name}):*\n{metrics_summary_text}\n\n"
                     f"💡 *Tone:* {custom_tone}. Please review these figures and let us know your feedback!"
                 )
-                st.session_state[draft_key] = template_result
+                st.session_state[draft_state_key] = template_result
+                st.rerun()
 
-        # Guaranteed state fallback so textarea never fails or blanks out
-        if draft_key not in st.session_state:
-            st.session_state[draft_key] = f"Hello {input_contact_name or selected_entity_type}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}"
-
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_key], height=140, key=f"wa_textarea_{tab_name}")
+        # Text area bound cleanly to session state
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}")
+        # Keep session state synced with user edits
+        st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
