@@ -119,36 +119,41 @@ def build_teacher_roster(df):
 
     return candidate.reset_index(drop=True)
 
-# 0. Enhanced Professional PDF Generator Helper with Visual Impressions & Performance Indicators
+# 0. Highly Visual Executive PDF Report Generator Helper
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
-    """Generates a professional, beautifully styled PDF document in memory with visual summary panels and link support."""
+    """Generates an exceptionally styled, highly visual executive PDF document in memory."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
 
+    # Rich Visual Theme Palette
     primary_color = colors.HexColor('#1F77B4')
-    dark_neutral = colors.HexColor('#2C3E50')
-    light_bg = colors.HexColor('#F8FAFC')
-    border_color = colors.HexColor('#E2E8F0')
+    secondary_color = colors.HexColor('#2CA02C')
+    dark_neutral = colors.HexColor('#1E293B')
+    light_bg = colors.HexColor('#F1F5F9')
+    border_color = colors.HexColor('#CBD5E1')
+    accent_color = colors.HexColor('#D9534F')
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=19, textColor=primary_color, fontName='Helvetica-Bold')
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
-    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=colors.HexColor('#D9534F'), fontName='Helvetica-Bold')
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=8)
+    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10.5, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
     normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
-    link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#1A0dab'))
-    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#555555'), fontName='Helvetica-Bold', alignment=1)
-    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=10.5, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
+    link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold')
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#475569'), fontName='Helvetica-Bold', alignment=1)
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
     
+    # Visual Header Banner Section
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
-    story.append(Spacer(1, 2))
-    story.append(Paragraph(f"🏫 <b>School / Institution:</b> {school_name}", school_style))
-    story.append(Spacer(1, 2))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
+    story.append(Spacer(1, 3))
     story.append(Paragraph(subtitle_text, subtitle_style))
-    story.append(Spacer(1, 8))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=2, color=primary_color, spaceAfter=10))
 
+    # Visual Summary Metric Cards Table
     if summary_metrics:
         headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
         values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
@@ -158,31 +163,31 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             ('BACKGROUND', (0, 0), (-1, -1), light_bg),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.75, border_color),
+            ('TOPPADDING', (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
         ]))
         story.append(kpi_table)
         story.append(Spacer(1, 10))
 
+    # Visual Custom Sections with Styled Bullet Panels
     if custom_sections:
         for heading, body_items in custom_sections.items():
-            story.append(Paragraph(heading, sec_head_style))
-            story.append(Spacer(1, 2))
-            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
+            story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
+            story.append(HRFlowable(width="100%", thickness=0.75, color=border_color, spaceAfter=5))
             for item in body_items:
-                # Check if item contains a URL link and use appropriate styling
                 if "http://" in item or "https://" in item:
-                    story.append(Paragraph(f"• {item}", link_style))
+                    story.append(Paragraph(f"🔗 {item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 8))
 
+    # Visual Data Leaderboard / Table Grid
     if dataframe is not None and not dataframe.empty:
         story.append(Spacer(1, 4))
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10, textColor=dark_neutral)
-        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
+        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=11, textColor=dark_neutral)
+        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.white, fontName='Helvetica-Bold')
 
         formatted_data = []
         for i, row in enumerate(raw_data):
@@ -202,8 +207,8 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('GRID', (0, 0), (-1, -1), 0.5, border_color),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(pdf_table)
 
@@ -972,7 +977,6 @@ else:
             st.subheader("📲 WhatsApp Executive Summary Export (Sections 1–3)")
             st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Clickable Qualitative Evidence Submission Links.")
 
-            # Build list of submission link items for the PDF export
             pdf_link_items = [
                 f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes",
                 f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes"
@@ -1673,6 +1677,6 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
