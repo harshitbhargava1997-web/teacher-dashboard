@@ -265,7 +265,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
         if draft_state_key not in st.session_state:
-            st.session_state[draft_state_key] = f"Namaste {input_contact_name or selected_entity_type} ji,\n\nHere is the performance update for {tab_name} at {target_crm_school}:\n{metrics_summary_text}\n\nRegards,\nAcademic Team"
+            st.session_state[draft_state_key] = f"Namaste {input_contact_name or selected_entity_type} ji,\n\nHere is the performance update for {tab_name} at {target_crm_school}:\n{metrics_summary_text}\n\nRegards,\n Onlern Academic Team"
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
