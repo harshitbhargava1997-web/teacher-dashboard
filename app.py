@@ -758,17 +758,16 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH TOP DOWNLOAD BUTTON & FIXED ARTIFACT LINKS)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (COMPLETE WITH DETAILED BOOKS/TIME & ARBITRARY SUBMISSION BREAKDOWN)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
-        st.caption("Review quantitative lesson metrics, digital content logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
+        st.caption("Review quantitative lesson metrics, detailed textbook time logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
 
         all_roster_teachers = sorted(school_master_roster['FullName'].unique())
         
         if not all_roster_teachers:
             st.info("No teachers found in roster for the selected school(s).")
         else:
-            # --- TOP ACTION BAR WITH INSTANT 360° PROFILE DOWNLOAD BUTTON ---
             col_sel_top, col_btn_top = st.columns([2, 1])
             with col_sel_top:
                 target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers, key="top_teacher_select")
@@ -837,15 +836,24 @@ else:
 
             lp_combo_total = len(v_voice) + len(v_pic)
 
+            # Build detailed text and link summaries for PDF export
+            pdf_book_items = []
+            if not teacher_books.empty:
+                b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
+                for _, br in b_summary_df.iterrows():
+                    pdf_book_items.append(f"Book: {br['Book']} ({br['Grade']} - {br['Subject']}) | Time Spent: {br['Duration_Min']:.1f} Mins")
+            else:
+                pdf_book_items.append("No textbooks or digital modules opened.")
+
             pdf_link_items = []
             for item in v_voice:
-                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
             for item in v_pic:
-                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
             for item in v_vid:
-                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
             for item in v_writing:
-                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']}, Date: {item['date']})")
 
             pdf_custom_sections = {
                 "1. Quantitative Delivery & Planning Highlights": [
@@ -853,10 +861,7 @@ else:
                     f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
                     f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
                 ],
-                "2. Digital Content & Curriculum Pacing": [
-                    f"Distinct Books/Chapters Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}",
-                    f"Grade Levels Covered: {', '.join(teacher_books['Grade'].unique().tolist()) if not teacher_books.empty else 'General'}"
-                ],
+                "2. Detailed Digital Textbook & Chapter Pacing": pdf_book_items,
                 "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
             }
 
@@ -937,38 +942,31 @@ else:
 
             st.markdown("---")
 
-            st.subheader("2. Book & Grade Digital Content Usage Report")
+            # DETAILED DIGITAL CONTENT & TIME SPENT BREAKDOWN
+            st.subheader("2. Detailed Textbook & Chapter Time Breakdown")
             if teacher_books.empty:
                 st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
             else:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
-                    t_book_summary = teacher_books.groupby(['Book', 'Grade'])['Duration_Min'].sum().reset_index()
+                    t_book_summary = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
                     fig_tb_bar = px.bar(
                         t_book_summary, x="Duration_Min", y="Book", color="Grade", orientation="h",
-                        title=f"Books & Chapters Opened by {target_teacher} (Minutes)",
-                        labels={"Duration_Min": "Minutes", "Book": "Book / Chapter"},
+                        title=f"Time Spent per Book/Chapter by {target_teacher} (Minutes)",
+                        labels={"Duration_Min": "Time Spent (Minutes)", "Book": "Book / Chapter"},
                         text_auto=".1f"
                     )
                     fig_tb_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=320)
                     st.plotly_chart(fig_tb_bar, use_container_width=True)
                     
                 with col_b2:
-                    t_grade_summary = teacher_books.groupby('Grade')['Duration_Min'].sum().reset_index()
-                    fig_tg_pie = px.pie(
-                        t_grade_summary, names="Grade", values="Duration_Min",
-                        title=f"Grade-Level Digital Time Share & Duration for {target_teacher}"
-                    )
-                    fig_tg_pie.update_traces(
-                        textinfo='value+percent',
-                        texttemplate='%{label}: %{value:.1f} Mins<br>(%{percent})',
-                        hovertemplate='<b>%{label}</b><br>Time Spent: %{value:.1f} Mins<br>Share: %{percent}'
-                    )
-                    fig_tg_pie.update_layout(height=320)
-                    st.plotly_chart(fig_tg_pie, use_container_width=True)
+                    st.markdown("##### ⏱️ Time Allocation Table")
+                    display_book_table = t_book_summary.rename(columns={'Book': 'Textbook / Module', 'Grade': 'Grade', 'Subject': 'Subject', 'Duration_Min': 'Time Spent (Mins)'}).round({'Time Spent (Mins)': 1})
+                    st.dataframe(display_book_table, use_container_width=True)
 
             st.markdown("---")
 
+            # DETAILED QUALITATIVE SUBMISSIONS & LINKS BREAKDOWN
             st.subheader("3. Qualitative Evidences & Artifact Hub")
 
             v_cols = st.columns(3)
@@ -976,7 +974,7 @@ else:
             v_cols[1].metric("🎥 2. Classroom Activity Videos", f"{len(v_vid)} Uploaded")
             v_cols[2].metric("📝 3. Student Writing Practices", f"{len(v_writing)} Samples")
 
-            st.markdown("##### 📌 Qualitative Artifact Review Hub")
+            st.markdown("##### 📌 Detailed Qualitative Submissions & Direct Links")
             q_cols1, q_cols2, q_cols3 = st.columns(3)
             
             with q_cols1:
@@ -1640,6 +1638,6 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
