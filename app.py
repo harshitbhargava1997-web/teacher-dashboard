@@ -196,7 +196,7 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), dual WhatsApp generators, and Supabase-synced call logs/notes. Fully synchronized with global and review-level filters."""
+    """Advanced Universal CRM with multi-entity contact selector, split AI Calling/Messaging generator, and standard confirmation WhatsApp template."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
@@ -257,14 +257,42 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             st.warning(f"Please enter and save a mobile number for the selected {selected_entity_type}.")
 
     with c_col2:
-        st.markdown("##### 💬 WhatsApp Message Generators (Indian Context)")
-        gen_mode = st.radio("Choose Generator Type:", ["✨ AI-Driven Generator (Gemini Flash)", "📝 Standard Template Generator (No AI)"], key=f"gen_mode_{tab_name}")
+        st.markdown("##### 💬 WhatsApp & Calling Generators (Indian Context)")
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
+        # 1. AI-Driven Generator (Calling Script & AI WhatsApp Message)
+        with st.expander("✨ AI-Driven Calling Script & Smart Message Generator"):
+            if st.button("Generate AI Script & Message", key=f"gen_ai_both_{tab_name}"):
+                if not ai_client:
+                    st.error("Gemini API client is not initialized.")
+                else:
+                    ai_prompt = f"""
+                    You are an expert Academic Consultant. Based on these filtered metrics for {tab_name} at {target_crm_school} ({current_filter_description}):
+                    Metrics: {metrics_summary_text}
+                    Target Entity: {selected_entity_type} named {input_contact_name or 'Sir/Madam'}
+                    Tone: {custom_tone}
+                    
+                    Generate two distinct outputs:
+                    1. **Calling Script**: A structured script to help me talk through these performance metrics over a phone call with this {selected_entity_type}.
+                    2. **AI WhatsApp Follow-up Message**: A concise, professional message summarizing the key findings and next steps to send on WhatsApp afterward. Sign off with 'Onelearn Academic Team'.
+                    """
+                    with st.spinner("Generating AI Calling Script and Message with Gemini..."):
+                        try:
+                            ai_result = get_gemini_summary(ai_prompt)
+                            st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"] = ai_result
+                        except Exception as e:
+                            st.error(f"Error generating AI content: {e}")
+            
+            if f"ai_gen_output_{tab_name}_{target_crm_school}" in st.session_state:
+                st.markdown(st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"])
+
+        # 2. Quick Standard Template / Confirmation Draft
+        st.markdown("##### 📝 Quick WhatsApp Message Draft (Standard Template)")
         
+        draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
+        
         default_template_string = (
             f"Namaste{display_contact_name_str} {selected_entity_type} ji,\n\n"
             f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
@@ -277,43 +305,7 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         if draft_state_key not in st.session_state:
             st.session_state[draft_state_key] = default_template_string
 
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("✨ Generate AI Message", key=f"gen_ai_wa_{tab_name}"):
-                if not ai_client:
-                    st.error("Gemini API client is not initialized. Please check your credentials.")
-                else:
-                    ai_prompt = f"""
-                    Write a professional, easy-to-understand WhatsApp message in simple Indian professional context for a school {selected_entity_type} named {input_contact_name or 'Sir/Madam'} at {target_crm_school}.
-                    Review Window / Filter Context: {current_filter_description}
-                    Module Tab Context: {tab_name}
-                    Filtered Report & Tab Metrics: {metrics_summary_text}
-                    Tone: {custom_tone}
-                    Provide precise information, encouraging feedback, and actionable recommendations based strictly on the provided tab metrics and review period filter. Sign off with 'Onelearn Academic Team'. Format nicely with WhatsApp emojis.
-                    """
-                    with st.spinner("Generating AI message with Gemini based on active filters..."):
-                        try:
-                            ai_result = get_gemini_summary(ai_prompt)
-                            st.session_state[draft_state_key] = ai_result
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error generating AI message: {e}")
-
-        with col_b2:
-            if st.button("📝 Generate Template", key=f"gen_tmpl_wa_{tab_name}"):
-                contact_part = f" {input_contact_name}" if input_contact_name else ""
-                template_result = (
-                    f"Namaste{contact_part} {selected_entity_type} ji,\n\n"
-                    f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
-                    f"📊 *Module:* {tab_name}\n"
-                    f"{metrics_summary_text}\n\n"
-                    f"Regards,\n"
-                    f"Onelearn Academic Team"
-                )
-                st.session_state[draft_state_key] = template_result
-                st.rerun()
-
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
+        editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=130, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
