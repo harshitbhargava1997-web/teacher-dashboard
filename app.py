@@ -171,7 +171,7 @@ def build_teacher_roster(df):
 
 
 def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), Global Editable Template Engine, and Supabase-synced call notes."""
+    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), template generator, and Supabase-synced call notes."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generator ({tab_name})")
     
@@ -181,7 +181,6 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
     if "crm_call_logs_store" not in st.session_state:
         st.session_state["crm_call_logs_store"] = load_call_logs_from_supabase()
 
-    # Global Master WhatsApp Template stored in session state if not present
     if "master_wa_template" not in st.session_state:
         st.session_state["master_wa_template"] = (
             "Namaste *{entity_name}* ji 🙏\n\n"
@@ -194,14 +193,15 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             "Warm regards,\nAcademic Management Team 📚"
         )
 
-    # Collapsible Global Template Editor
-    with st.expander("⚙️ Edit Global Master WhatsApp Template (Applies to All Tabs)", expanded=False):
+    # Collapsible Global Template Editor with tab-unique keys
+    with st.expander("⚙️ Edit Global Master WhatsApp Template", expanded=False):
         new_template = st.text_area(
             "Customize Master Template (Placeholders allowed: `{school_name}`, `{entity_name}`, `{entity_type}`, `{tab_name}`, `{metrics}`):",
             value=st.session_state["master_wa_template"],
-            height=160
+            height=140,
+            key=f"master_template_textarea_{tab_name}"
         )
-        if st.button("💾 Save Global Template"):
+        if st.button("💾 Save Global Template", key=f"save_master_template_btn_{tab_name}"):
             st.session_state["master_wa_template"] = new_template
             st.success("Global WhatsApp template successfully updated!")
 
@@ -256,11 +256,12 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             st.warning(f"Please enter and save a mobile number for the selected {selected_entity_type}.")
 
     with c_col2:
-        st.markdown("##### 💬 Context-Aware WhatsApp Message Generator")
+        st.markdown("##### 💬 Professional WhatsApp Template Generator (Indian Context)")
+        
+        custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Format the global template with exact current context data
         formatted_template = st.session_state["master_wa_template"].format(
             school_name=target_crm_school,
             entity_name=input_contact_name or selected_entity_type,
@@ -276,13 +277,13 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             st.session_state[draft_state_key] = formatted_template
             st.rerun()
 
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft (Ready to share with PDF report):", value=st.session_state[draft_state_key], height=150, key=f"wa_textarea_{tab_name}")
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
             encoded_final_text = urllib.parse.quote(editable_wa_area)
-            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:12px 20px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send WhatsApp Message (Attach PDF Report above)</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send WhatsApp Message (Attach PDF Report above)</button></a>', unsafe_allow_html=True)
         else:
             st.info("Save a valid phone number on the left to activate the WhatsApp sending action button.")
 
@@ -1679,7 +1680,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
                 mime="application/pdf"
             )
 
