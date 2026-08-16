@@ -758,7 +758,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (EXECUTIVE SUMMARY SCOPE WITH CORRECTED SUBMISSION LINKS)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH TOP DOWNLOAD BUTTON & FIXED ARTIFACT LINKS)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
         st.caption("Review quantitative lesson metrics, digital content logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
@@ -768,16 +768,14 @@ else:
         if not all_roster_teachers:
             st.info("No teachers found in roster for the selected school(s).")
         else:
-            target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers)
+            # --- TOP ACTION BAR WITH INSTANT 360° PROFILE DOWNLOAD BUTTON ---
+            col_sel_top, col_btn_top = st.columns([2, 1])
+            with col_sel_top:
+                target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers, key="top_teacher_select")
             
             teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
             teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
             teacher_school = school_master_roster[school_master_roster['FullName'] == target_teacher]['Institution'].values[0] if not school_master_roster[school_master_roster['FullName'] == target_teacher].empty else "N/A"
-
-            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
-
-            st.subheader("1. Quantitative Performance Indicator Summary")
-            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
 
             t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
             t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
@@ -794,6 +792,102 @@ else:
                 lib_advice = f"🌟 Steady Execution ({t_day_lib:.1f}m logged)" if t_day_lib >= calc_lib_kpi else (f"⚠️ In-Progress ({t_day_lib:.1f}m logged)" if t_day_lib > 0 else "❌ Pending Activity")
             else:
                 lib_advice = "✅ Holiday / Scheduled Break"
+
+            t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
+            if t_books_raw.empty:
+                t_books_raw = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
+            teacher_books = t_books_raw[~t_books_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
+
+            evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
+            
+            def extract_evidence_items(df_src, col_name):
+                if col_name not in df_src.columns:
+                    return []
+                items = []
+                for _, r in df_src.iterrows():
+                    val = str(r[col_name]).strip()
+                    if re.match(r'^https?://', val, re.IGNORECASE):
+                        d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
+                        g_str = f"Grade {r['Grade']}" if 'Grade' in r and str(r['Grade']).strip() else "Grade N/A"
+                        s_str = str(r['Subject']).strip() if 'Subject' in r and str(r['Subject']).strip() else "General Subject"
+                        b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Plan"
+                        items.append({'url': val, 'date': d_str, 'grade': g_str, 'subject': s_str, 'lesson': b_str})
+                seen = set()
+                deduped = []
+                for item in items:
+                    if item['url'] not in seen:
+                        seen.add(item['url'])
+                        deduped.append(item)
+                return deduped
+
+            v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
+            v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
+            v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
+
+            v_vid = []
+            for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+                v_vid.extend(extract_evidence_items(evidence_source, col))
+            seen_v = set()
+            deduped_v = []
+            for item in v_vid:
+                if item['url'] not in seen_v:
+                    seen_v.add(item['url'])
+                    deduped_v.append(item)
+            v_vid = deduped_v
+
+            lp_combo_total = len(v_voice) + len(v_pic)
+
+            pdf_link_items = []
+            for item in v_voice:
+                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_pic:
+                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_vid:
+                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_writing:
+                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+
+            pdf_custom_sections = {
+                "1. Quantitative Delivery & Planning Highlights": [
+                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                    f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
+                ],
+                "2. Digital Content & Curriculum Pacing": [
+                    f"Distinct Books/Chapters Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}",
+                    f"Grade Levels Covered: {', '.join(teacher_books['Grade'].unique().tolist()) if not teacher_books.empty else 'General'}"
+                ],
+                "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
+            }
+
+            pdf_tab4_summary = generate_pdf_report(
+                title_text=f"🏫 Academic Performance Profile: {target_teacher}",
+                subtitle_text=f"Observation Window: {filter_description_text}",
+                school_name=teacher_school,
+                summary_metrics={
+                    "Teacher": target_teacher,
+                    "Lesson Prep": f"{t_day_ld:.1f}m",
+                    "Library Usage": f"{t_day_lib:.1f}m",
+                    "Qualitative Artifacts": f"{lp_combo_total + len(v_vid) + len(v_writing)}"
+                },
+                dataframe=None,
+                custom_sections=pdf_custom_sections
+            )
+
+            with col_btn_top:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.download_button(
+                    label="📥 Download 360° Profile (PDF)",
+                    data=pdf_tab4_summary,
+                    file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
+                    mime="application/pdf",
+                    key="top_pdf_download_btn"
+                )
+
+            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
+
+            st.subheader("1. Quantitative Performance Indicator Summary")
+            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
 
             col_sum1, col_sum2 = st.columns([1, 1.2])
 
@@ -844,12 +938,6 @@ else:
             st.markdown("---")
 
             st.subheader("2. Book & Grade Digital Content Usage Report")
-            t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
-            if t_books_raw.empty:
-                t_books_raw = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
-            
-            teacher_books = t_books_raw[~t_books_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
-            
             if teacher_books.empty:
                 st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
             else:
@@ -882,51 +970,6 @@ else:
             st.markdown("---")
 
             st.subheader("3. Qualitative Evidences & Artifact Hub")
-
-            evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
-            
-            def extract_evidence_items(df_src, col_name):
-                if col_name not in df_src.columns:
-                    return []
-                items = []
-                for _, r in df_src.iterrows():
-                    val = str(r[col_name]).strip()
-                    if re.match(r'^https?://', val, re.IGNORECASE):
-                        d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
-                        g_str = f"Grade {r['Grade']}" if 'Grade' in r and str(r['Grade']).strip() else "Grade N/A"
-                        s_str = str(r['Subject']).strip() if 'Subject' in r and str(r['Subject']).strip() else "General Subject"
-                        b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Plan"
-                        items.append({
-                            'url': val,
-                            'date': d_str,
-                            'grade': g_str,
-                            'subject': s_str,
-                            'lesson': b_str
-                        })
-                seen = set()
-                deduped = []
-                for item in items:
-                    if item['url'] not in seen:
-                        seen.add(item['url'])
-                        deduped.append(item)
-                return deduped
-
-            v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
-            v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
-            v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
-
-            v_vid = []
-            for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
-                v_vid.extend(extract_evidence_items(evidence_source, col))
-            seen_v = set()
-            deduped_v = []
-            for item in v_vid:
-                if item['url'] not in seen_v:
-                    seen_v.add(item['url'])
-                    deduped_v.append(item)
-            v_vid = deduped_v
-
-            lp_combo_total = len(v_voice) + len(v_pic)
 
             v_cols = st.columns(3)
             v_cols[0].metric("📖 1. Lesson Plans / Audio Notes", f"{lp_combo_total} Submissions", delta=f"{len(v_voice)} Audio | {len(v_pic)} Picture")
@@ -965,78 +1008,6 @@ else:
                         st.markdown(f"• 📝 [View Writing]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
                 else:
                     st.caption("No student writing samples uploaded in this window.")
-
-            st.markdown("---")
-
-            st.subheader("📲 WhatsApp Executive Summary Export (Sections 1–3)")
-            st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Clickable Qualitative Evidence Submission Links.")
-
-            # CORRECTED ARTIFACT SECTION FOR PDF EXPORT
-            pdf_link_items = []
-            for item in v_voice:
-                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_pic:
-                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_vid:
-                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_writing:
-                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
-
-            pdf_custom_sections = {
-                "1. Quantitative Delivery & Planning Highlights": [
-                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
-                ],
-                "2. Digital Content & Curriculum Pacing": [
-                    f"Distinct Books/Chapters Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}",
-                    f"Grade Levels Covered: {', '.join(teacher_books['Grade'].unique().tolist()) if not teacher_books.empty else 'General'}"
-                ],
-                "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
-            }
-
-            pdf_tab4_summary = generate_pdf_report(
-                title_text=f"🏫 Academic Performance Profile: {target_teacher}",
-                subtitle_text=f"Observation Window: {filter_description_text}",
-                school_name=teacher_school,
-                summary_metrics={
-                    "Teacher": target_teacher,
-                    "Lesson Prep": f"{t_day_ld:.1f}m",
-                    "Library Usage": f"{t_day_lib:.1f}m",
-                    "Qualitative Artifacts": f"{lp_combo_total + len(v_vid) + len(v_writing)}"
-                },
-                dataframe=None,
-                custom_sections=pdf_custom_sections
-            )
-
-            col_wa1, col_wa2 = st.columns([1, 1.5])
-            with col_wa1:
-                st.download_button(
-                    label="📄 Download WhatsApp Executive Summary (PDF)",
-                    data=pdf_tab4_summary,
-                    file_name=f"{target_teacher.replace(' ', '_')}_Executive_Summary.pdf",
-                    mime="application/pdf"
-                )
-
-            with col_wa2:
-                whatsapp_text_template = (
-                    f"🏫 *ACADEMIC CONSULTANT REVIEW - TEACHER 360° PROFILE*\n"
-                    f"👤 *Teacher:* {target_teacher}\n"
-                    f"🏛️ *School:* {teacher_school}\n"
-                    f"📅 *Review Period:* {filter_description_text}\n\n"
-                    f"📊 *1. Quantitative Engagement:*\n"
-                    f"• Lesson Prep: {t_day_ld:.1f} Mins\n"
-                    f"• Library Usage: {t_day_lib:.1f} Mins\n\n"
-                    f"📖 *2. Curriculum & Digital Coverage:*\n"
-                    f"• Books & Modules Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}\n\n"
-                    f"🎨 *3. Qualitative Evidence & Pedagogy:*\n"
-                    f"• Lesson Plans & Audio Reflections: {lp_combo_total} verified\n"
-                    f"• Classroom Activity Videos: {len(v_vid)} recorded\n"
-                    f"• Student Writing Practice Samples: {len(v_writing)} submitted\n\n"
-                    f"💡 *Consultant Feedback:* {target_teacher} is progressing well with curriculum delivery and digital classroom integration."
-                )
-                with st.expander("📋 Click to View & Copy WhatsApp Message Text"):
-                    st.text_area("WhatsApp Copyable Message Text", value=whatsapp_text_template, height=180)
 
             st.markdown("---")
 
