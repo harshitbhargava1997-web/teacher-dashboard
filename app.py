@@ -11,9 +11,6 @@ import urllib.parse
 from io import BytesIO
 from supabase import create_client
 
-# Google GenAI SDK (Requires package 'google-genai')
-from google import genai
-
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -23,7 +20,7 @@ from reportlab.lib import colors
 # Page layout configuration (Must be the first Streamlit command)
 st.set_page_config(page_title="Academic Manager Portfolio & Teacher Performance Indicator Review Dashboard", layout="wide")
 
-# --- SUPABASE & GEMINI CLOUD SETUP ---
+# --- SUPABASE CLOUD SETUP ---
 try:
     SUPABASE_URL = st.secrets["supabase"]["url"].rstrip('/')
     SUPABASE_KEY = st.secrets["supabase"]["key"]
@@ -34,13 +31,6 @@ try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
-
-# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5 / 3.7 Flash)
-try:
-    GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
-    ai_client = genai.Client(api_key=GEMINI_API_KEY)
-except Exception:
-    ai_client = None
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_db_from_supabase():
@@ -180,25 +170,10 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- AI HELPER FUNCTIONS (GEMINI 3.5 / 3.7 FLASH INTEGRATION) ---
-def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini 3.5/3.7 Flash and returns the intelligent text summary."""
-    if not ai_client:
-        return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
-    try:
-        response = ai_client.models.generate_content(
-            model='gemini-3.5-flash',  # Utilizing Gemini 3.5 Flash
-            contents=context_prompt
-        )
-        return response.text
-    except Exception as e:
-        return f"Could not generate AI summary: {e}"
-
-
 def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), dual WhatsApp generators, and Supabase-synced call logs/notes."""
+    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), professional template generator, and Supabase-synced call notes."""
     st.markdown("---")
-    st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
+    st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generator ({tab_name})")
     
     if "crm_global_data" not in st.session_state:
         st.session_state["crm_global_data"] = load_crm_data_from_supabase()
@@ -257,45 +232,28 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             st.warning(f"Please enter and save a mobile number for the selected {selected_entity_type}.")
 
     with c_col2:
-        st.markdown("##### 💬 WhatsApp Message Generators (Indian Context)")
-        gen_mode = st.radio("Choose Generator Type:", ["✨ AI-Driven Generator (Gemini 3.5 Flash)", "📝 Standard Template Generator (No AI)"], key=f"gen_mode_{tab_name}")
+        st.markdown("##### 💬 Professional WhatsApp Template Generator (Indian Context)")
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
+        # Default structured template generator
+        default_template = (
+            f"Namaste *{input_contact_name or selected_entity_type} ji* 🙏\n\n"
+            f"Here is the academic performance update for *{target_crm_school}* regarding *{tab_name}*:\n\n"
+            f"📊 *Key Metrics:* {metrics_summary_text}\n"
+            f"💡 *Tone Focus:* {custom_tone}\n\n"
+            f"Please review these details with your teachers to ensure smooth execution. Let us know if you need any academic support.\n\n"
+            f"Warm regards,\nAcademic Management Team 📚"
+        )
+
         if draft_state_key not in st.session_state:
-            st.session_state[draft_state_key] = f"Namaste {input_contact_name or selected_entity_type} ji,\n\nHere is the performance update for {tab_name} at {target_crm_school}:\n{metrics_summary_text}\n\nRegards,\nAcademic Team"
+            st.session_state[draft_state_key] = default_template
 
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("✨ Generate AI Message", key=f"gen_ai_wa_{tab_name}"):
-                ai_prompt = f"""
-                Write a professional, easy-to-understand WhatsApp message in simple Indian professional context for a school {selected_entity_type} named {input_contact_name or 'Sir/Madam'} at {target_crm_school}.
-                Module Tab Context: {tab_name}
-                Performance Report & Metrics: {metrics_summary_text}
-                Tone: {custom_tone}
-                Provide precise information, encouraging feedback, and actionable recommendations. Format nicely with WhatsApp emojis.
-                """
-                with st.spinner("Generating AI message with Gemini 3.5 Flash..."):
-                    ai_result = get_gemini_summary(ai_prompt)
-                    st.session_state[draft_state_key] = ai_result
-                    st.rerun()
-
-        with col_b2:
-            if st.button("📝 Generate Template", key=f"gen_tmpl_wa_{tab_name}"):
-                template_result = (
-                    f"🏫 *ACADEMIC UPDATE: {target_crm_school.upper()}*\n"
-                    f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type} ji)\n\n"
-                    f"📊 *{tab_name} Summary:*\n{metrics_summary_text}\n\n"
-                    f"🎯 *Key Recommendations & Next Steps:*\n"
-                    f"• Please review these metrics with your teaching staff.\n"
-                    f"• Ensure daily logging of lesson plans and student activities.\n"
-                    f"• Feel free to reach out for any academic support needed.\n\n"
-                    f"Warm regards,\nAcademic Management Team 📚"
-                )
-                st.session_state[draft_state_key] = template_result
-                st.rerun()
+        if st.button("📝 Generate / Reset Template", key=f"gen_tmpl_wa_{tab_name}"):
+            st.session_state[draft_state_key] = default_template
+            st.rerun()
 
         editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}")
         st.session_state[draft_state_key] = editable_wa_area
@@ -810,13 +768,6 @@ else:
         c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
         c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
-        with st.expander("✨ Gemini AI Intelligent Lesson Prep Analysis", expanded=False):
-            if st.button("Generate AI Lesson Prep Summary", key="ai_btn_tab1"):
-                with st.spinner("Analyzing lesson prep metrics with Gemini 3.5 Flash..."):
-                    summary_prompt = f"Analyze these lesson prep statistics: Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}. Provide 3 key actionable takeaways for the academic manager."
-                    ai_text = get_gemini_summary(summary_prompt)
-                    st.markdown(ai_text)
-
         fig_ld = px.bar(
             ld_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Lesson Prep Minutes per Teacher" + (f" vs. {calc_ld_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
@@ -885,13 +836,6 @@ else:
         m2.metric(f"Met Standard ({calc_lib_kpi:.0f}m)" if enable_quant_kpi else "Active Teachers", f"{lib_met_count} / {lib_total_teachers}")
         m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
         m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
-
-        with st.expander("✨ Gemini AI Intelligent Library Usage Analysis", expanded=False):
-            if st.button("Generate AI Library Summary", key="ai_btn_tab2"):
-                with st.spinner("Analyzing library engagement with Gemini 3.5 Flash..."):
-                    summary_prompt = f"Analyze these library usage statistics: Total Teachers: {lib_total_teachers}, Met Standard: {lib_met_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%. Provide 3 key recommendations."
-                    ai_text = get_gemini_summary(summary_prompt)
-                    st.markdown(ai_text)
 
         fig_lib = px.bar(
             lib_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
@@ -969,13 +913,6 @@ else:
                 k1.metric("Textbooks / Chapters Opened", t3_df['Book'].nunique())
                 k2.metric("Subjects Taught", t3_df['Subject'].nunique())
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
-
-                with st.expander("✨ Gemini AI Curriculum Pacing Analysis", expanded=False):
-                    if st.button("Generate AI Content Summary", key="ai_btn_tab3"):
-                        with st.spinner("Analyzing curriculum usage with Gemini 3.5 Flash..."):
-                            summary_prompt = f"Analyze textbook and subject distribution: Unique Chapters: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Time: {t3_df['Duration_Min'].sum():.1f} mins. Provide pacing insights."
-                            ai_text = get_gemini_summary(summary_prompt)
-                            st.markdown(ai_text)
 
                 col_c1, col_c2 = st.columns(2)
                 with col_c1:
@@ -1178,13 +1115,6 @@ else:
                 )
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
-
-            with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
-                if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
-                    with st.spinner("Generating comprehensive teacher evaluation with Gemini 3.5 Flash..."):
-                        review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Lesson plans/audio notes: {lp_combo_total}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback and coaching recommendations."
-                        ai_eval = get_gemini_summary(review_prompt)
-                        st.markdown(ai_eval)
 
             st.subheader("1. Quantitative Performance Indicator Summary")
             st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
@@ -1421,13 +1351,6 @@ else:
                 st.warning(f"📚 **Library Focused ({len(library_focused)} Schools)**\n\n*Met Library, Below Lesson Prep Targets*\n\n" + (", ".join(library_focused) if library_focused else "None"))
             with col_bot2:
                 st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below Quantitative & Qualitative Standards*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
-
-            with st.expander("✨ Gemini AI Portfolio Health Analysis", expanded=False):
-                if st.button("Generate AI Portfolio Summary", key="ai_btn_tab5"):
-                    with st.spinner("Analyzing multi-school portfolio health with Gemini 3.5 Flash..."):
-                        p_prompt = f"Analyze portfolio distribution: Pace Setters: {len(pace_setters)}, Lesson Focused: {len(lesson_focused)}, Library Focused: {len(library_focused)}, Priority Focus: {len(priority_focus)}. Provide strategic management focus areas."
-                        ai_portfolio_text = get_gemini_summary(p_prompt)
-                        st.markdown(ai_portfolio_text)
 
             st.markdown("---")
             st.subheader("📋 Complete School Performance Leaderboard (Quantitative & Qualitative)")
@@ -1735,7 +1658,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
 
