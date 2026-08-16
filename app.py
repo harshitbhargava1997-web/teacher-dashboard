@@ -329,12 +329,13 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
         
         default_template_string = (
-            f"Namaste {contact_greeting} {selected_entity_type} ji,\n\n"
+            f"Namaste ji,\n\n"
             f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
             f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
             f"Regards,\n"
-            f"Onelearn Academic Team"
+            f"Harshit Bhargava,\n"
+            f"Onelern Academic Team"
         )
 
         if draft_state_key not in st.session_state:
