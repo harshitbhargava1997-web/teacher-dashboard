@@ -195,8 +195,8 @@ def get_gemini_summary(context_prompt):
         return f"Could not generate AI summary: {e}"
 
 
-def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), dual WhatsApp generators, and Supabase-synced call logs/notes."""
+def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
+    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), dual WhatsApp generators, and Supabase-synced call logs/notes. Fully synchronized with global and review-level filters."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
@@ -212,10 +212,10 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
 
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
-        if isinstance(school_names_input, str):
-            schools_list = [school_names_input]
-        elif isinstance(school_names_input, (list, tuple, pd.Series, np.ndarray)):
-            schools_list = [str(s) for s in school_names_input if str(s).strip()]
+        if isinstance(active_selected_schools, str):
+            schools_list = [active_selected_schools]
+        elif isinstance(active_selected_schools, (list, tuple, pd.Series, np.ndarray)):
+            schools_list = [str(s) for s in active_selected_schools if str(s).strip()]
         else:
             schools_list = ["Default School"]
             
@@ -250,7 +250,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         active_phone = input_phone.strip()
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
-            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Onelearn Academic Team regarding {tab_name} metrics for {target_crm_school}.")
+            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Onelearn Academic Team regarding {tab_name} metrics for {target_crm_school} ({current_filter_description}).")
             st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {selected_entity_type}</button></a>', unsafe_allow_html=True)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
@@ -264,11 +264,12 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Default initialization for editable draft text area
+        # Fully synchronized default message template incorporating tab-level metrics and filter timeframe/scope
         display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
         default_template_string = (
             f"Namaste{display_contact_name_str} {selected_entity_type} ji,\n\n"
-            f"Here is the performance update for {target_crm_school}:\n"
+            f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
+            f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
             f"Regards,\n"
             f"Onelearn Academic Team"
@@ -285,12 +286,13 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                 else:
                     ai_prompt = f"""
                     Write a professional, easy-to-understand WhatsApp message in simple Indian professional context for a school {selected_entity_type} named {input_contact_name or 'Sir/Madam'} at {target_crm_school}.
+                    Review Window / Filter Context: {current_filter_description}
                     Module Tab Context: {tab_name}
-                    Performance Report & Metrics: {metrics_summary_text}
+                    Filtered Report & Tab Metrics: {metrics_summary_text}
                     Tone: {custom_tone}
-                    Provide precise information, encouraging feedback, and actionable recommendations. Sign off with 'Onelearn Academic Team'. Format nicely with WhatsApp emojis.
+                    Provide precise information, encouraging feedback, and actionable recommendations based strictly on the provided tab metrics and review period filter. Sign off with 'Onelearn Academic Team'. Format nicely with WhatsApp emojis.
                     """
-                    with st.spinner("Generating AI message with Gemini..."):
+                    with st.spinner("Generating AI message with Gemini based on active filters..."):
                         try:
                             ai_result = get_gemini_summary(ai_prompt)
                             st.session_state[draft_state_key] = ai_result
@@ -303,7 +305,8 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                 contact_part = f" {input_contact_name}" if input_contact_name else ""
                 template_result = (
                     f"Namaste{contact_part} {selected_entity_type} ji,\n\n"
-                    f"Here is the performance update for {target_crm_school}:\n"
+                    f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
+                    f"📊 *Module:* {tab_name}\n"
                     f"{metrics_summary_text}\n\n"
                     f"Regards,\n"
                     f"Onelearn Academic Team"
@@ -344,6 +347,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                     "Entity Type": selected_entity_type,
                     "Contact Name": input_contact_name or "N/A",
                     "Module Tab": tab_name,
+                    "Filter Window": current_filter_description,
                     "Call Date": str(call_date_punched),
                     "Discussion Notes": discussion_notes.strip(),
                     "Next Follow-up Date": str(next_followup_date),
@@ -375,7 +379,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             filtered_logs_df = filtered_logs_df[filtered_logs_df['Entity Type'] == log_entity_filter]
             
         if not filtered_logs_df.empty:
-            st.dataframe(filtered_logs_df[['School', 'Entity Type', 'Contact Name', 'Module Tab', 'Call Date', 'Discussion Notes', 'Next Follow-up Date', 'Status']], use_container_width=True)
+            st.dataframe(filtered_logs_df[['School', 'Entity Type', 'Contact Name', 'Module Tab', 'Filter Window', 'Call Date', 'Discussion Notes', 'Next Follow-up Date', 'Status']], use_container_width=True)
             
             output_buffer = BytesIO()
             with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
@@ -864,7 +868,7 @@ else:
         )
 
         tab1_metrics_summary = f"Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}, Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
-        render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, tab1_metrics_summary)
+        render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, filter_description_text, tab1_metrics_summary)
 
     # TAB 2: LIBRARY USAGE TRACKER
     with tab2:
@@ -940,7 +944,7 @@ else:
         )
 
         tab2_metrics_summary = f"Total Teachers: {lib_total_teachers}, Active Met Standard: {lib_met_count}, Inactive: {lib_inactive_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
-        render_universal_crm_box("Library Usage Tracker", selected_schools, tab2_metrics_summary)
+        render_universal_crm_box("Library Usage Tracker", selected_schools, filter_description_text, tab2_metrics_summary)
 
     # TAB 3: CONTENT & CHAPTERS
     with tab3:
@@ -1059,7 +1063,7 @@ else:
                     )
 
                 tab3_metrics_summary = f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins"
-                render_universal_crm_box("Content & Chapters", t3_school, tab3_metrics_summary)
+                render_universal_crm_box("Content & Chapters", t3_school if t3_school != "All Selected Schools" else selected_schools, filter_description_text, tab3_metrics_summary)
 
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
@@ -1348,8 +1352,8 @@ else:
                         mime="text/csv"
                     )
 
-            tab4_metrics_summary = f"Teacher Audit: {target_teacher}, Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Qualitative Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}"
-            render_universal_crm_box("Teacher 360 Profile", teacher_school, tab4_metrics_summary)
+            tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Qualitative Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}"
+            render_universal_crm_box("Teacher 360 Profile", teacher_school, filter_description_text, tab4_metrics_summary)
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
@@ -1474,8 +1478,8 @@ else:
                 mime="application/pdf"
             )
 
-            tab5_metrics_summary = f"Total Schools: {len(school_stats)}, Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}"
-            render_universal_crm_box("Manager Portfolio", selected_schools, tab5_metrics_summary)
+            tab5_metrics_summary = f"Total Portfolio Schools Tracked: {len(school_stats)}, Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}"
+            render_universal_crm_box("Manager Portfolio", selected_schools, filter_description_text, tab5_metrics_summary)
 
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
@@ -1580,8 +1584,8 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-            tab6_metrics_summary = f"School Inspection: {target_school_t6}, Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}"
-            render_universal_crm_box("School Inspection", target_school_t6, tab6_metrics_summary)
+            tab6_metrics_summary = f"School Inspection: {target_school_t6}, Consistent Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}"
+            render_universal_crm_box("School Inspection", target_school_t6, filter_description_text, tab6_metrics_summary)
 
     # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
@@ -1753,5 +1757,5 @@ else:
                 mime="application/pdf"
             )
 
-            tab7_metrics_summary = f"Total Submissions: {tot_subs}, Audio Notes: {tot_audios}, LP Pictures: {tot_pics}, Videos: {tot_vids}, Writing Samples: {tot_writing}"
-            render_universal_crm_box("Live Evidence Feed", t7_selected_school, tab7_metrics_summary)
+            tab7_metrics_summary = f"Total Submission Logs: {tot_subs}, Audio Voice Notes: {tot_audios}, LP Pictures: {tot_pics}, Videos Uploaded: {tot_vids}, Writing Samples: {tot_writing}"
+            render_universal_crm_box("Live Evidence Feed", t7_selected_school if t7_selected_school != "All Schools" else selected_schools, filter_description_text, tab7_metrics_summary)
