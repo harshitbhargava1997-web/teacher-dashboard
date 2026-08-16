@@ -18,7 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout configuration (Must be the first Streamlit command)
-st.set_page_config(page_title="Academic Manager Portfolio & Teacher KPI Review Dashboard", layout="wide")
+st.set_page_config(page_title="Academic Manager Portfolio & Teacher Performance Indicator Review Dashboard", layout="wide")
 
 # --- SUPABASE CLOUD STORAGE SETUP ---
 try:
@@ -42,7 +42,6 @@ def fetch_master_db_from_supabase():
     except Exception:
         pass
 
-    # Read all standalone JSON teacher submissions from the submissions/ folder
     sub_records = []
     try:
         file_list = supabase.storage.from_(BUCKET_NAME).list("submissions")
@@ -65,19 +64,16 @@ def fetch_master_db_from_supabase():
 
 
 def _norm_text(value):
-    """Normalize a single text value without converting missing values to the string 'nan'."""
     if pd.isna(value):
         return ""
     return re.sub(r"\s+", " ", str(value)).strip()
 
 
 def _norm_key(value):
-    """Case-insensitive comparison key for school/name matching."""
     return _norm_text(value).casefold()
 
 
 def normalize_identity_columns(df):
-    """Normalize identity fields while preserving an existing valid FullName."""
     out = df.copy()
 
     for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role"]:
@@ -85,20 +81,17 @@ def normalize_identity_columns(df):
             out[col] = ""
         out[col] = out[col].map(_norm_text)
 
-    # Prefer the already-populated FullName. Only construct it when it is missing.
     calculated_full = (
         out["FirstName"].fillna("") + " " + out["LastName"].fillna("")
     ).map(_norm_text)
     empty_full = out["FullName"].eq("")
     out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
 
-    # Keep the existing application's sentinel for genuinely missing teacher names.
     out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"
     return out
 
 
 def build_teacher_roster(df):
-    """Build a stable school -> teacher roster from identity-bearing rows only."""
     if df is None or df.empty:
         return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role"])
 
@@ -126,9 +119,9 @@ def build_teacher_roster(df):
 
     return candidate.reset_index(drop=True)
 
-# 0. Enhanced Professional PDF Generator Helper with School Name and Metadata
+# 0. Enhanced Professional PDF Generator Helper with Visual Impressions & Performance Indicators
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
-    """Generates a professional, beautifully styled PDF document in memory and returns a downloadable BytesIO buffer."""
+    """Generates a professional, beautifully styled PDF document in memory with visual summary panels and link support."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -139,13 +132,14 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     light_bg = colors.HexColor('#F8FAFC')
     border_color = colors.HexColor('#E2E8F0')
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=19, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
     school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=colors.HexColor('#D9534F'), fontName='Helvetica-Bold')
     sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=8)
     normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
+    link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#1A0dab'))
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#555555'), fontName='Helvetica-Bold', alignment=1)
-    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=10.5, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
     
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
     story.append(Spacer(1, 2))
@@ -177,7 +171,11 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             story.append(Spacer(1, 2))
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
             for item in body_items:
-                story.append(Paragraph(f"• {item}", normal_style))
+                # Check if item contains a URL link and use appropriate styling
+                if "http://" in item or "https://" in item:
+                    story.append(Paragraph(f"• {item}", link_style))
+                else:
+                    story.append(Paragraph(f"• {item}", normal_style))
             story.append(Spacer(1, 6))
 
     if dataframe is not None and not dataframe.empty:
@@ -215,7 +213,6 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
 
 
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
-    """Calculate working days with configurable Sunday and holiday exclusions."""
     try:
         start_np = np.datetime64(start_date)
         end_np = np.datetime64(end_date) + np.timedelta64(1, 'D')
@@ -226,10 +223,10 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
         return 1
 
 # Page layout title
-st.title("🏫 Academic Manager Portfolio & Teacher KPI Review Dashboard")
-st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Quantitative KPIs (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
+st.title("🏫 Academic Manager Portfolio & Teacher Performance Indicator Review Dashboard")
+st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **Teacher Execution Tiers**, **Quantitative Performance Indicators (Lesson Prep / Library)**, and **360° Qualitative Evidences & Artifact Compliance**.")
 
-# 1. Supabase Parquet Database Manager Function (with robust timestamp sanitization)
+# 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
     master_df = fetch_master_db_from_supabase()
 
@@ -418,7 +415,7 @@ else:
     selected_month = st.sidebar.selectbox("Select Review Month:", options=month_options if month_options else ["No Month Data"])
     month_filtered_df = school_filtered_df[school_filtered_df['Month_Name'] == selected_month]
     
-    exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from KPIs", value=True)
+    exclude_sundays_flag = st.sidebar.checkbox("🗓️ Exclude Sundays from Performance Indicators", value=True)
 
     user_excluded_dates = []
     if not month_filtered_df['Date'].isna().all() and not month_filtered_df.empty:
@@ -432,10 +429,10 @@ else:
             format_func=lambda x: x.strftime('%Y-%m-%d')
         )
 
-    # --- 3. DYNAMIC KPI BENCHMARK CONTROLS (QUANTITATIVE & QUALITATIVE) ---
+    # --- 3. DYNAMIC PERFORMANCE INDICATOR CONTROLS ---
     st.sidebar.markdown("---")
-    st.sidebar.header("🎯 Quantitative KPI Controls")
-    enable_quant_kpi = st.sidebar.checkbox("Enable Quantitative KPI Benchmarks", value=True, help="Toggle on/off quantitative minutes benchmark targets.")
+    st.sidebar.header("🎯 Quantitative Performance Indicator Controls")
+    enable_quant_kpi = st.sidebar.checkbox("Enable Quantitative Performance Indicator Benchmarks", value=True, help="Toggle on/off quantitative minutes benchmark targets.")
     
     if enable_quant_kpi:
         daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
@@ -445,8 +442,8 @@ else:
         daily_lib_target = 0.0
 
     st.sidebar.markdown("---")
-    st.sidebar.header("🎨 Qualitative Artifact KPI Controls")
-    enable_qual_kpi = st.sidebar.checkbox("Enable Qualitative KPI Benchmarks", value=True, help="Toggle on/off qualitative submission target tracking across reports.")
+    st.sidebar.header("🎨 Qualitative Artifact Performance Indicator Controls")
+    enable_qual_kpi = st.sidebar.checkbox("Enable Qualitative Performance Indicator Benchmarks", value=True, help="Toggle on/off qualitative submission target tracking across reports.")
     
     if enable_qual_kpi:
         target_vid_count = st.sidebar.number_input("Min. Activity Videos Required", min_value=1, max_value=20, value=3, step=1)
@@ -484,7 +481,7 @@ else:
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
         selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
         filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"
-    else:  # Custom Date Range
+    else:
         min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
         max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
         
@@ -537,13 +534,13 @@ else:
             if not enable_quant_kpi or calc_ld_kpi == 0: 
                 return 'Activity Logged' if x > 0 else 'No Activity Logged'
             if x >= calc_ld_kpi: 
-                return f'✅ Met KPI (>= {calc_ld_kpi:.0f}m)'
+                return f'✅ Met Performance Indicator (>= {calc_ld_kpi:.0f}m)'
             elif x > 0.0: 
-                return f'⚠️ Below KPI (< {calc_ld_kpi:.0f}m)'
+                return f'⚠️ Below Performance Indicator (< {calc_ld_kpi:.0f}m)'
             else: 
                 return '❌ Inactive (0 Mins)'
         
-        ld_daily['KPI Status'] = ld_daily['Duration_Min'].apply(get_ld_status)
+        ld_daily['Performance Indicator Status'] = ld_daily['Duration_Min'].apply(get_ld_status)
 
         c1, c2, c3, c4 = st.columns(4)
         total_teachers = len(ld_daily)
@@ -556,7 +553,7 @@ else:
         c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
         fig_ld = px.bar(
-            ld_daily, x="FullName", y="Duration_Min", color="KPI Status",
+            ld_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Lesson Prep Minutes per Teacher" + (f" vs. {calc_ld_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Prepared"},
             text_auto=".1f"
@@ -578,7 +575,7 @@ else:
                 "Active Teachers": f"{met_count} / {total_teachers}",
                 "Compliance Rate": f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
             },
-            dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
+            dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
         )
         st.download_button(
             label="📄 Download Tab 1 Report (PDF)",
@@ -603,13 +600,13 @@ else:
             if not enable_quant_kpi or calc_lib_kpi == 0: 
                 return 'Activity Logged' if x > 0 else 'No Activity Logged'
             if x >= calc_lib_kpi: 
-                return f'✅ Met KPI (>= {calc_lib_kpi:.0f}m)'
+                return f'✅ Met Performance Indicator (>= {calc_lib_kpi:.0f}m)'
             elif x > 0.0: 
-                return f'⚠️ Below KPI (< {calc_lib_kpi:.0f}m)'
+                return f'⚠️ Below Performance Indicator (< {calc_lib_kpi:.0f}m)'
             else: 
                 return '❌ Inactive (0 Mins)'
 
-        lib_daily['KPI Status'] = lib_daily['Duration_Min'].apply(get_lib_status)
+        lib_daily['Performance Indicator Status'] = lib_daily['Duration_Min'].apply(get_lib_status)
 
         m1, m2, m3, m4 = st.columns(4)
         lib_total_teachers = len(lib_daily)
@@ -622,7 +619,7 @@ else:
         m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
 
         fig_lib = px.bar(
-            lib_daily, x="FullName", y="Duration_Min", color="KPI Status",
+            lib_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Library Usage Minutes per Teacher" + (f" vs. {calc_lib_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
             labels={"FullName": "Teacher Name", "Duration_Min": "Minutes Logged"},
             text_auto=".1f"
@@ -644,7 +641,7 @@ else:
                 "Active Teachers": f"{lib_met_count} / {lib_total_teachers}",
                 "Engagement Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
             },
-            dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'KPI Status']]
+            dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
         )
         st.download_button(
             label="📄 Download Tab 2 Report (PDF)",
@@ -653,7 +650,7 @@ else:
             mime="application/pdf"
         )
 
-    # TAB 3: CONTENT & CHAPTERS (CLEANED TO EXCLUDE LESSON PLAN MARKERS)
+    # TAB 3: CONTENT & CHAPTERS
     with tab3:
         st.header("📖 Content & Chapters")
         st.caption(f"Track specific textbooks and instructional modules opened during `{filter_description_text}`.")
@@ -762,10 +759,10 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (EXECUTIVE SUMMARY SCOPE)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (EXECUTIVE SUMMARY SCOPE WITH SUBMISSION LINKS)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
-        st.caption("Review quantitative lesson metrics, digital content logs, and structured qualitative performance evidence for executive leadership and school owner reporting.")
+        st.caption("Review quantitative lesson metrics, digital content logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
 
         all_roster_teachers = sorted(school_master_roster['FullName'].unique())
         
@@ -781,7 +778,7 @@ else:
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
             st.subheader("1. Quantitative Performance Indicator Summary")
-            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **KPI Duration**: `{selected_num_days} Working Day(s)`")
+            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
 
             t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
             t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
@@ -802,7 +799,7 @@ else:
             col_sum1, col_sum2 = st.columns([1, 1.2])
 
             with col_sum1:
-                st.markdown("##### 📌 Quantitative KPI Overview")
+                st.markdown("##### 📌 Quantitative Performance Indicator Overview")
                 s1, s2 = st.columns(2)
                 s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
                 s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
@@ -821,23 +818,23 @@ else:
                 st.write(f"• **Library Usage Engagement**: {lib_advice}")
 
             with col_sum2:
-                st.markdown("##### 📊 KPI Achievement Comparison")
+                st.markdown("##### 📊 Performance Indicator Achievement Comparison")
                 ach_df = pd.DataFrame({
-                    'KPI Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
-                                     f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
+                    'Performance Indicator Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
+                                                       f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
                     'Logged Minutes': [t_day_ld, t_day_lib],
-                    'KPI Standard': [calc_ld_kpi, calc_lib_kpi]
+                    'Performance Indicator Standard': [calc_ld_kpi, calc_lib_kpi]
                 })
                 
                 fig_ach = go.Figure()
                 fig_ach.add_trace(go.Bar(
-                    x=ach_df['KPI Category'], y=ach_df['Logged Minutes'],
+                    x=ach_df['Performance Indicator Category'], y=ach_df['Logged Minutes'],
                     name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
                 ))
                 if enable_quant_kpi:
                     fig_ach.add_trace(go.Bar(
-                        x=ach_df['KPI Category'], y=ach_df['KPI Standard'],
-                        name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['KPI Standard']], textposition='auto'
+                        x=ach_df['Performance Indicator Category'], y=ach_df['Performance Indicator Standard'],
+                        name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['Performance Indicator Standard']], textposition='auto'
                     ))
                 fig_ach.update_layout(
                     barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
@@ -973,7 +970,21 @@ else:
             st.markdown("---")
 
             st.subheader("📲 WhatsApp Executive Summary Export (Sections 1–3)")
-            st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Qualitative Evidence Summaries.")
+            st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Clickable Qualitative Evidence Submission Links.")
+
+            # Build list of submission link items for the PDF export
+            pdf_link_items = [
+                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes",
+                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes"
+            ]
+            for item in v_voice:
+                pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_pic:
+                pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_vid:
+                pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+            for item in v_writing:
+                pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
 
             pdf_custom_sections = {
                 "1. Quantitative Delivery & Planning Highlights": [
@@ -985,11 +996,7 @@ else:
                     f"Distinct Books/Chapters Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}",
                     f"Grade Levels Covered: {', '.join(teacher_books['Grade'].unique().tolist()) if not teacher_books.empty else 'General'}"
                 ],
-                "3. Qualitative Evidence & Pedagogy Verification": [
-                    f"Lesson Plans & Audio Reflections: {lp_combo_total} Artifact(s) Submitted ({len(v_voice)} voice notes, {len(v_pic)} board/plan photos)",
-                    f"Classroom Activity Videos: {len(v_vid)} Video(s) Audited",
-                    f"Student Writing Practice Samples: {len(v_writing)} Verified Artifact(s)"
-                ]
+                "3. Qualitative Evidence Links & Artifacts": pdf_link_items if len(pdf_link_items) > 2 else ["No qualitative submission links recorded in active window."]
             }
 
             pdf_tab4_summary = generate_pdf_report(
@@ -1500,11 +1507,11 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE KPI TRACKER
+    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
-        st.header("📬 Live Evidence Submissions Feed & Qualitative KPI Tracker")
+        st.header("📬 Live Evidence Submissions Feed & Qualitative Performance Indicator Tracker")
         if enable_qual_kpi:
-            st.caption(f"Track individual teacher qualitative evidence submissions and compliance against mandatory Qualitative KPIs (Min. {target_vid_count} Activity Videos, Min. {target_writing_count} Writing Samples, Min. {target_lp_combo_count} LP / Voice Notes).")
+            st.caption(f"Track individual teacher qualitative evidence submissions and compliance against mandatory Qualitative Performance Indicators (Min. {target_vid_count} Activity Videos, Min. {target_writing_count} Writing Samples, Min. {target_lp_combo_count} LP / Voice Notes).")
         else:
             st.caption("Complete log of all qualitative evidence submissions from the Teacher Portal across the filtered database.")
 
@@ -1567,7 +1574,7 @@ else:
             st.markdown("---")
 
             if enable_qual_kpi:
-                st.subheader("🎯 Teacher Qualitative Evidence KPI Compliance")
+                st.subheader("🎯 Teacher Qualitative Evidence Performance Indicator Compliance")
                 st.caption(f"Configured Benchmark: **Min. {target_vid_count} Videos**, **Min. {target_writing_count} Writing Samples**, **Min. {target_lp_combo_count} LP / Voice Notes** per Teacher.")
 
                 teacher_kpi_records = []
@@ -1608,9 +1615,9 @@ else:
                         'School': t_inst,
                         'Teacher Name': t_name,
                         'Activity Videos': v_count,
-                        'Video KPI Status': v_status,
+                        'Video Performance Indicator Status': v_status,
                         'Writing Samples': w_count,
-                        'Writing KPI Status': w_status,
+                        'Writing Performance Indicator Status': w_status,
                         'LP / Voice Notes': lp_combo_total,
                         'LP Combo Status': lp_status,
                         'Overall Qualitative Status': overall_status
@@ -1627,29 +1634,29 @@ else:
                     lp_met = len(kpi_summary_df[kpi_summary_df['LP / Voice Notes'] >= target_lp_combo_count])
 
                     kpi_col1.metric("🌟 Fully Compliant", f"{fully_compliant} / {total_teachers_kpi}")
-                    kpi_col2.metric(f"🎥 Video KPI (>={target_vid_count})", f"{video_met} / {total_teachers_kpi}", f"{(video_met/total_teachers_kpi*100):.1f}% Compliance")
-                    kpi_col3.metric(f"📝 Writing KPI (>={target_writing_count})", f"{writing_met} / {total_teachers_kpi}", f"{(writing_met/total_teachers_kpi*100):.1f}% Compliance")
-                    kpi_col4.metric(f"📖 LP/VN KPI (>={target_lp_combo_count})", f"{lp_met} / {total_teachers_kpi}", f"{(lp_met/total_teachers_kpi*100):.1f}% Compliance")
+                    kpi_col2.metric(f"🎥 Video Performance Indicator (>={target_vid_count})", f"{video_met} / {total_teachers_kpi}", f"{(video_met/total_teachers_kpi*100):.1f}% Compliance")
+                    kpi_col3.metric(f"📝 Writing Performance Indicator (>={target_writing_count})", f"{writing_met} / {total_teachers_kpi}", f"{(writing_met/total_teachers_kpi*100):.1f}% Compliance")
+                    kpi_col4.metric(f"📖 LP/VN Performance Indicator (>={target_lp_combo_count})", f"{lp_met} / {total_teachers_kpi}", f"{(lp_met/total_teachers_kpi*100):.1f}% Compliance")
 
                     st.dataframe(kpi_summary_df, use_container_width=True)
 
                     pdf_kpi = generate_pdf_report(
-                        title_text="🎯 Qualitative Evidence KPI Compliance Report",
+                        title_text="🎯 Qualitative Evidence Performance Indicator Compliance Report",
                         subtitle_text=f"Filter Period: {filter_description_text} | Total Teachers: {total_teachers_kpi}",
                         school_name=t7_selected_school if t7_selected_school != "All Schools" else "All Portfolio Schools",
                         summary_metrics={
                             "Total Teachers": total_teachers_kpi,
                             "Fully Compliant": f"{fully_compliant} / {total_teachers_kpi}",
-                            "Video KPI Met": f"{video_met} / {total_teachers_kpi}",
-                            "Writing KPI Met": f"{writing_met} / {total_teachers_kpi}",
+                            "Video Performance Indicator Met": f"{video_met} / {total_teachers_kpi}",
+                            "Writing Performance Indicator Met": f"{writing_met} / {total_teachers_kpi}",
                             "LP / VN Combo Met": f"{lp_met} / {total_teachers_kpi}"
                         },
-                        dataframe=kpi_summary_df[['School', 'Teacher Name', 'Activity Videos', 'Video KPI Status', 'Writing Samples', 'Writing KPI Status', 'LP / Voice Notes', 'LP Combo Status', 'Overall Qualitative Status']]
+                        dataframe=kpi_summary_df[['School', 'Teacher Name', 'Activity Videos', 'Video Performance Indicator Status', 'Writing Samples', 'Writing Performance Indicator Status', 'LP / Voice Notes', 'LP Combo Status', 'Overall Qualitative Status']]
                     )
                     st.download_button(
-                        label="📄 Download Qualitative KPI Summary (PDF)",
+                        label="📄 Download Qualitative Performance Indicator Summary (PDF)",
                         data=pdf_kpi,
-                        file_name=f"Qualitative_KPI_Summary_{selected_month.replace(' ', '_')}.pdf",
+                        file_name=f"Qualitative_Performance_Indicator_Summary_{selected_month.replace(' ', '_')}.pdf",
                         mime="application/pdf"
                     )
 
