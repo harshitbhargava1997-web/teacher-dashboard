@@ -131,12 +131,12 @@ def build_teacher_roster(df):
 
 # --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
 def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini 2.0 Flash and returns the intelligent text summary."""
+    """Sends a summary prompt to Gemini and returns the intelligent text summary."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
     try:
         response = ai_client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash',  # Updated stable model name
             contents=context_prompt
         )
         return response.text
