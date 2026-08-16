@@ -121,17 +121,15 @@ def build_teacher_roster(df):
 
 # 0. Highly Visual Executive PDF Report Generator Helper
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
-    """Generates an exceptionally styled, highly visual executive PDF document in memory."""
+    """Generates an exceptionally styled, highly visual executive PDF document in memory matching dashboard aesthetics."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
 
-    # Rich Visual Theme Palette
     primary_color = colors.HexColor('#1F77B4')
-    secondary_color = colors.HexColor('#2CA02C')
     dark_neutral = colors.HexColor('#1E293B')
-    light_bg = colors.HexColor('#F1F5F9')
+    light_bg = colors.HexColor('#F8FAFC')
     border_color = colors.HexColor('#CBD5E1')
     accent_color = colors.HexColor('#D9534F')
 
@@ -144,7 +142,6 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#475569'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
     
-    # Visual Header Banner Section
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
     story.append(Spacer(1, 3))
     story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
@@ -153,7 +150,6 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=2, color=primary_color, spaceAfter=10))
 
-    # Visual Summary Metric Cards Table
     if summary_metrics:
         headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
         values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
@@ -170,7 +166,6 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
         story.append(kpi_table)
         story.append(Spacer(1, 10))
 
-    # Visual Custom Sections with Styled Bullet Panels
     if custom_sections:
         for heading, body_items in custom_sections.items():
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
@@ -182,7 +177,6 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
                     story.append(Paragraph(f"• {item}", normal_style))
             story.append(Spacer(1, 8))
 
-    # Visual Data Leaderboard / Table Grid
     if dataframe is not None and not dataframe.empty:
         story.append(Spacer(1, 4))
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
@@ -764,7 +758,7 @@ else:
                         mime="application/pdf"
                     )
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (EXECUTIVE SUMMARY SCOPE WITH SUBMISSION LINKS)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (EXECUTIVE SUMMARY SCOPE WITH CORRECTED SUBMISSION LINKS)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
         st.caption("Review quantitative lesson metrics, digital content logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
@@ -977,10 +971,8 @@ else:
             st.subheader("📲 WhatsApp Executive Summary Export (Sections 1–3)")
             st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Clickable Qualitative Evidence Submission Links.")
 
-            pdf_link_items = [
-                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes",
-                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes"
-            ]
+            # CORRECTED ARTIFACT SECTION FOR PDF EXPORT
+            pdf_link_items = []
             for item in v_voice:
                 pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_pic:
@@ -1000,7 +992,7 @@ else:
                     f"Distinct Books/Chapters Opened: {teacher_books['Book'].nunique() if not teacher_books.empty else 0}",
                     f"Grade Levels Covered: {', '.join(teacher_books['Grade'].unique().tolist()) if not teacher_books.empty else 'General'}"
                 ],
-                "3. Qualitative Evidence Links & Artifacts": pdf_link_items if len(pdf_link_items) > 2 else ["No qualitative submission links recorded in active window."]
+                "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
             }
 
             pdf_tab4_summary = generate_pdf_report(
@@ -1677,6 +1669,6 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
                 mime="application/pdf"
             )
