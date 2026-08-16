@@ -126,34 +126,45 @@ def build_teacher_roster(df):
 
     return candidate.reset_index(drop=True)
 
-# 0. PDF Generator Helper Function
-def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe=None, custom_sections=None):
-    """Generates a professional PDF document in memory and returns a downloadable BytesIO buffer."""
+# 0. Enhanced Professional PDF Generator Helper with School Name and Metadata
+def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
+    """Generates a professional, beautifully styled PDF document in memory and returns a downloadable BytesIO buffer."""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#1F77B4'))
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.gray)
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=colors.HexColor('#1F77B4'))
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12)
-    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#555555'), fontName='Helvetica-Bold')
-    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=12, leading=14, textColor=colors.HexColor('#1F77B4'), fontName='Helvetica-Bold')
+    primary_color = colors.HexColor('#1F77B4')
+    dark_neutral = colors.HexColor('#2C3E50')
+    light_bg = colors.HexColor('#F8FAFC')
+    border_color = colors.HexColor('#E2E8F0')
+
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
+    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=colors.HexColor('#D9534F'), fontName='Helvetica-Bold')
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=8)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#555555'), fontName='Helvetica-Bold', alignment=1)
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
     
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph(f"🏫 <b>School / Institution:</b> {school_name}", school_style))
+    story.append(Spacer(1, 2))
     story.append(Paragraph(subtitle_text, subtitle_style))
     story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
     if summary_metrics:
-        headers_row = [Paragraph(f"<b>{k}</b>", card_header) for k in summary_metrics.keys()]
-        values_row = [Paragraph(f"<b>{v}</b>", card_value) for v in summary_metrics.values()]
-        kpi_table = Table([headers_row, values_row], colWidths=[552 / len(summary_metrics)] * len(summary_metrics))
+        headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
+        values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
+        col_w = 540 / len(summary_metrics)
+        kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(summary_metrics))
         kpi_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F6F9')),
+            ('BACKGROUND', (0, 0), (-1, -1), light_bg),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
@@ -162,16 +173,17 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe=No
 
     if custom_sections:
         for heading, body_items in custom_sections.items():
-            story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
-            story.append(Spacer(1, 3))
-            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#E2E8F0'), spaceAfter=6))
+            story.append(Paragraph(heading, sec_head_style))
+            story.append(Spacer(1, 2))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
             for item in body_items:
                 story.append(Paragraph(f"• {item}", normal_style))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 6))
 
     if dataframe is not None and not dataframe.empty:
+        story.append(Spacer(1, 4))
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10)
+        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=10, textColor=dark_neutral)
         header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
 
         formatted_data = []
@@ -182,15 +194,18 @@ def generate_pdf_report(title_text, subtitle_text, summary_metrics, dataframe=No
                 formatted_row.append(Paragraph(str(cell), st_to_use))
             formatted_data.append(formatted_row)
 
-        pdf_table = Table(formatted_data, repeatRows=1)
+        num_cols = len(dataframe.columns)
+        col_width = 540 / num_cols
+
+        pdf_table = Table(formatted_data, colWidths=[col_width] * num_cols, repeatRows=1)
         pdf_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F77B4')),
+            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9F9F9')]),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(pdf_table)
 
@@ -218,7 +233,6 @@ st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **T
 def load_or_update_master_db(new_upload_dfs=None):
     master_df = fetch_master_db_from_supabase()
 
-    # Sanitize datetime columns in master_df to avoid PyArrow serialization issues
     for dt_col in ['StartTime', 'EndTime']:
         if not master_df.empty and dt_col in master_df.columns:
             master_df[dt_col] = pd.to_datetime(master_df[dt_col], errors='coerce')
@@ -558,6 +572,7 @@ else:
         pdf_tab1 = generate_pdf_report(
             title_text="📘 Lesson Plan Preparation Report",
             subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {total_teachers}",
+            school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
             summary_metrics={
                 "Total Teachers": total_teachers,
                 "Active Teachers": f"{met_count} / {total_teachers}",
@@ -623,6 +638,7 @@ else:
         pdf_tab2 = generate_pdf_report(
             title_text="📚 Library Usage Report",
             subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {lib_total_teachers}",
+            school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
             summary_metrics={
                 "Total Teachers": lib_total_teachers,
                 "Active Teachers": f"{lib_met_count} / {lib_total_teachers}",
@@ -642,7 +658,6 @@ else:
         st.header("📖 Content & Chapters")
         st.caption(f"Track specific textbooks and instructional modules opened during `{filter_description_text}`.")
 
-        # Filter out lesson plan identifiers from appearing as books/chapters
         content_raw = filtered_df[filtered_df['Book'].str.len() > 0]
         content_df = content_raw[~content_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
 
@@ -731,7 +746,8 @@ else:
                 with col_d2:
                     pdf_tab3 = generate_pdf_report(
                         title_text="📖 Textbooks & Digital Content Usage Report",
-                        subtitle_text=f"School: {t3_school} | Teacher: {t3_teacher} | Subject: {t3_subject}",
+                        subtitle_text=f"Teacher: {t3_teacher} | Subject: {t3_subject}",
+                        school_name=t3_school,
                         summary_metrics={
                             "Chapters Opened": t3_df['Book'].nunique(),
                             "Subjects Taught": t3_df['Subject'].nunique(),
@@ -764,7 +780,6 @@ else:
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
-            # SECTION 1: PERFORMANCE INDICATOR SUMMARY
             st.subheader("1. Quantitative Performance Indicator Summary")
             st.info(f"📅 **Active Filter**: `{filter_description_text}` | **KPI Duration**: `{selected_num_days} Working Day(s)`")
 
@@ -832,7 +847,6 @@ else:
 
             st.markdown("---")
 
-            # SECTION 2: DIGITAL CONTENT & BOOK USAGE REPORT (CLEANED)
             st.subheader("2. Book & Grade Digital Content Usage Report")
             t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
             if t_books_raw.empty:
@@ -871,7 +885,6 @@ else:
 
             st.markdown("---")
 
-            # SECTION 3: QUALITATIVE PERFORMANCE EVIDENCE (ORDERED: 1. LP/VN -> 2. ACTIVITIES -> 3. WRITING)
             st.subheader("3. Qualitative Evidences & Artifact Hub")
 
             evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
@@ -917,16 +930,13 @@ else:
                     deduped_v.append(item)
             v_vid = deduped_v
 
-            # Single unified LP entity calculation (satisfied by either Voice Notes or LP Pictures)
             lp_combo_total = len(v_voice) + len(v_pic)
 
-            # Metric Cards in requested structured order
             v_cols = st.columns(3)
             v_cols[0].metric("📖 1. Lesson Plans / Audio Notes", f"{lp_combo_total} Submissions", delta=f"{len(v_voice)} Audio | {len(v_pic)} Picture")
             v_cols[1].metric("🎥 2. Classroom Activity Videos", f"{len(v_vid)} Uploaded")
             v_cols[2].metric("📝 3. Student Writing Practices", f"{len(v_writing)} Samples")
 
-            # Structured Artifact Inspection Grid
             st.markdown("##### 📌 Qualitative Artifact Review Hub")
             q_cols1, q_cols2, q_cols3 = st.columns(3)
             
@@ -962,9 +972,8 @@ else:
 
             st.markdown("---")
 
-            # --- WHATSAPP EXECUTIVE SUMMARY EXPORT (SECTIONS 1 TO 3 ONLY) ---
             st.subheader("📲 WhatsApp Executive Summary Export (Sections 1–3)")
-            st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Qualitative Evidence Summaries (excluding granular logs).")
+            st.caption("Generate a clean executive review for School Owners and Leadership containing Teacher Profile details, Quantitative Highlights, Digital Book Logs, and Qualitative Evidence Summaries.")
 
             pdf_custom_sections = {
                 "1. Quantitative Delivery & Planning Highlights": [
@@ -985,10 +994,10 @@ else:
 
             pdf_tab4_summary = generate_pdf_report(
                 title_text=f"🏫 Academic Performance Profile: {target_teacher}",
-                subtitle_text=f"Institution: {teacher_school} | Observation Window: {filter_description_text}",
+                subtitle_text=f"Observation Window: {filter_description_text}",
+                school_name=teacher_school,
                 summary_metrics={
                     "Teacher": target_teacher,
-                    "School": teacher_school,
                     "Lesson Prep": f"{t_day_ld:.1f}m",
                     "Library Usage": f"{t_day_lib:.1f}m",
                     "Qualitative Artifacts": f"{lp_combo_total + len(v_vid) + len(v_writing)}"
@@ -1028,7 +1037,6 @@ else:
 
             st.markdown("---")
 
-            # SECTION 4: CLASSROOM AUDIT LOG
             col_log_head, col_log_filt = st.columns([2, 1])
             with col_log_head:
                 st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
@@ -1061,7 +1069,7 @@ else:
                         mime="text/csv"
                     )
 
-    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS (FILTER-AWARE & DATE-AWARE WHATSAPP UPDATE)
+    # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
         st.header("🏛️ Academic Manager Portfolio Overview")
         st.caption("High-level classification, Quantitative indicators, and Week-on-Week Velocity tracking across your school portfolio.")
@@ -1069,13 +1077,11 @@ else:
         if school_filtered_df.empty:
             st.warning("No data available for the selected school filter.")
         else:
-            # FIX: Aggregate school stats using filtered_df (respecting date/granularity/teacher filters) instead of school_filtered_df
             school_stats = filtered_df.groupby(['Institution', 'Type'])['Duration_Min'].sum().unstack(fill_value=0.0).reset_index()
             
             if 'lessonDelivery' not in school_stats.columns: school_stats['lessonDelivery'] = 0.0
             if 'library' not in school_stats.columns: school_stats['library'] = 0.0
             
-            # Ensure all selected schools from school_filtered_df are present in school_stats even with 0 activity
             all_active_schools = school_filtered_df['Institution'].unique()
             for s_name in all_active_schools:
                 if s_name not in school_stats['Institution'].values:
@@ -1088,7 +1094,6 @@ else:
             school_stats['Avg_Lesson_Prep_Mins'] = (school_stats['lessonDelivery'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
             school_stats['Avg_Library_Usage_Mins'] = (school_stats['library'] / school_stats['Roster_Teachers'] / selected_num_days).round(1)
 
-            # Compute Qualitative Artifact Counts per School honoring global filters/dates
             qual_agg = []
             for s_name in school_stats['Institution'].unique():
                 s_data = filtered_df[filtered_df['Institution'] == s_name]
@@ -1130,7 +1135,6 @@ else:
 
             school_stats['Classification'] = school_stats.apply(classify_school, axis=1)
 
-            # --- 2x2 QUADRANT MATRIX GRID ---
             st.subheader("🖼️ 2x2 Portfolio Classification Matrix")
             
             pace_setters = school_stats[school_stats['Classification'] == '🌟 Pace Setters']['Institution'].tolist()
@@ -1166,6 +1170,7 @@ else:
             pdf_tab5 = generate_pdf_report(
                 title_text="🏛️ Academic Manager Portfolio Review",
                 subtitle_text=f"Portfolio Performance Leaderboard ({selected_num_days} Working Days)",
+                school_name="Multiple Portfolio Schools",
                 summary_metrics={
                     "Total Schools": len(school_stats),
                     "Pace Setters": len(pace_setters),
@@ -1182,7 +1187,6 @@ else:
 
             st.markdown("---")
 
-            # --- SCHOOL OWNER CRM CONTACT DIRECTORY, SCRIPT, & ACTION STEP LOG ---
             st.subheader("📞 School Owner CRM, Call Script & Next-Step Accountability")
             st.caption(f"Active Observation Window: `{filter_description_text}`. Generate data-driven scripts, track commitments, and log discussion notes.")
 
@@ -1232,7 +1236,6 @@ else:
                     st.warning("Please punch a valid phone number in the CRM Directory above to enable direct calling/WhatsApp buttons.")
 
             with col_call_info2:
-                # --- AUTOMATED AI CONSULTANT CALL SCRIPT GENERATOR ---
                 with st.expander(f"🤖 View Generated Talking Script for {selected_call_school}", expanded=True):
                     st.markdown(f"""
                     **Phase 1 & 2: Data-Driven Talking Points ({filter_description_text})**
@@ -1287,7 +1290,6 @@ else:
                     else:
                         st.warning("Please enter discussion notes before saving.")
 
-                # --- CONSOLIDATED WHATSAPP SCHOOL REPORT GENERATOR ---
                 st.markdown("##### 📱 Send Consolidated Weekly School WhatsApp Update")
                 consolidated_wa_text = (
                     f"🏫 *WEEKLY ACADEMIC PERFORMANCE REPORT - {selected_call_school.upper()}*\n"
@@ -1455,8 +1457,9 @@ else:
             st.dataframe(display_t6_table, use_container_width=True)
 
             pdf_tab6 = generate_pdf_report(
-                title_text=f"🏫 School Inspection Report: {target_school_t6}",
+                title_text=f"🏫 School Inspection Report",
                 subtitle_text=f"Period: {filter_description_text} | Total Roster: {len(school_t6_roster)} Teachers",
+                school_name=target_school_t6,
                 summary_metrics={
                     "Consistent Achievers": num_ach,
                     "Fluctuating/Partial": num_fluc,
@@ -1543,7 +1546,6 @@ else:
 
             st.markdown("---")
 
-            # Metrics for Filtered Submissions
             tot_subs = len(t7_filtered)
             tot_audios = sum([1 for l in t7_filtered['Voice_Note_Link'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in t7_filtered.columns else 0
             tot_pics = sum([1 for l in t7_filtered['Lesson_Plan_Picture'] if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in t7_filtered.columns else 0
@@ -1564,7 +1566,6 @@ else:
 
             st.markdown("---")
 
-            # --- SECTION 1: QUALITATIVE EVIDENCE KPI COMPLIANCE TRACKER (IF ENABLED) ---
             if enable_qual_kpi:
                 st.subheader("🎯 Teacher Qualitative Evidence KPI Compliance")
                 st.caption(f"Configured Benchmark: **Min. {target_vid_count} Videos**, **Min. {target_writing_count} Writing Samples**, **Min. {target_lp_combo_count} LP / Voice Notes** per Teacher.")
@@ -1635,6 +1636,7 @@ else:
                     pdf_kpi = generate_pdf_report(
                         title_text="🎯 Qualitative Evidence KPI Compliance Report",
                         subtitle_text=f"Filter Period: {filter_description_text} | Total Teachers: {total_teachers_kpi}",
+                        school_name=t7_selected_school if t7_selected_school != "All Schools" else "All Portfolio Schools",
                         summary_metrics={
                             "Total Teachers": total_teachers_kpi,
                             "Fully Compliant": f"{fully_compliant} / {total_teachers_kpi}",
@@ -1653,7 +1655,6 @@ else:
 
                 st.markdown("---")
 
-            # --- SECTION 2: GRANULAR SUBMISSIONS TABLE ---
             st.subheader("📋 Granular Qualitative Submissions Log")
             t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
             t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
