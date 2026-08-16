@@ -250,7 +250,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         active_phone = input_phone.strip()
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
-            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
+            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Onelearn Academic Team regarding {tab_name} metrics for {target_crm_school}.")
             st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {selected_entity_type}</button></a>', unsafe_allow_html=True)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
@@ -264,8 +264,18 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
+        # Default initialization for editable draft text area
+        display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
+        default_template_string = (
+            f"Namaste{display_contact_name_str} {selected_entity_type} ji,\n\n"
+            f"Here is the performance update for {target_crm_school}:\n"
+            f"{metrics_summary_text}\n\n"
+            f"Regards,\n"
+            f"Onelearn Academic Team"
+        )
+
         if draft_state_key not in st.session_state:
-            st.session_state[draft_state_key] = f"Namaste {input_contact_name or selected_entity_type} ji,\n\nHere is the performance update for {tab_name} at {target_crm_school}:\n{metrics_summary_text}\n\nRegards,\n Onlern Academic Team"
+            st.session_state[draft_state_key] = default_template_string
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
@@ -278,7 +288,7 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
                     Module Tab Context: {tab_name}
                     Performance Report & Metrics: {metrics_summary_text}
                     Tone: {custom_tone}
-                    Provide precise information, encouraging feedback, and actionable recommendations. Format nicely with WhatsApp emojis.
+                    Provide precise information, encouraging feedback, and actionable recommendations. Sign off with 'Onelearn Academic Team'. Format nicely with WhatsApp emojis.
                     """
                     with st.spinner("Generating AI message with Gemini..."):
                         try:
@@ -290,15 +300,13 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
 
         with col_b2:
             if st.button("📝 Generate Template", key=f"gen_tmpl_wa_{tab_name}"):
+                contact_part = f" {input_contact_name}" if input_contact_name else ""
                 template_result = (
-                    f"🏫 *ACADEMIC UPDATE: {target_crm_school.upper()}*\n"
-                    f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type} ji)\n\n"
-                    f"📊 *{tab_name} Summary:*\n{metrics_summary_text}\n\n"
-                    f"🎯 *Key Recommendations & Next Steps:*\n"
-                    f"• Please review these metrics with your teaching staff.\n"
-                    f"• Ensure daily logging of lesson plans and student activities.\n"
-                    f"• Feel free to reach out for any academic support needed.\n\n"
-                    f"Warm regards,\nAcademic Management Team 📚"
+                    f"Namaste{contact_part} {selected_entity_type} ji,\n\n"
+                    f"Here is the performance update for {target_crm_school}:\n"
+                    f"{metrics_summary_text}\n\n"
+                    f"Regards,\n"
+                    f"Onelearn Academic Team"
                 )
                 st.session_state[draft_state_key] = template_result
                 st.rerun()
