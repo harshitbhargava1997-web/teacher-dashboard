@@ -1357,7 +1357,31 @@ else:
                 mime="application/pdf"
             )
 
-            render_universal_crm_box("School Inspection", target_school_t6, f"Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}")
+            st.markdown("---")
+
+            st.subheader("2. Grade & Subject Digital Content Coverage")
+
+            if school_t6_data.empty or school_t6_data['Book'].str.len().sum() == 0:
+                st.info("No chapter or book usage logs recorded for this school.")
+            else:
+                col_t6_g1, col_t6_g2 = st.columns(2)
+
+                with col_t6_g1:
+                    grade_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Grade')['Duration_Min'].sum().reset_index()
+                    fig_g6 = px.bar(
+                        grade_t6, x="Grade", y="Duration_Min", color="Grade",
+                        title="Digital Classroom Time by Grade Level (Mins)",
+                        text_auto=".1f"
+                    )
+                    st.plotly_chart(fig_g6, use_container_width=True)
+
+                with col_t6_g2:
+                    subj_t6 = school_t6_data[school_t6_data['Book'].str.len() > 0].groupby('Subject')['Duration_Min'].sum().reset_index()
+                    fig_s6 = px.pie(
+                        subj_t6, names="Subject", values="Duration_Min",
+                        title="Subject / Module Distribution in School"
+                    )
+                    st.plotly_chart(fig_s6, use_container_width=True)
 
     # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
