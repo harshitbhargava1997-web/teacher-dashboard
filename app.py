@@ -196,11 +196,10 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector, dual reliable WhatsApp generators, and Supabase-synced call logs/notes with global filtering & Excel export."""
+    """Advanced Universal CRM with multi-entity contact selector (Principal, Owner, Coordinator), dual WhatsApp generators, and Supabase-synced call logs/notes."""
     st.markdown("---")
-    st.subheader(f"📞 Universal School & Teacher CRM, Call Notes & Dual WhatsApp Generators ({tab_name})")
+    st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
-    # Load global persistent CRM database from Supabase into session state if not present
     if "crm_global_data" not in st.session_state:
         st.session_state["crm_global_data"] = load_crm_data_from_supabase()
 
@@ -229,11 +228,11 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
             crm_data["contacts"][target_crm_school] = {
                 "Principal": {"name": "", "phone": ""},
                 "Owner": {"name": "", "phone": ""},
-                "Teacher": {"name": "", "phone": ""}
+                "Coordinator": {"name": "", "phone": ""}
             }
 
         st.markdown("##### 👥 Select Entity & Contact Details")
-        selected_entity_type = st.selectbox("Target Entity Type:", options=["Principal", "Owner", "Teacher"], key=f"entity_type_{tab_name}")
+        selected_entity_type = st.selectbox("Target Entity Type:", options=["Principal", "Owner", "Coordinator"], key=f"entity_type_{tab_name}")
         
         current_entity_data = crm_data["contacts"][target_crm_school].get(selected_entity_type, {"name": "", "phone": ""})
         
@@ -251,14 +250,14 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         active_phone = input_phone.strip()
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
-            quick_wa = urllib.parse.quote(f"Hello {input_contact_name or selected_entity_type}, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
+            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
             st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {selected_entity_type}</button></a>', unsafe_allow_html=True)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
             st.warning(f"Please enter and save a mobile number for the selected {selected_entity_type}.")
 
     with c_col2:
-        st.markdown("##### 💬 Dual WhatsApp Message Generators")
+        st.markdown("##### 💬 WhatsApp Message Generators (Indian Context)")
         gen_mode = st.radio("Choose Generator Type:", ["✨ AI-Driven Generator (Gemini 3.5 Flash)", "📝 Standard Template Generator (No AI)"], key=f"gen_mode_{tab_name}")
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
@@ -266,17 +265,17 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
         if draft_state_key not in st.session_state:
-            st.session_state[draft_state_key] = f"Hello {input_contact_name or selected_entity_type}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}"
+            st.session_state[draft_state_key] = f"Namaste {input_contact_name or selected_entity_type} ji,\n\nHere is the performance update for {tab_name} at {target_crm_school}:\n{metrics_summary_text}\n\nRegards,\nAcademic Team"
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("✨ Generate AI Message", key=f"gen_ai_wa_{tab_name}"):
                 ai_prompt = f"""
-                Write a professional, structured WhatsApp message for a school {selected_entity_type} named {input_contact_name or 'Stakeholder'} at {target_crm_school}.
+                Write a professional, easy-to-understand WhatsApp message in simple Indian professional context for a school {selected_entity_type} named {input_contact_name or 'Sir/Madam'} at {target_crm_school}.
                 Module Tab Context: {tab_name}
-                Complete Tab Performance Report & Metrics: {metrics_summary_text}
+                Performance Report & Metrics: {metrics_summary_text}
                 Tone: {custom_tone}
-                Keep it concise, actionable, and formatted nicely with emojis suitable for WhatsApp.
+                Provide precise information, encouraging feedback, and actionable recommendations. Format nicely with WhatsApp emojis.
                 """
                 with st.spinner("Generating AI message with Gemini 3.5 Flash..."):
                     ai_result = get_gemini_summary(ai_prompt)
@@ -286,15 +285,19 @@ def render_universal_crm_box(tab_name, school_names_input, metrics_summary_text)
         with col_b2:
             if st.button("📝 Generate Template", key=f"gen_tmpl_wa_{tab_name}"):
                 template_result = (
-                    f"🏫 *ACADEMIC PERFORMANCE UPDATE - {target_crm_school.upper()}*\n"
-                    f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type})\n"
-                    f"📊 *Module Summary ({tab_name}):*\n{metrics_summary_text}\n\n"
-                    f"💡 *Tone:* {custom_tone}. Please review these figures and let us know your feedback!"
+                    f"🏫 *ACADEMIC UPDATE: {target_crm_school.upper()}*\n"
+                    f"👤 *Addressed To:* {input_contact_name or selected_entity_type} ({selected_entity_type} ji)\n\n"
+                    f"📊 *{tab_name} Summary:*\n{metrics_summary_text}\n\n"
+                    f"🎯 *Key Recommendations & Next Steps:*\n"
+                    f"• Please review these metrics with your teaching staff.\n"
+                    f"• Ensure daily logging of lesson plans and student activities.\n"
+                    f"• Feel free to reach out for any academic support needed.\n\n"
+                    f"Warm regards,\nAcademic Management Team 📚"
                 )
                 st.session_state[draft_state_key] = template_result
                 st.rerun()
 
-        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=120, key=f"wa_textarea_{tab_name}")
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
@@ -1732,7 +1735,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
                 mime="application/pdf"
             )
 
