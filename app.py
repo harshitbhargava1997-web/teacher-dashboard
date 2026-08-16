@@ -11,7 +11,7 @@ import urllib.parse
 from io import BytesIO
 from supabase import create_client
 
-# Google GenAI SDK
+# Google GenAI SDK (Requires package 'google-genai')
 from google import genai
 
 # ReportLab PDF Libraries
@@ -625,7 +625,6 @@ else:
         c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
         c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
-        # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 1 ---
         with st.expander("✨ Gemini AI Intelligent Lesson Prep Analysis", expanded=False):
             if st.button("Generate AI Lesson Prep Summary", key="ai_btn_tab1"):
                 with st.spinner("Analyzing lesson prep metrics with Gemini..."):
@@ -701,7 +700,6 @@ else:
         m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
         m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
 
-        # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 2 ---
         with st.expander("✨ Gemini AI Intelligent Library Usage Analysis", expanded=False):
             if st.button("Generate AI Library Summary", key="ai_btn_tab2"):
                 with st.spinner("Analyzing library engagement with Gemini..."):
@@ -785,7 +783,6 @@ else:
                 k2.metric("Subjects Taught", t3_df['Subject'].nunique())
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
 
-                # --- GEMINI AI INTELLIGENT INSIGHT BOX FOR TAB 3 ---
                 with st.expander("✨ Gemini AI Curriculum Pacing Analysis", expanded=False):
                     if st.button("Generate AI Content Summary", key="ai_btn_tab3"):
                         with st.spinner("Analyzing curriculum usage with Gemini..."):
@@ -862,7 +859,7 @@ else:
 
                 render_universal_crm_box("Content & Chapters", t3_school, f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins")
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (COMPLETE WITH DETAILED BOOKS/TIME & ARBITRARY SUBMISSION BREAKDOWN)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
         st.caption("Review quantitative lesson metrics, detailed textbook time logs, and structured qualitative performance evidence with clickable artifact links for leadership reporting.")
@@ -994,7 +991,6 @@ else:
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
-            # --- GEMINI AI INTELLIGENT 360 REVIEW GENERATOR ---
             with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
                 if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
                     with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
@@ -1053,7 +1049,6 @@ else:
 
             st.markdown("---")
 
-            # DETAILED DIGITAL CONTENT & TIME SPENT BREAKDOWN
             st.subheader("2. Detailed Textbook & Chapter Time Breakdown")
             if teacher_books.empty:
                 st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
@@ -1077,7 +1072,6 @@ else:
 
             st.markdown("---")
 
-            # DETAILED QUALITATIVE SUBMISSIONS & LINKS BREAKDOWN
             st.subheader("3. Qualitative Evidences & Artifact Hub")
 
             v_cols = st.columns(3)
@@ -1239,7 +1233,6 @@ else:
             with col_bot2:
                 st.error(f"🚨 **Priority Focus ({len(priority_focus)} Schools)**\n\n*Below Quantitative & Qualitative Standards*\n\n" + (", ".join(priority_focus) if priority_focus else "None"))
 
-            # --- GEMINI AI PORTFOLIO STRATEGY INSIGHT ---
             with st.expander("✨ Gemini AI Portfolio Health Analysis", expanded=False):
                 if st.button("Generate AI Portfolio Summary", key="ai_btn_tab5"):
                     with st.spinner("Analyzing multi-school portfolio health with Gemini..."):
