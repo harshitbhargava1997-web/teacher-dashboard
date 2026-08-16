@@ -129,29 +129,19 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- BULLETPROOF AI HELPER FUNCTION WITH MULTI-MODEL FALLBACK ---
+# --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
 def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini with automatic model fallbacks to prevent 404 errors."""
+    """Sends a summary prompt to Gemini free tier endpoint and returns the text response."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
-    
-    # List of candidate models to try in order
-    candidate_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
-    
-    last_error = None
-    for model_name in candidate_models:
-        try:
-            response = ai_client.models.generate_content(
-                model=model_name,
-                contents=context_prompt
-            )
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            last_error = e
-            continue
-            
-    return f"Could not generate AI summary using available models. Details: {last_error}"
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',  # Active supported free-tier model endpoint
+            contents=context_prompt
+        )
+        return response.text
+    except Exception as e:
+        return f"Could not generate AI summary: {e}"
 
 
 def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
