@@ -35,7 +35,7 @@ try:
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
 
-# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5 / 3.7 Flash)
+# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5 Flash)
 try:
     GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -180,23 +180,34 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- AI HELPER FUNCTIONS (GEMINI 3.5 / 3.7 FLASH INTEGRATION) ---
-def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini 3.5/3.7 Flash and returns the intelligent text summary."""
+# --- AI HELPER FUNCTIONS (GEMINI MULTIMODAL INTEGRATION) ---
+def get_gemini_summary(context_prompt, audio_file_obj=None):
+    """Sends prompt and optional audio recording directly to Gemini 3.5 Flash for multimodal processing."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
     try:
+        contents_payload = [context_prompt]
+        
+        # If user recorded voice instructions, attach audio bytes directly for native understanding
+        if audio_file_obj is not None:
+            audio_bytes = audio_file_obj.read()
+            contents_payload.append(
+                genai.types.Part.from_bytes(
+                    data=audio_bytes,
+                    mime_type="audio/wav"  # Streamlit st.audio_input outputs WAV format
+                )
+            )
+
         response = ai_client.models.generate_content(
-            model='gemini-3.5-flash',  # Utilizing Gemini 3.5 Flash endpoint
-            contents=context_prompt
+            model='gemini-3.5-flash',
+            contents=contents_payload
         )
         return response.text
     except Exception as e:
-        # Fallback to gemini-3.7-flash or standard flash if active endpoint differs
         try:
             response = ai_client.models.generate_content(
-                model='gemini-3.7-flash',
-                contents=context_prompt
+                model='gemini-1.5-flash',
+                contents=contents_payload
             )
             return response.text
         except Exception as fallback_e:
@@ -204,7 +215,7 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
-    """Advanced Universal CRM with multi-entity contact selector, split AI Calling/Messaging generator with custom prompt input, and standard confirmation WhatsApp template."""
+    """Advanced Universal CRM with multi-entity contact selector, Voice & Text AI generator, and standard confirmation WhatsApp template."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
@@ -269,10 +280,17 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        # 1. AI-Driven Generator with Custom Prompt Input (Gemini 3.5 Flash)
-        with st.expander("✨ AI-Driven Calling Script & Smart Message Generator"):
+        # 1. AI-Driven Generator with Voice Transcription & Custom Text Input
+        with st.expander("✨ AI-Driven Calling Script & Smart Message Generator (Voice & Text)"):
+            
+            # Voice Input Widget (Allows recording voice instructions directly)
+            manager_voice_audio = st.audio_input(
+                "🎙️ Record Voice Instructions (Speak your custom prompt):",
+                key=f"voice_input_{tab_name}_{target_crm_school}"
+            )
+            
             user_custom_instruction = st.text_area(
-                "Optional: Provide custom instructions or specific focus for Gemini 3.5 Flash:",
+                "Or Type Custom Instructions (Alternative to voice):",
                 placeholder="e.g., Focus heavily on improving library engagement and ask for a meeting this week...",
                 key=f"ai_custom_prompt_{tab_name}_{target_crm_school}"
             )
@@ -283,19 +301,20 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
                 else:
                     ai_prompt = f"""
                     You are an expert Academic Consultant powered by Gemini 3.5 Flash. 
-                    Based on these filtered metrics for {tab_name} at {target_crm_school} ({current_filter_description}):
-                    Metrics: {metrics_summary_text}
+                    Based on these detailed filtered metrics for {tab_name} at {target_crm_school} ({current_filter_description}):
+                    Metrics & Breakdown: {metrics_summary_text}
                     Target Entity: {selected_entity_type} named {input_contact_name or 'Sir/Madam'}
                     Tone: {custom_tone}
-                    Additional Custom User Instructions: {user_custom_instruction if user_custom_instruction else 'None'}
+                    Text Instructions Provided: {user_custom_instruction if user_custom_instruction else 'None'}
+                    (Note: If an audio recording is attached, listen to and incorporate the manager's verbal instructions regarding what to emphasize).
                     
                     Generate two distinct outputs:
-                    1. **Calling Script**: A structured script to help me talk through these performance metrics over a phone call with this {selected_entity_type}.
-                    2. **AI WhatsApp Follow-up Message**: A concise, professional message summarizing the key findings and next steps to send on WhatsApp afterward. Sign off with 'Onelearn Academic Team'.
+                    1. **Calling Script**: A structured phone conversation script calling out specific teacher data points, praises, and areas of concern to discuss with this {selected_entity_type}.
+                    2. **AI WhatsApp Follow-up Message**: A concise, professional message summarizing these exact findings and action items to send on WhatsApp afterward. Sign off with 'Onelearn Academic Team'.
                     """
-                    with st.spinner("Generating AI Calling Script and Message with Gemini 3.5 Flash..."):
+                    with st.spinner("Processing voice/text instructions with Gemini 3.5 Flash..."):
                         try:
-                            ai_result = get_gemini_summary(ai_prompt)
+                            ai_result = get_gemini_summary(ai_prompt, audio_file_obj=manager_voice_audio)
                             st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"] = ai_result
                         except Exception as e:
                             st.error(f"Error generating AI content: {e}")
@@ -321,7 +340,7 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         if draft_state_key not in st.session_state:
             st.session_state[draft_state_key] = default_template_string
 
-        editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=130, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
+        editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
@@ -890,7 +909,11 @@ else:
             mime="application/pdf"
         )
 
-        tab1_metrics_summary = f"Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}, Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
+        teacher_prep_breakdown = "\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
+        tab1_metrics_summary = (
+            f"Total Roster: {total_teachers} teachers | Met Standard: {met_count} | Inactive: {inactive_count} | Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%\n\n"
+            f"Detailed Teacher Lesson Prep Logs:\n{teacher_prep_breakdown}"
+        )
         render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, filter_description_text, tab1_metrics_summary)
 
     # TAB 2: LIBRARY USAGE TRACKER
@@ -966,7 +989,11 @@ else:
             mime="application/pdf"
         )
 
-        tab2_metrics_summary = f"Total Teachers: {lib_total_teachers}, Active Met Standard: {lib_met_count}, Inactive: {lib_inactive_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
+        teacher_lib_breakdown = "\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
+        tab2_metrics_summary = (
+            f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
+            f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
+        )
         render_universal_crm_box("Library Usage Tracker", selected_schools, filter_description_text, tab2_metrics_summary)
 
     # TAB 3: CONTENT & CHAPTERS
@@ -1085,7 +1112,11 @@ else:
                         mime="application/pdf"
                     )
 
-                tab3_metrics_summary = f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins"
+                book_breakdown_summary = "\n".join([f"• {r['Book']} ({r['Grade']} - {r['Subject']}): {r['Duration_Min']:.1f} mins" for _, r in t3_df.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index().iterrows()])
+                tab3_metrics_summary = (
+                    f"Chapters Opened: {t3_df['Book'].nunique()} | Subjects Taught: {t3_df['Subject'].nunique()} | Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins\n\n"
+                    f"Chapter Breakdown:\n{book_breakdown_summary}"
+                )
                 render_universal_crm_box("Content & Chapters", t3_school if t3_school != "All Selected Schools" else selected_schools, filter_description_text, tab3_metrics_summary)
 
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
@@ -1501,7 +1532,11 @@ else:
                 mime="application/pdf"
             )
 
-            tab5_metrics_summary = f"Total Portfolio Schools Tracked: {len(school_stats)}, Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}"
+            school_breakdown_summary = "\n".join([f"• {r['School Name']}: Prep {r['Prep (m/day)']}m/day, Library {r['Library (m/day)']}m/day ({r['Classification']})" for _, r in display_qtable.iterrows()])
+            tab5_metrics_summary = (
+                f"Total Portfolio Schools Tracked: {len(school_stats)} | Pace Setters: {len(pace_setters)} | Priority Focus: {len(priority_focus)}\n\n"
+                f"School Performance Breakdown:\n{school_breakdown_summary}"
+            )
             render_universal_crm_box("Manager Portfolio", selected_schools, filter_description_text, tab5_metrics_summary)
 
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
@@ -1607,7 +1642,11 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-            tab6_metrics_summary = f"School Inspection: {target_school_t6}, Consistent Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}"
+            t6_teacher_breakdown = "\n".join([f"• {r['Teacher Name']}: Prep {r['Lesson Prep (m)']}m, Library {r['Library Usage (m)']}m ({r['Execution Tier']})" for _, r in display_t6_table.iterrows()])
+            tab6_metrics_summary = (
+                f"School Inspection: {target_school_t6} | Achievers: {num_ach} | Fluctuating: {num_fluc} | Inactive: {num_inact}\n\n"
+                f"Teacher Progression Breakdown:\n{t6_teacher_breakdown}"
+            )
             render_universal_crm_box("School Inspection", target_school_t6, filter_description_text, tab6_metrics_summary)
 
     # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
@@ -1776,9 +1815,13 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
 
-            tab7_metrics_summary = f"Total Submission Logs: {tot_subs}, Audio Voice Notes: {tot_audios}, LP Pictures: {tot_pics}, Videos Uploaded: {tot_vids}, Writing Samples: {tot_writing}"
+            q_teacher_breakdown = "\n".join([f"• {r['Teacher Name']} ({r['School']}): Videos {r['Activity Videos']}, Writing {r['Writing Samples']}, LP/VN {r['LP / Voice Notes']} ({r['Overall Qualitative Status']})" for _, r in kpi_summary_df.iterrows()]) if 'kpi_summary_df' in locals() and not kpi_summary_df.empty else ""
+            tab7_metrics_summary = (
+                f"Total Submission Logs: {tot_subs} | Audio Notes: {tot_audios} | LP Pictures: {tot_pics} | Videos: {tot_vids} | Writing: {tot_writing}\n\n"
+                f"Teacher Qualitative Breakdown:\n{q_teacher_breakdown}"
+            )
             render_universal_crm_box("Live Evidence Feed", t7_selected_school if t7_selected_school != "All Schools" else selected_schools, filter_description_text, tab7_metrics_summary)
