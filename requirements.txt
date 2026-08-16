@@ -6,3 +6,4 @@ reportlab
 pyarrow
 supabase
 openpyxl
+google-genai
