@@ -136,7 +136,7 @@ def get_gemini_summary(context_prompt):
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
     try:
         response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',  # Updated stable model name
+            model='gemini-1.5-flash',  # Updated to stable available model
             contents=context_prompt
         )
         return response.text
@@ -1542,7 +1542,7 @@ else:
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
                 data=csv_t7,
-                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.csv",
+                file_name=f"Teacher_Evidence_Submissions_{selected_month.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
 
