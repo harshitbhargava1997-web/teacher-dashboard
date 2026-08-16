@@ -29,11 +29,12 @@ try:
     SUPABASE_KEY = st.secrets["supabase"]["key"]
     BUCKET_NAME = st.secrets["supabase"]["bucket_name"]
     PARQUET_FILE_NAME = "master_database.parquet"
+    CRM_FILE_NAME = "school_crm_data.json"
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Supabase credentials missing or misconfigured in Streamlit Secrets: {e}")
 
-# Initialize Gemini Client using google-genai SDK
+# Initialize Gemini Client using google-genai SDK (Using Gemini 3.5/3.7 Flash)
 try:
     GEMINI_API_KEY = st.secrets["gemini"]["api_key"]
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -70,6 +71,31 @@ def fetch_master_db_from_supabase():
         return combined
 
     return base_df
+
+
+# --- SUPABASE PERSISTENCE FOR CRM CONTACTS & CALL LOGS ---
+def load_crm_data_from_supabase():
+    """Loads saved school contacts, principal/owner vs teacher details, and call logs from Supabase."""
+    try:
+        response = supabase.storage.from_(BUCKET_NAME).download(CRM_FILE_NAME)
+        if response:
+            return json.loads(response.decode('utf-8'))
+    except Exception:
+        pass
+    return {"contacts": {}, "logs": []}
+
+
+def save_crm_data_to_supabase(crm_data):
+    """Saves updated school contacts and call logs back to Supabase cloud storage."""
+    try:
+        crm_buffer = BytesIO(json.dumps(crm_data, indent=2).encode('utf-8'))
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=CRM_FILE_NAME,
+            file=crm_buffer.getvalue(),
+            file_options={"upsert": "true", "content-type": "application/json"}
+        )
+    except Exception as e:
+        st.error(f"Could not sync CRM data to Supabase: {e}")
 
 
 def _norm_text(value):
@@ -129,14 +155,14 @@ def build_teacher_roster(df):
     return candidate.reset_index(drop=True)
 
 
-# --- AI HELPER FUNCTIONS (GEMINI INTEGRATION) ---
+# --- AI HELPER FUNCTIONS (GEMINI 3.5 / 3.7 FLASH INTEGRATION) ---
 def get_gemini_summary(context_prompt):
-    """Sends a summary prompt to Gemini 3.5 Flash and returns the intelligent text summary."""
+    """Sends a summary prompt to Gemini 3.5/3.7 Flash and returns the intelligent text summary."""
     if not ai_client:
         return "⚠️ Gemini API key not found in Streamlit secrets. Please configure `st.secrets['gemini']['api_key']`."
     try:
         response = ai_client.models.generate_content(
-            model='gemini-3.5-flash',  # Updated to Gemini 3.5 Flash
+            model='gemini-3.5-flash',  # Utilizing Gemini 3.5 Flash
             contents=context_prompt
         )
         return response.text
@@ -145,53 +171,90 @@ def get_gemini_summary(context_prompt):
 
 
 def render_universal_crm_box(tab_name, school_name_default, metrics_summary_text):
-    """Universal CRM and WhatsApp Message Generator integrated across all tabs."""
+    """Advanced Universal CRM with dual WhatsApp generators (AI vs Template) and persistent Supabase contact/role storage."""
     st.markdown("---")
-    st.subheader(f"📞 Universal School Owner CRM & AI WhatsApp Generator ({tab_name})")
+    st.subheader(f"📞 Universal School Contact CRM & Dual WhatsApp Generators ({tab_name})")
     
-    if "school_contacts_directory" not in st.session_state:
-        st.session_state["school_contacts_directory"] = {"Pragyanam International School": "+91 98260XXXXX"}
-    if "school_call_logs_store" not in st.session_state:
-        st.session_state["school_call_logs_store"] = []
+    # Load persistent CRM database from Supabase
+    if "crm_cloud_data" not in st.session_state:
+        st.session_state["crm_cloud_data"] = load_crm_data_from_supabase()
+
+    crm_data = st.session_state["crm_cloud_data"]
+    if "contacts" not in crm_data:
+        crm_data["contacts"] = {}
+    if "logs" not in crm_data:
+        crm_data["logs"] = []
 
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
-        target_crm_school = st.selectbox("Select School for CRM Outreach:", options=[school_name_default] if isinstance(school_name_default, str) else school_name_default, key=f"crm_school_{tab_name}")
-        owner_phone = st.session_state["school_contacts_directory"].get(target_crm_school, "Not Provided")
-        st.markdown(f"**Assigned Contact:** `{owner_phone}`")
+        schools_list = [school_name_default] if isinstance(school_name_default, str) else list(school_name_default)
+        if not schools_list:
+            schools_list = ["Default School"]
+        target_crm_school = st.selectbox("Select School for CRM Outreach:", options=schools_list, key=f"crm_school_{tab_name}")
         
-        if owner_phone and owner_phone != "Not Provided":
-            clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
-            wa_msg = urllib.parse.quote(f"Hello, checking in from Academic Management regarding execution metrics for {target_crm_school}.")
-            st.markdown(f'<a href="tel:{owner_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call School Owner</button></a>', unsafe_allow_html=True)
-            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={wa_msg}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Send WhatsApp Message</button></a>', unsafe_allow_html=True)
+        # Retrieve stored school contact record or defaults
+        school_contact_rec = crm_data["contacts"].get(target_crm_school, {"contact_name": "Principal / Owner", "role": "Principal / Owner", "phone": ""})
+        
+        st.markdown("##### 👤 Contact Details & Role")
+        input_contact_name = st.text_input("Contact Name:", value=school_contact_rec.get("contact_name", ""), key=f"cname_{tab_name}")
+        input_role = st.selectbox("Entity Type / Role:", options=["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"], index=["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"].index(school_contact_rec.get("role", "Principal / Owner")) if school_contact_rec.get("role", "Principal / Owner") in ["Principal / Owner", "Lead Teacher", "Administrator", "Coordinator"] else 0, key=f"crole_{tab_name}")
+        input_phone = st.text_input("Mobile Number (+91...):", value=school_contact_rec.get("phone", ""), key=f"cphone_{tab_name}")
+
+        if st.button("💾 Save Contact to Supabase", key=f"save_contact_btn_{tab_name}"):
+            crm_data["contacts"][target_crm_school] = {
+                "contact_name": input_contact_name,
+                "role": input_role,
+                "phone": input_phone
+            }
+            save_crm_data_to_supabase(crm_data)
+            st.success(f"Successfully saved {input_role} details for {target_crm_school} to Supabase Cloud!")
+
+        active_phone = input_phone.strip()
+        if active_phone:
+            clean_phone = re.sub(r'[^0-9+]', '', active_phone)
+            quick_wa = urllib.parse.quote(f"Hello {input_contact_name}, checking in from Academic Management regarding {tab_name} metrics for {target_crm_school}.")
+            st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {input_role}</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
-            st.warning("Punch contact number in Sidebar or CRM directory.")
+            st.warning("Please enter and save a valid mobile number above.")
 
     with c_col2:
-        st.markdown("##### 🤖 Gemini AI Smart WhatsApp Message Generator")
+        st.markdown("##### 💬 Dual WhatsApp Message Generators")
+        gen_mode = st.radio("Choose Generator Type:", ["✨ AI-Driven Generator (Gemini 3.5 Flash)", "📝 Standard Template Generator (No AI)"], key=f"gen_mode_{tab_name}")
+        
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        if st.button("✨ Generate AI WhatsApp Message", key=f"gen_wa_{tab_name}"):
-            prompt = f"""
-            Write a professional WhatsApp message for a school owner/principal regarding their school's academic performance.
-            School Name: {target_crm_school}
-            Module Tab: {tab_name}
-            Performance Metrics: {metrics_summary_text}
-            Tone: {custom_tone}
-            Keep it concise, actionable, and formatted nicely with emojis for WhatsApp.
-            """
-            with st.spinner("Generating AI message with Gemini 3.5 Flash..."):
-                ai_msg = get_gemini_summary(prompt)
-                st.session_state[f"ai_wa_draft_{tab_name}"] = ai_msg
+        draft_key = f"wa_draft_{tab_name}_{target_crm_school}"
 
-        draft_msg = st.session_state.get(f"ai_wa_draft_{tab_name}", f"Hello from Academic Management regarding {target_crm_school}. Performance highlights: {metrics_summary_text}")
-        final_wa_text = st.text_area("Editable WhatsApp Message Draft:", value=draft_msg, height=120, key=f"wa_textarea_{tab_name}")
-        
-        if owner_phone and owner_phone != "Not Provided":
-            clean_phone = re.sub(r'[^0-9+]', '', owner_phone)
-            encoded_text = urllib.parse.quote(final_wa_text)
-            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Generated WhatsApp Message</button></a>', unsafe_allow_html=True)
+        if gen_mode.startswith("✨"):
+            if st.button("✨ Generate AI WhatsApp Message", key=f"gen_ai_wa_{tab_name}"):
+                ai_prompt = f"""
+                Write a professional, structured WhatsApp message for a school {input_role} named {input_contact_name} at {target_crm_school}.
+                Module Tab Context: {tab_name}
+                Complete Tab Performance Report & Metrics: {metrics_summary_text}
+                Tone: {custom_tone}
+                Keep it concise, actionable, and formatted nicely with emojis suitable for WhatsApp.
+                """
+                with st.spinner("Generating AI message with Gemini 3.5 Flash..."):
+                    ai_result = get_gemini_summary(ai_prompt)
+                    st.session_state[draft_key] = ai_result
+        else:
+            if st.button("📝 Generate Template Message", key=f"gen_tmpl_wa_{tab_name}"):
+                template_result = (
+                    f"🏫 *ACADEMIC PERFORMANCE UPDATE - {target_crm_school.upper()}*\n"
+                    f"👤 *Addressed To:* {input_contact_name} ({input_role})\n"
+                    f"📊 *Module Summary ({tab_name}):*\n{metrics_summary_text}\n\n"
+                    f"💡 *Tone:* {custom_tone}. Please review these figures and let us know your feedback!"
+                )
+                st.session_state[draft_key] = template_result
+
+        default_draft_content = st.session_state.get(draft_key, f"Hello {input_contact_name}, here is the summary report for {tab_name} at {target_crm_school}:\n{metrics_summary_text}")
+        editable_wa_area = st.text_area("Editable WhatsApp Message Draft:", value=default_draft_content, height=130, key=f"wa_textarea_{tab_name}")
+
+        if active_phone:
+            clean_phone = re.sub(r'[^0-9+]', '', active_phone)
+            encoded_final_text = urllib.parse.quote(editable_wa_area)
+            st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Final WhatsApp Message</button></a>', unsafe_allow_html=True)
 
 
 # 0. Highly Visual Executive PDF Report Generator Helper
@@ -664,7 +727,8 @@ else:
             mime="application/pdf"
         )
 
-        render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, f"Total Teachers: {total_teachers}, Active: {met_count}, Compliance: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
+        tab1_metrics_summary = f"Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}, Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
+        render_universal_crm_box("Lesson Plan Prep Tracker", selected_schools, tab1_metrics_summary)
 
     # TAB 2: LIBRARY USAGE TRACKER
     with tab2:
@@ -739,7 +803,8 @@ else:
             mime="application/pdf"
         )
 
-        render_universal_crm_box("Library Usage Tracker", selected_schools, f"Total Teachers: {lib_total_teachers}, Active: {lib_met_count}, Engagement: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
+        tab2_metrics_summary = f"Total Teachers: {lib_total_teachers}, Active Met Standard: {lib_met_count}, Inactive: {lib_inactive_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
+        render_universal_crm_box("Library Usage Tracker", selected_schools, tab2_metrics_summary)
 
     # TAB 3: CONTENT & CHAPTERS
     with tab3:
@@ -857,7 +922,8 @@ else:
                         mime="application/pdf"
                     )
 
-                render_universal_crm_box("Content & Chapters", t3_school, f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins")
+                tab3_metrics_summary = f"Chapters Opened: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins"
+                render_universal_crm_box("Content & Chapters", t3_school, tab3_metrics_summary)
 
     # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
@@ -1146,7 +1212,8 @@ else:
                         mime="text/csv"
                     )
 
-            render_universal_crm_box("Teacher 360 Profile", teacher_school, f"Teacher: {target_teacher}, Lesson Prep: {t_day_ld:.1f}m, Library: {t_day_lib:.1f}m, Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}")
+            tab4_metrics_summary = f"Teacher Audit: {target_teacher}, Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Qualitative Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}"
+            render_universal_crm_box("Teacher 360 Profile", teacher_school, tab4_metrics_summary)
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
@@ -1271,7 +1338,8 @@ else:
                 mime="application/pdf"
             )
 
-            render_universal_crm_box("Manager Portfolio", selected_schools, f"Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}, Total Schools: {len(school_stats)}")
+            tab5_metrics_summary = f"Total Schools: {len(school_stats)}, Pace Setters: {len(pace_setters)}, Priority Focus: {len(priority_focus)}"
+            render_universal_crm_box("Manager Portfolio", selected_schools, tab5_metrics_summary)
 
     # TAB 6: SCHOOL-LEVEL TEACHER PROGRESSION & EXECUTION TIERS
     with tab6:
@@ -1375,6 +1443,9 @@ else:
                         title="Subject / Module Distribution in School"
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
+
+            tab6_metrics_summary = f"School Inspection: {target_school_t6}, Achievers: {num_ach}, Fluctuating: {num_fluc}, Inactive: {num_inact}"
+            render_universal_crm_box("School Inspection", target_school_t6, tab6_metrics_summary)
 
     # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
@@ -1546,4 +1617,5 @@ else:
                 mime="application/pdf"
             )
 
-            render_universal_crm_box("Live Evidence Feed", t7_selected_school, f"Total Submissions: {tot_subs}, Audio: {tot_audios}, Videos: {tot_vids}, Writing: {tot_writing}")
+            tab7_metrics_summary = f"Total Submissions: {tot_subs}, Audio Notes: {tot_audios}, LP Pictures: {tot_pics}, Videos: {tot_vids}, Writing Samples: {tot_writing}"
+            render_universal_crm_box("Live Evidence Feed", t7_selected_school, tab7_metrics_summary)
