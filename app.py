@@ -552,14 +552,67 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
 
-    story.append(Paragraph("<b>School-Level Feature Summary (Lesson Prep & Library Usage)</b>", sec_head_style))
+    story.append(Paragraph("<b>School-Level Feature Performance Summary</b>", sec_head_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
 
-    total_roster_count = len(teachers_list)
-    story.append(Paragraph(f"• <b>Total Active Roster Teachers:</b> {total_roster_count}", normal_style))
-    story.append(Paragraph(f"• <b>Lesson Prep Benchmark Target:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total standard)", normal_style))
-    story.append(Paragraph(f"• <b>Library Usage Benchmark Target:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total standard)", normal_style))
+    ld_df = school_filtered_df[school_filtered_df['Type'] == 'lessonDelivery']
+    ld_usage = ld_df.groupby('FullName')['Duration_Min'].sum().reset_index()
+    
+    lib_df = school_filtered_df[school_filtered_df['Type'] == 'library']
+    lib_usage = lib_df.groupby('FullName')['Duration_Min'].sum().reset_index()
+
+    story.append(Paragraph(f"• <b>Total Active Roster Teachers:</b> {len(teachers_list)}", normal_style))
+    story.append(Paragraph(f"• <b>Lesson Plan Performance Standard:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total standard)", normal_style))
+    story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total standard)", normal_style))
     story.append(Spacer(1, 10))
+
+    # Lesson Plan Consolidated Table Section in PDF
+    story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report (Teacher-wise)</b>", sec_head_style))
+    ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Status"]]
+    for t_name in teachers_list:
+        t_mins = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
+        t_avg = t_mins / selected_num_days if selected_num_days > 0 else 0.0
+        t_stat = "Met Standard" if t_mins >= calc_ld_kpi else ("Active" if t_mins > 0 else "Inactive")
+        ld_summary_table_data.append([t_name, f"{t_mins:.1f}m", f"{t_avg:.1f}m/day", t_stat])
+
+    ld_table_obj = Table(ld_summary_table_data, colWidths=[150, 120, 120, 150])
+    ld_table_obj.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(ld_table_obj)
+    story.append(Spacer(1, 12))
+
+    # Library Usage Consolidated Table Section in PDF
+    story.append(Paragraph("<b>2. Library Usage Consolidated Report (Teacher-wise)</b>", sec_head_style))
+    lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Status"]]
+    for t_name in teachers_list:
+        t_lib_mins = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
+        t_lib_avg = t_lib_mins / selected_num_days if selected_num_days > 0 else 0.0
+        t_lib_stat = "Met Standard" if t_lib_mins >= calc_lib_kpi else ("Active" if t_lib_mins > 0 else "Inactive")
+        lib_summary_table_data.append([t_name, f"{t_lib_mins:.1f}m", f"{t_lib_avg:.1f}m/day", t_lib_stat])
+
+    lib_table_obj = Table(lib_summary_table_data, colWidths=[150, 120, 120, 150])
+    lib_table_obj.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(lib_table_obj)
+    story.append(Spacer(1, 12))
 
     # --- PART 2: INDIVIDUAL TEACHER 360° PROFILES ---
     for idx, target_teacher in enumerate(teachers_list):
