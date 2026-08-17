@@ -913,8 +913,9 @@ else:
             mime="application/pdf"
         )
 
-        teacher_prep_breakdown = "\n\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
+        teacher_prep_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
         tab1_metrics_summary = (
+            f"Active KPI Target: At least {calc_ld_kpi:.0f} mins total ({daily_ld_target:.0f} mins/day)\n"
             f"Total Roster: {total_teachers} teachers | Met Standard: {met_count} | Inactive: {inactive_count} | Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Lesson Prep Logs:\n{teacher_prep_breakdown}"
         )
@@ -993,8 +994,9 @@ else:
             mime="application/pdf"
         )
 
-        teacher_lib_breakdown = "\n\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
+        teacher_lib_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
         tab2_metrics_summary = (
+            f"Active KPI Target: At least {calc_lib_kpi:.0f} mins total ({daily_lib_target:.0f} mins/day)\n"
             f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
         )
@@ -1646,7 +1648,7 @@ else:
                     )
                     st.plotly_chart(fig_s6, use_container_width=True)
 
-            t6_teacher_breakdown = "\n".join([f"• {r['Teacher Name']}: Prep {r['Lesson Prep (m)']}m, Library {r['Library Usage (m)']}m ({r['Execution Tier']})" for _, r in display_t6_table.iterrows()])
+            t6_teacher_breakdown = "\n".join([f"• **{r['Teacher Name']}**: Prep {r['Lesson Prep (m)']}m, Library {r['Library Usage (m)']}m ({r['Execution Tier']})" for _, r in display_t6_table.iterrows()])
             tab6_metrics_summary = (
                 f"School Inspection: {target_school_t6} | Achievers: {num_ach} | Fluctuating: {num_fluc} | Inactive: {num_inact}\n\n"
                 f"Teacher Progression Breakdown:\n{t6_teacher_breakdown}"
@@ -1823,8 +1825,9 @@ else:
                 mime="application/pdf"
             )
 
-            q_teacher_breakdown = "\n".join([f"• {r['Teacher Name']} ({r['School']}): Videos {r['Activity Videos']}, Writing {r['Writing Samples']}, LP/VN {r['LP / Voice Notes']} ({r['Overall Qualitative Status']})" for _, r in kpi_summary_df.iterrows()]) if 'kpi_summary_df' in locals() and not kpi_summary_df.empty else ""
+            q_teacher_breakdown = "\n\n".join([f"• **{r['Teacher Name']}** ({r['School']}): Videos {r['Activity Videos']}, Writing {r['Writing Samples']}, LP/VN {r['LP / Voice Notes']} ({r['Overall Qualitative Status']})" for _, r in kpi_summary_df.iterrows()]) if 'kpi_summary_df' in locals() and not kpi_summary_df.empty else ""
             tab7_metrics_summary = (
+                f"Active Qualitative KPIs: Min. {target_vid_count} Videos, Min. {target_writing_count} Writing Samples, Min. {target_lp_combo_count} LP/Voice Notes\n"
                 f"Total Submission Logs: {tot_subs} | Audio Notes: {tot_audios} | LP Pictures: {tot_pics} | Videos: {tot_vids} | Writing: {tot_writing}\n\n"
                 f"Teacher Qualitative Breakdown:\n{q_teacher_breakdown}"
             )
