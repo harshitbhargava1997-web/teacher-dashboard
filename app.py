@@ -283,7 +283,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         # 1. AI-Driven Generator with Voice Transcription & Custom Text Input
         with st.expander("✨ AI-Driven Calling Script & Smart Message Generator (Voice & Text)"):
             
-            # Voice Input Widget (Allows recording voice instructions directly)
             manager_voice_audio = st.audio_input(
                 "🎙️ Record Voice Instructions (Speak your custom prompt):",
                 key=f"voice_input_{tab_name}_{target_crm_school}"
@@ -326,10 +325,12 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         st.markdown("##### 📝 Quick WhatsApp Message Draft (Standard Template)")
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
-        display_contact_name_str = f" {input_contact_name}" if input_contact_name else ""
+        
+        # Properly define name_prefix (handling name and entity type gracefully)
+        name_prefix = f" {input_contact_name}" if input_contact_name and input_contact_name.strip() else ""
         
         default_template_string = (
-            f"Namaste {name_prefix} ji,\n\n"
+            f"Namaste{name_prefix} ji,\n\n"
             f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
             f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
@@ -338,8 +339,9 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             f"Onelern Academic Team"
         )
 
-        if draft_state_key not in st.session_state:
+        if draft_state_key not in st.session_state or st.session_state.get(f"last_name_{tab_name}") != input_contact_name:
             st.session_state[draft_state_key] = default_template_string
+            st.session_state[f"last_name_{tab_name}"] = input_contact_name
 
         editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
         st.session_state[draft_state_key] = editable_wa_area
