@@ -443,35 +443,35 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
                 st.rerun()
 
 
-# 0. Highly Visual Executive PDF Report Generator Helper
+# 0. Highly Visual Executive PDF Report Generator Helper (Enhanced Professional Design)
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
 
-    primary_color = colors.HexColor('#1F77B4')
+    primary_color = colors.HexColor('#2563EB')
     dark_neutral = colors.HexColor('#1E293B')
     light_bg = colors.HexColor('#F8FAFC')
-    border_color = colors.HexColor('#CBD5E1')
-    accent_color = colors.HexColor('#D9534F')
+    border_color = colors.HexColor('#E2E8F0')
+    accent_color = colors.HexColor('#0F172A')
 
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
-    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10.5, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
+    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=5)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=13, textColor=dark_neutral)
     link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold')
-    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#475569'), fontName='Helvetica-Bold', alignment=1)
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
     
     story.append(Paragraph(f"<b>{title_text}</b>", title_style))
-    story.append(Spacer(1, 3))
+    story.append(Spacer(1, 4))
     story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
     story.append(Spacer(1, 3))
     story.append(Paragraph(subtitle_text, subtitle_style))
-    story.append(Spacer(1, 6))
-    story.append(HRFlowable(width="100%", thickness=2, color=primary_color, spaceAfter=10))
+    story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
 
     if summary_metrics:
         headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
@@ -482,29 +482,29 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             ('BACKGROUND', (0, 0), (-1, -1), light_bg),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.75, border_color),
-            ('TOPPADDING', (0, 0), (-1, -1), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ]))
         story.append(kpi_table)
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 12))
 
     if custom_sections:
         for heading, body_items in custom_sections.items():
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
-            story.append(HRFlowable(width="100%", thickness=0.75, color=border_color, spaceAfter=5))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
             for item in body_items:
                 if "http://" in item or "https://" in item:
                     story.append(Paragraph(f"🔗 {item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 10))
 
     if dataframe is not None and not dataframe.empty:
         story.append(Spacer(1, 4))
         raw_data = [dataframe.columns.tolist()] + dataframe.astype(str).values.tolist()
-        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=11, textColor=dark_neutral)
-        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=colors.white, fontName='Helvetica-Bold')
+        cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=8, leading=12, textColor=dark_neutral)
+        header_style = ParagraphStyle('TableHeader', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=colors.white, fontName='Helvetica-Bold')
 
         formatted_data = []
         for i, row in enumerate(raw_data):
@@ -522,7 +522,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('GRID', (0, 0), (-1, -1), 0.4, border_color),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
@@ -540,25 +540,25 @@ def generate_bulk_school_pdf_report(school_name, teachers_list, school_df, filte
     story = []
     styles = getSampleStyleSheet()
 
-    primary_color = colors.HexColor('#1F77B4')
+    primary_color = colors.HexColor('#2563EB')
     dark_neutral = colors.HexColor('#1E293B')
     light_bg = colors.HexColor('#F8FAFC')
-    border_color = colors.HexColor('#CBD5E1')
-    accent_color = colors.HexColor('#D9534F')
+    border_color = colors.HexColor('#E2E8F0')
+    accent_color = colors.HexColor('#0F172A')
 
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=primary_color, fontName='Helvetica-Bold')
     sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=9, leading=12, textColor=dark_neutral)
-    teacher_head = ParagraphStyle('THead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=accent_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=3)
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=dark_neutral)
+    teacher_head = ParagraphStyle('THead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=accent_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=4)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
 
     story.append(Paragraph(f"<b>Bulk School 360° Teacher Profiles Report</b>", title_style))
-    story.append(Spacer(1, 3))
+    story.append(Spacer(1, 4))
     story.append(Paragraph(f"🏫 <b>Institution:</b> {school_name} | 📅 <b>Window:</b> {filter_desc}", sub_style))
-    story.append(Spacer(1, 6))
-    story.append(HRFlowable(width="100%", thickness=2, color=primary_color, spaceAfter=10))
+    story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
 
     for t_name in teachers_list:
-        story.append(Paragraph(f"<b>Teacher: {t_name}</b>", teacher_head))
+        story.append(Paragraph(f"<b>Teacher Profile: {t_name}</b>", teacher_head))
         t_data = school_df[school_df['FullName'] == t_name]
         t_ld = t_data[t_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not t_data.empty else 0.0
         t_lib = t_data[t_data['Type'] == 'library']['Duration_Min'].sum() if not t_data.empty else 0.0
@@ -572,12 +572,12 @@ def generate_bulk_school_pdf_report(school_name, teachers_list, school_df, filte
             b_sum = t_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
             story.append(Paragraph("<b>Textbook / Chapter Pacing Breakdown:</b>", normal_style))
             for _, br in b_sum.iterrows():
-                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;- {br['Book']} ({br['Grade']} - {br['Subject']}): {br['Duration_Min']:.1f} Mins", normal_style))
+                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;• {br['Book']} ({br['Grade']} - {br['Subject']}): <b>{br['Duration_Min']:.1f} Mins</b>", normal_style))
         else:
-            story.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;- No textbooks or chapters opened in active window.", normal_style))
+            story.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;• No textbooks or chapters opened in active window.", normal_style))
         
-        story.append(Spacer(1, 6))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))
+        story.append(Spacer(1, 8))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=10))
 
     doc.build(story)
     buffer.seek(0)
