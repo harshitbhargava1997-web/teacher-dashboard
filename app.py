@@ -2072,7 +2072,6 @@ else:
             t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
             st.dataframe(t7_table, use_container_width=True)
 
-.
             csv_t7 = t7_table.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
