@@ -619,7 +619,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(PageBreak())
 
         teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
-        teacher_date_data = all_filtered_df[all_filtered_df['FullName'] == target_teacher]
+        teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
 
         t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
         t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
