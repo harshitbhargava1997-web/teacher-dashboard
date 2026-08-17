@@ -325,7 +325,7 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         name_prefix = f" {input_contact_name}" if input_contact_name and input_contact_name.strip() else ""
         
         default_template_string = (
-            f"Dear {name_prefix} ,\n\n"
+            f"Namaste{name_prefix} ji,\n\n"
             f"Here is the performance update for {target_crm_school} - {current_filter_description}:\n\n"
             f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
@@ -522,7 +522,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     return buffer
 
 
-def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df, all_filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi):
+def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_filtered_df, all_filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi, daily_ld_target, daily_lib_target, selected_num_days):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -537,15 +537,33 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
     school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=5)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=13, textColor=dark_neutral)
     link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold')
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
+    # --- PART 1: SCHOOL-LEVEL FEATURE SUMMARY (TAB 1 & TAB 2 AGGREGATES) ---
+    story.append(Paragraph(f"<b>Comprehensive School Audit & Feature-Wise Report</b>", title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(f"Observation Window: {filter_desc}", subtitle_style))
+    story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
+
+    story.append(Paragraph("<b>School-Level Feature Summary (Lesson Prep & Library Usage)</b>", sec_head_style))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
+
+    total_roster_count = len(teachers_list)
+    story.append(Paragraph(f"• <b>Total Active Roster Teachers:</b> {total_roster_count}", normal_style))
+    story.append(Paragraph(f"• <b>Lesson Prep Benchmark Target:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total standard)", normal_style))
+    story.append(Paragraph(f"• <b>Library Usage Benchmark Target:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total standard)", normal_style))
+    story.append(Spacer(1, 10))
+
+    # --- PART 2: INDIVIDUAL TEACHER 360° PROFILES ---
     for idx, target_teacher in enumerate(teachers_list):
-        if idx > 0:
-            story.append(PageBreak())
+        story.append(PageBreak())
 
         teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
         teacher_date_data = all_filtered_df[all_filtered_df['FullName'] == target_teacher]
@@ -1495,19 +1513,22 @@ else:
             with col_bulk_btn:
                 st.markdown("<br>", unsafe_allow_html=True)
                 school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
-                bulk_pdf_data = generate_bulk_school_360_pdf(
+                bulk_pdf_data = generate_comprehensive_school_pdf_report(
                     school_name=teacher_school,
                     teachers_list=school_teachers_list,
                     school_filtered_df=school_filtered_df,
                     all_filtered_df=filtered_df,
                     filter_desc=filter_description_text,
                     calc_ld_kpi=calc_ld_kpi,
-                    calc_lib_kpi=calc_lib_kpi
+                    calc_lib_kpi=calc_lib_kpi,
+                    daily_ld_target=daily_ld_target,
+                    daily_lib_target=daily_lib_target,
+                    selected_num_days=selected_num_days
                 )
                 st.download_button(
                     label="📥 Download Bulk School 360 Profiles (PDF)",
                     data=bulk_pdf_data,
-                    file_name=f"{teacher_school.replace(' ', '_')}_Bulk_360_Profiles.pdf",
+                    file_name=f"{teacher_school.replace(' ', '_')}_Comprehensive_School_Report.pdf",
                     mime="application/pdf",
                     key="bulk_school_pdf_btn"
                 )
