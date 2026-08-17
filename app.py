@@ -534,6 +534,56 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     return buffer
 
 
+def generate_bulk_school_pdf_report(school_name, teachers_list, school_df, filter_desc, calc_ld, calc_lib):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    styles = getSampleStyleSheet()
+
+    primary_color = colors.HexColor('#1F77B4')
+    dark_neutral = colors.HexColor('#1E293B')
+    light_bg = colors.HexColor('#F8FAFC')
+    border_color = colors.HexColor('#CBD5E1')
+    accent_color = colors.HexColor('#D9534F')
+
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=primary_color, fontName='Helvetica-Bold')
+    sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=9, leading=12, textColor=dark_neutral)
+    teacher_head = ParagraphStyle('THead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=accent_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=3)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=dark_neutral)
+
+    story.append(Paragraph(f"<b>Bulk School 360° Teacher Profiles Report</b>", title_style))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(f"🏫 <b>Institution:</b> {school_name} | 📅 <b>Window:</b> {filter_desc}", sub_style))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=2, color=primary_color, spaceAfter=10))
+
+    for t_name in teachers_list:
+        story.append(Paragraph(f"<b>Teacher: {t_name}</b>", teacher_head))
+        t_data = school_df[school_df['FullName'] == t_name]
+        t_ld = t_data[t_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not t_data.empty else 0.0
+        t_lib = t_data[t_data['Type'] == 'library']['Duration_Min'].sum() if not t_data.empty else 0.0
+
+        story.append(Paragraph(f"• Lesson Prep Logged: <b>{t_ld:.1f} Mins</b> | Library Usage Logged: <b>{t_lib:.1f} Mins</b>", normal_style))
+
+        t_books = t_data[t_data['Book'].str.len() > 0] if not t_data.empty else pd.DataFrame()
+        t_books = t_books[~t_books['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
+        
+        if not t_books.empty:
+            b_sum = t_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
+            story.append(Paragraph("<b>Textbook / Chapter Pacing Breakdown:</b>", normal_style))
+            for _, br in b_sum.iterrows():
+                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;- {br['Book']} ({br['Grade']} - {br['Subject']}): {br['Duration_Min']:.1f} Mins", normal_style))
+        else:
+            story.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;- No textbooks or chapters opened in active window.", normal_style))
+        
+        story.append(Spacer(1, 6))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=True):
     try:
         start_np = np.datetime64(start_date)
@@ -786,23 +836,23 @@ else:
     if month_filtered_df.empty and view_mode != "Custom Date Range":
         filtered_df = month_filtered_df
         selected_num_days = 1
-        filter_description_text = f"Full Month: {selected_month} (0 Records)"
+        filter_description_text = f"Full Month: {selected_month} - 0 Records"
     elif view_mode == "Full Month Summary":
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
+        filter_description_text = f"Full Month: {selected_month} - {selected_num_days} Working Days"
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
         w_start = filtered_df['Date'].min() if not filtered_df.empty else selected_month
         w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
+        filter_description_text = f"{selected_week_label} - {selected_num_days} Working Days"
     elif view_mode == "Single Day Review":
         selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
         selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"
+        filter_description_text = f"Single Date: {selected_date} - {selected_num_days} Working Days"
     else:
         min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
         max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
@@ -817,7 +867,7 @@ else:
             
         filtered_df = school_filtered_df[(school_filtered_df['Date'] >= c_start) & (school_filtered_df['Date'] <= c_end)]
         selected_num_days = get_working_days(c_start, c_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Custom Range: {c_start} to {c_end} ({selected_num_days} Working Day(s))"
+        filter_description_text = f"Custom Range: {c_start} to {c_end} - {selected_num_days} Working Days"
 
     calc_ld_kpi = daily_ld_target * selected_num_days
     calc_lib_kpi = daily_lib_target * selected_num_days
@@ -915,7 +965,7 @@ else:
 
         teacher_prep_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
         tab1_metrics_summary = (
-            f"Active KPI Target: At least {calc_ld_kpi:.0f} mins total ({daily_ld_target:.0f} mins/day)\n"
+            f"🎯 Target KPI: {daily_ld_target:.0f} mins/day × {selected_num_days} working days = {calc_ld_kpi:.0f} mins total standard\n"
             f"Total Roster: {total_teachers} teachers | Met Standard: {met_count} | Inactive: {inactive_count} | Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Lesson Prep Logs:\n{teacher_prep_breakdown}"
         )
@@ -996,9 +1046,10 @@ else:
 
         teacher_lib_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
         tab2_metrics_summary = (
-            f"Active KPI Target: At least {calc_lib_kpi:.0f} mins total ({daily_lib_target:.0f} mins/day)\n"
+            f"🎯 Target KPI: {daily_lib_target:.0f} mins/day × {selected_num_days} working days = {calc_lib_kpi:.0f} mins total standard\n"
             f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
-            f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
+            f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}\n\n"
+            f"Note: Detailed chapter-wise reports are available in the PDF for all teachers."
         )
         render_universal_crm_box("Library Usage Tracker", selected_schools, filter_description_text, tab2_metrics_summary)
 
@@ -1135,7 +1186,7 @@ else:
         if not all_roster_teachers:
             st.info("No teachers found in roster for the selected school(s).")
         else:
-            col_sel_top, col_btn_top = st.columns([2, 1])
+            col_sel_top, col_btn_top, col_bulk_btn = st.columns([2, 1, 1])
             with col_sel_top:
                 target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers, key="top_teacher_select")
             
@@ -1253,6 +1304,25 @@ else:
                     file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
                     mime="application/pdf",
                     key="top_pdf_download_btn"
+                )
+
+            with col_bulk_btn:
+                st.markdown("<br>", unsafe_allow_html=True)
+                school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
+                bulk_pdf_data = generate_bulk_school_pdf_report(
+                    school_name=teacher_school,
+                    teachers_list=school_teachers_list,
+                    school_df=school_filtered_df,
+                    filter_desc=filter_description_text,
+                    calc_ld=calc_ld_kpi,
+                    calc_lib=calc_lib_kpi
+                )
+                st.download_button(
+                    label="📥 Download Bulk School 360 Profiles (PDF)",
+                    data=bulk_pdf_data,
+                    file_name=f"{teacher_school.replace(' ', '_')}_Bulk_360_Profiles.pdf",
+                    mime="application/pdf",
+                    key="bulk_school_pdf_btn"
                 )
 
             st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
@@ -1409,7 +1479,7 @@ else:
                         label=f"📥 Download Full CSV Audit for {target_teacher}",
                         data=csv_profile,
                         file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.csv",
-                        mime="text/csv"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
             tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Qualitative Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}"
