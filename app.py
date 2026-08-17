@@ -53,6 +53,17 @@ def _norm_key(value):
     return _norm_text(value).casefold()
 
 
+def _sanitize_df_for_parquet(df_in):
+    """Ensures consistent datatypes and handles datetime coercion for Parquet serialization."""
+    if df_in is None or df_in.empty:
+        return pd.DataFrame()
+    out = df_in.copy()
+    for dt_col in ['StartTime', 'EndTime']:
+        if dt_col in out.columns:
+            out[dt_col] = pd.to_datetime(out[dt_col], errors='coerce')
+    return out
+
+
 def normalize_identity_columns(df):
     out = df.copy()
 
@@ -83,6 +94,7 @@ def fetch_master_db_from_supabase():
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
             base_df = pd.read_parquet(BytesIO(response))
+            base_df = _sanitize_df_for_parquet(base_df)
     except Exception:
         pass
 
@@ -101,6 +113,7 @@ def fetch_master_db_from_supabase():
 
     if sub_records:
         subs_df = pd.DataFrame(sub_records)
+        subs_df = _sanitize_df_for_parquet(subs_df)
         combined = pd.concat([base_df, subs_df], ignore_index=True) if not base_df.empty else subs_df
         return normalize_identity_columns(combined)
 
@@ -695,12 +708,13 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(Spacer(1, 6))
         story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
+        # UPDATED METRIC HEADER TERMINOLOGY
         summary_metrics = {
             "Teacher": target_teacher,
             "Lesson Prep": f"{t_day_ld:.1f}m",
             "Library Usage": f"{t_day_lib:.1f}m",
             "Phonics/Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
-            "Qualitative Artifacts": f"{total_artifacts}"
+            "Activity Submissions": f"{total_artifacts}"
         }
         headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
         values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
@@ -717,14 +731,15 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(kpi_table)
         story.append(Spacer(1, 10))
 
+        # UPDATED SECTION HEADINGS TERMINOLOGY
         sections = {
-            "1. Quantitative Delivery & Planning Highlights": [
+            "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
                 f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
                 f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes ({lib_pct:.0f}% of Academic Benchmark)",
                 f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
             ],
-            "2. Detailed Digital Textbook & Chapter Pacing": pdf_book_items,
-            "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
+            "2. Content / Digital Book Content Usage": pdf_book_items,
+            "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
         }
 
         for heading, body_items in sections.items():
@@ -759,29 +774,22 @@ st.markdown("Track **School Portfolio Management**, **School WoW Velocity**, **T
 # 1. Supabase Parquet Database Manager Function
 def load_or_update_master_db(new_upload_dfs=None):
     master_df = fetch_master_db_from_supabase()
-
-    for dt_col in ['StartTime', 'EndTime']:
-        if not master_df.empty and dt_col in master_df.columns:
-            master_df[dt_col] = pd.to_datetime(master_df[dt_col], errors='coerce')
+    master_df = _sanitize_df_for_parquet(master_df)
 
     if not new_upload_dfs:
         return normalize_identity_columns(master_df) if not master_df.empty else master_df
 
     combined_new = pd.concat(new_upload_dfs, ignore_index=True)
-    for dt_col in ['StartTime', 'EndTime']:
-        if dt_col in combined_new.columns:
-            combined_new[dt_col] = pd.to_datetime(combined_new[dt_col], errors='coerce')
+    combined_new = _sanitize_df_for_parquet(combined_new)
 
     all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
-
-    for dt_col in ['StartTime', 'EndTime']:
-        if dt_col in all_data.columns:
-            all_data[dt_col] = pd.to_datetime(all_data[dt_col], errors='coerce')
+    all_data = _sanitize_df_for_parquet(all_data)
 
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     available_dedup_cols = [c for c in dedup_cols if c in all_data.columns]
     master_df = all_data.drop_duplicates(subset=available_dedup_cols, keep='last')
+    master_df = _sanitize_df_for_parquet(master_df)
 
     try:
         parquet_buffer = BytesIO()
@@ -906,7 +914,9 @@ if not current_db_check.empty:
                             (current_db_check['Uploaded_By'].str.casefold() == del_emp_name.strip().casefold()) & 
                             (current_db_check['State_Zone'] == del_state_zone)
                         )
-                        updated_db = current_db_check[mask]
+                        updated_db = current_db_check[mask].copy()
+                        updated_db = _sanitize_df_for_parquet(updated_db)
+
                         parquet_buffer = BytesIO()
                         updated_db.to_parquet(parquet_buffer, index=False)
                         parquet_buffer.seek(0)
@@ -926,7 +936,9 @@ if not current_db_check.empty:
             target_del_school = st.selectbox("Select School to Delete:", options=schools_in_db)
             if st.button("🗑️ Delete School Data from Cloud"):
                 try:
-                    updated_db = current_db_check[current_db_check['Institution'] != target_del_school]
+                    updated_db = current_db_check[current_db_check['Institution'] != target_del_school].copy()
+                    updated_db = _sanitize_df_for_parquet(updated_db)
+
                     parquet_buffer = BytesIO()
                     updated_db.to_parquet(parquet_buffer, index=False)
                     parquet_buffer.seek(0)
@@ -960,11 +972,9 @@ else:
         else:
             df['FullName'] = 'Unknown Teacher'
 
-    for dt_col in ['StartTime', 'EndTime']:
-        if dt_col in df.columns:
-            df[dt_col] = pd.to_datetime(df[dt_col], errors='coerce')
+    df = _sanitize_df_for_parquet(df)
 
-    if 'StartTime' in df.columns:
+    if 'StartTime' in df.columns and not df['StartTime'].isna().all():
         df['Date'] = df['StartTime'].dt.date
         df['Month_Name'] = df['StartTime'].dt.strftime('%B %Y')
         df['Month_Sort'] = df['StartTime'].dt.strftime('%Y-%m')
@@ -1505,7 +1515,7 @@ else:
                 ld_advice = "✅ Holiday / Scheduled Break"
 
             if calc_lib_kpi > 0:
-                lib_advice = f"🌟 Steady Execution ({t_day_lib:.1f}m logged)" if t_day_lib >= calc_lib_kpi else (f"⚠️ In-Progress ({t_day_lib:.1f}m logged)" if t_day_lib > 0 else "❌ Pending Activity")
+                lib_advice = f"🌟 Steady Execution ({t_day_lib:.1f}m logged)" if t_day_lib >= calc_lib_kpi else (f"⚠️ In-Progress ({t_day_lib:.1f}m logged)" if t_day_ld > 0 else "❌ Pending Activity")
             else:
                 lib_advice = "✅ Holiday / Scheduled Break"
 
@@ -1572,14 +1582,15 @@ else:
             for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
 
+            # UPDATED SECTION HEADINGS TERMINOLOGY
             pdf_custom_sections = {
-                "1. Quantitative Delivery & Planning Highlights": [
+                "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
                     f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
                     f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
                     f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
                 ],
-                "2. Detailed Digital Textbook & Chapter Pacing": pdf_book_items,
-                "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
+                "2. Content / Digital Book Content Usage": pdf_book_items,
+                "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
             }
 
             pdf_tab4_summary = generate_pdf_report(
@@ -1591,7 +1602,7 @@ else:
                     "Lesson Prep": f"{t_day_ld:.1f}m",
                     "Library Usage": f"{t_day_lib:.1f}m",
                     "Phonics / Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
-                    "Artifacts Total": f"{total_artifacts}"
+                    "Activity Submissions": f"{total_artifacts}"
                 },
                 dataframe=None,
                 custom_sections=pdf_custom_sections
@@ -1792,7 +1803,7 @@ else:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
-            tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Phonics: {len(v_phonics)}, Portfolio: {len(v_portfolio)}, Total Artifacts: {total_artifacts}"
+            tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Phonics: {len(v_phonics)}, Portfolio: {len(v_portfolio)}, Activity Submissions: {total_artifacts}"
             render_universal_crm_box("Teacher 360 Profile", teacher_school, filter_description_text, tab4_metrics_summary)
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
