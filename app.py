@@ -136,7 +136,7 @@ def _norm_key(value):
 def normalize_identity_columns(df):
     out = df.copy()
 
-    for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role"]:
+    for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role", "Uploaded_By", "State_Zone"]:
         if col not in out.columns:
             out[col] = ""
         out[col] = out[col].map(_norm_text)
@@ -153,7 +153,7 @@ def normalize_identity_columns(df):
 
 def build_teacher_roster(df):
     if df is None or df.empty:
-        return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role"])
+        return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role", "Uploaded_By", "State_Zone"])
 
     roster = normalize_identity_columns(df)
 
@@ -188,13 +188,12 @@ def get_gemini_summary(context_prompt, audio_file_obj=None):
     try:
         contents_payload = [context_prompt]
         
-        # If user recorded voice instructions, attach audio bytes directly for native understanding
         if audio_file_obj is not None:
             audio_bytes = audio_file_obj.read()
             contents_payload.append(
                 genai.types.Part.from_bytes(
                     data=audio_bytes,
-                    mime_type="audio/wav"  # Streamlit st.audio_input outputs WAV format
+                    mime_type="audio/wav"
                 )
             )
 
@@ -281,7 +280,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
-        # 1. AI-Driven Generator with Voice Transcription & Custom Text Input
         with st.expander("✨ AI-Driven Calling Script & Smart Message Generator (Voice & Text)"):
             
             manager_voice_audio = st.audio_input(
@@ -306,7 +304,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
                     Target Entity: {selected_entity_type} named {input_contact_name or 'Sir/Madam'}
                     Tone: {custom_tone}
                     Text Instructions Provided: {user_custom_instruction if user_custom_instruction else 'None'}
-                    (Note: If an audio recording is attached, listen to and incorporate the manager's verbal instructions regarding what to emphasize).
                     
                     Generate two distinct outputs:
                     1. **Calling Script**: A structured phone conversation script calling out specific teacher data points, praises, and areas of concern to discuss with this {selected_entity_type}.
@@ -322,12 +319,9 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             if f"ai_gen_output_{tab_name}_{target_crm_school}" in st.session_state:
                 st.markdown(st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"])
 
-        # 2. Quick Standard Template / Confirmation Draft
         st.markdown("##### 📝 Quick WhatsApp Message Draft (Standard Template)")
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
-        
-        # Properly define name_prefix so it correctly formats the contact name
         name_prefix = f" {input_contact_name}" if input_contact_name and input_contact_name.strip() else ""
         
         default_template_string = (
@@ -389,7 +383,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             else:
                 st.warning("Please enter discussion notes before saving.")
 
-    # --- FILTERABLE CALL LOGS & EXCEL/CSV EXPORT ---
     if st.session_state["crm_call_logs_store"]:
         st.markdown("##### 📊 Filterable Call Discussion Logs & Audit Trail")
         logs_df = pd.DataFrame(st.session_state["crm_call_logs_store"])
@@ -436,14 +429,9 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
                     st.rerun()
         else:
             st.info("No call logs match the selected filter criteria.")
-            if st.button("🗑️ Clear All Saved Call Logs from Supabase", key=f"clear_empty_logs_btn_{tab_name}"):
-                st.session_state["crm_call_logs_store"] = []
-                save_call_logs_to_supabase([])
-                st.success("Successfully cleared all call logs from Supabase!")
-                st.rerun()
 
 
-# 0. Highly Visual Executive PDF Report Generator Helper (Enhanced Professional Design)
+# --- PDF REPORT GENERATOR HELPERS ---
 def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics, dataframe=None, custom_sections=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -549,8 +537,8 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
     school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=5)
-    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=13, textColor=dark_neutral)
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
+    normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
     link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold')
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
@@ -568,15 +556,8 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
         ld_pct = (t_day_ld / calc_ld_kpi) * 100 if calc_ld_kpi > 0 else (100.0 if t_day_ld >= 0 else 0)
         lib_pct = (t_day_lib / calc_lib_kpi) * 100 if calc_lib_kpi > 0 else (100.0 if t_day_lib >= 0 else 0)
 
-        if calc_ld_kpi > 0:
-            ld_advice = f"Steady Execution ({t_day_ld:.1f}m logged)" if t_day_ld >= calc_ld_kpi else (f"In-Progress ({t_day_ld:.1f}m logged)" if t_day_ld > 0 else "Pending Activity")
-        else:
-            ld_advice = "Holiday / Scheduled Break"
-
-        if calc_lib_kpi > 0:
-            lib_advice = f"Steady Execution ({t_day_lib:.1f}m logged)" if t_day_lib >= calc_lib_kpi else (f"In-Progress ({t_day_lib:.1f}m logged)" if t_day_lib > 0 else "Pending Activity")
-        else:
-            lib_advice = "Holiday / Scheduled Break"
+        ld_advice = f"Steady Execution ({t_day_ld:.1f}m logged)" if (calc_ld_kpi > 0 and t_day_ld >= calc_ld_kpi) else (f"In-Progress ({t_day_ld:.1f}m logged)" if t_day_ld > 0 else "Pending Activity")
+        lib_advice = f"Steady Execution ({t_day_lib:.1f}m logged)" if (calc_lib_kpi > 0 and t_day_lib >= calc_lib_kpi) else (f"In-Progress ({t_day_lib:.1f}m logged)" if t_day_lib > 0 else "Pending Activity")
 
         t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
         if t_books_raw.empty:
@@ -646,10 +627,9 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
         story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
         story.append(Spacer(1, 3))
         story.append(Paragraph(f"Observation Window: {filter_desc}", subtitle_style))
-        story.append(Spacer(1, 8))
-        story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
+        story.append(Spacer(1, 6))
+        story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
-        # KPI Summary Cards Table
         summary_metrics = {
             "Teacher": target_teacher,
             "Lesson Prep": f"{t_day_ld:.1f}m",
@@ -665,13 +645,12 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('GRID', (0, 0), (-1, -1), 0.5, border_color),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(kpi_table)
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
 
-        # Sections
         sections = {
             "1. Quantitative Delivery & Planning Highlights": [
                 f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
@@ -684,13 +663,13 @@ def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df,
 
         for heading, body_items in sections.items():
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
-            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
             for item in body_items:
                 if "http://" in item or "https://" in item:
                     story.append(Paragraph(f"🔗 {item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 8))
 
     doc.build(story)
     buffer.seek(0)
@@ -755,8 +734,13 @@ def load_or_update_master_db(new_upload_dfs=None):
 
     return master_df
 
-# 2. Sidebar Data Upload Manager
-st.sidebar.header("📁 Data Upload & Database Sync")
+
+# --- 2. MULTI-EMPLOYEE HIERARCHY & DATA UPLOAD MANAGER ---
+st.sidebar.header("📁 Multi-Employee Data Ingestion Portal")
+
+employee_name = st.sidebar.selectbox("Select Consultant Name:", ["Harshit Bhargava", "Consultant 2", "Consultant 3", "Consultant 4"])
+employee_state = st.sidebar.selectbox("Select State / Zone:", ["Madhya Pradesh (MP)", "State 2", "State 3"])
+
 uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)
 
 new_processed_dfs = []
@@ -765,6 +749,10 @@ if uploaded_files:
         try:
             temp_df = pd.read_excel(file, sheet_name="UserMetrics")
             temp_df = normalize_identity_columns(temp_df)
+            
+            temp_df['Uploaded_By'] = employee_name
+            temp_df['State_Zone'] = employee_state
+
             if temp_df['Institution'].eq('').all():
                 temp_df['Institution'] = "Default School"
             else:
@@ -811,9 +799,9 @@ if new_processed_dfs:
 else:
     df = load_or_update_master_db()
 
-# 3. Cloud Database Status & Storage Controls
+# --- 3. GRANULAR CLOUD DATABASE MANAGEMENT & SELECTIVE DELETION ---
 st.sidebar.markdown("---")
-st.sidebar.header("🗄️ Supabase Cloud Database Status")
+st.sidebar.header("🗄️ Granular Cloud Database Management")
 
 if st.sidebar.button("🔄 Sync Latest Teacher Submissions"):
     fetch_master_db_from_supabase.clear()
@@ -823,14 +811,59 @@ current_db_check = fetch_master_db_from_supabase()
 
 if not current_db_check.empty:
     st.sidebar.metric("Cloud DB Total Records", len(current_db_check))
-    if st.sidebar.button("🚨 Clear Cloud Database"):
-        try:
-            supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])
-            fetch_master_db_from_supabase.clear()
-            st.sidebar.error("Cloud database cleared!")
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"Could not delete database from cloud: {e}")
+    
+    with st.sidebar.expander("🛠️ Selective Database Cleanup"):
+        clean_mode = st.radio("Select Cleanup Scope:", ["By School", "By Consultant (Employee)", "Clear Entire DB"])
+        
+        if clean_mode == "By School":
+            schools_in_db = sorted(current_db_check['Institution'].dropna().unique().tolist()) if 'Institution' in current_db_check.columns else []
+            target_del_school = st.selectbox("Select School to Delete:", options=schools_in_db)
+            if st.button("🗑️ Delete School Data from Cloud"):
+                try:
+                    updated_db = current_db_check[current_db_check['Institution'] != target_del_school]
+                    parquet_buffer = BytesIO()
+                    updated_db.to_parquet(parquet_buffer, index=False)
+                    parquet_buffer.seek(0)
+                    supabase.storage.from_(BUCKET_NAME).upload(
+                        path=PARQUET_FILE_NAME,
+                        file=parquet_buffer.getvalue(),
+                        file_options={"upsert": "true", "content-type": "application/octet-stream"}
+                    )
+                    fetch_master_db_from_supabase.clear()
+                    st.success(f"Successfully removed data for {target_del_school} from Supabase!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting school data: {e}")
+                    
+        elif clean_mode == "By Consultant (Employee)":
+            emps_in_db = sorted(current_db_check['Uploaded_By'].dropna().unique().tolist()) if 'Uploaded_By' in current_db_check.columns else []
+            target_del_emp = st.selectbox("Select Consultant to Delete:", options=emps_in_db)
+            if st.button("🗑️ Delete Consultant Data from Cloud"):
+                try:
+                    updated_db = current_db_check[current_db_check['Uploaded_By'] != target_del_emp]
+                    parquet_buffer = BytesIO()
+                    updated_db.to_parquet(parquet_buffer, index=False)
+                    parquet_buffer.seek(0)
+                    supabase.storage.from_(BUCKET_NAME).upload(
+                        path=PARQUET_FILE_NAME,
+                        file=parquet_buffer.getvalue(),
+                        file_options={"upsert": "true", "content-type": "application/octet-stream"}
+                    )
+                    fetch_master_db_from_supabase.clear()
+                    st.success(f"Successfully removed records uploaded by {target_del_emp}!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting employee data: {e}")
+                    
+        else:
+            if st.button("🚨 Clear Entire Cloud Database"):
+                try:
+                    supabase.storage.from_(BUCKET_NAME).remove([PARQUET_FILE_NAME])
+                    fetch_master_db_from_supabase.clear()
+                    st.sidebar.error("Cloud database cleared!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Could not delete database from cloud: {e}")
 
 if df.empty:
     st.info("👋 Upload your raw daily or weekly `UserMetrics.xlsx` files in the sidebar to populate your permanent Supabase database.")
@@ -877,20 +910,38 @@ else:
 
     master_teacher_roster = build_teacher_roster(df)
     if master_teacher_roster.empty:
-        master_teacher_roster = pd.DataFrame(columns=['Institution', 'FullName'])
+        master_teacher_roster = pd.DataFrame(columns=['Institution', 'FullName', 'Uploaded_By', 'State_Zone'])
     else:
-        master_teacher_roster = master_teacher_roster[['Institution', 'FullName']].drop_duplicates()
+        master_teacher_roster = master_teacher_roster[['Institution', 'FullName', 'Uploaded_By', 'State_Zone']].drop_duplicates()
 
-    # --- 1. GLOBAL SCHOOL FILTER ---
+    # --- HIERARCHICAL GLOBAL FILTERS ---
     st.sidebar.markdown("---")
-    st.sidebar.header("🔍 Global Filters")
-    all_schools = sorted([str(s) for s in df['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
+    st.sidebar.header("🔍 Hierarchical Global Filters")
+    
+    # 1. State / Zone Level Filter
+    all_states = sorted([str(s) for s in df['State_Zone'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
+    if all_states:
+        selected_states = st.sidebar.multiselect("Select State(s) / Zone(s)", options=all_states, default=all_states)
+        df_state = df[df['State_Zone'].isin(selected_states)]
+    else:
+        df_state = df
+
+    # 2. Consultant / Employee Level Filter
+    all_employees = sorted([str(e) for e in df_state['Uploaded_By'].unique() if str(e).strip() and str(e).lower() not in ['nan', 'none']])
+    if all_employees:
+        selected_employees = st.sidebar.multiselect("Select Consultant(s)", options=all_employees, default=all_employees)
+        df_emp = df_state[df_state['Uploaded_By'].isin(selected_employees)]
+    else:
+        df_emp = df_state
+
+    # 3. School Level Filter
+    all_schools = sorted([str(s) for s in df_emp['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
     selected_schools = st.sidebar.multiselect("Select School(s)", options=all_schools, default=all_schools)
 
     school_master_roster = master_teacher_roster[master_teacher_roster['Institution'].isin(selected_schools)]
-    school_filtered_df = df[df['Institution'].isin(selected_schools)]
+    school_filtered_df = df_emp[df_emp['Institution'].isin(selected_schools)]
 
-    # --- 2. GLOBAL CALENDAR & HOLIDAY MANAGER ---
+    # --- CALENDAR & HOLIDAY MANAGER ---
     st.sidebar.markdown("---")
     st.sidebar.header("📅 Calendar & Holiday Manager")
     
@@ -914,10 +965,10 @@ else:
             format_func=lambda x: x.strftime('%Y-%m-%d')
         )
 
-    # --- 3. DYNAMIC PERFORMANCE INDICATOR CONTROLS ---
+    # --- QUANTITATIVE & QUALITATIVE KPI CONTROLS ---
     st.sidebar.markdown("---")
     st.sidebar.header("🎯 Quantitative Performance Indicator Controls")
-    enable_quant_kpi = st.sidebar.checkbox("Enable Quantitative Performance Indicator Benchmarks", value=True, help="Toggle on/off quantitative minutes benchmark targets.")
+    enable_quant_kpi = st.sidebar.checkbox("Enable Quantitative Performance Indicator Benchmarks", value=True)
     
     if enable_quant_kpi:
         daily_ld_target = st.sidebar.number_input("Lesson Prep Target (Mins/Day)", min_value=0.0, max_value=60.0, value=10.0, step=5.0)
@@ -928,18 +979,18 @@ else:
 
     st.sidebar.markdown("---")
     st.sidebar.header("🎨 Qualitative Artifact Performance Indicator Controls")
-    enable_qual_kpi = st.sidebar.checkbox("Enable Qualitative Performance Indicator Benchmarks", value=True, help="Toggle on/off qualitative submission target tracking across reports.")
+    enable_qual_kpi = st.sidebar.checkbox("Enable Qualitative Performance Indicator Benchmarks", value=True)
     
     if enable_qual_kpi:
         target_vid_count = st.sidebar.number_input("Min. Activity Videos Required", min_value=1, max_value=20, value=3, step=1)
         target_writing_count = st.sidebar.number_input("Min. Writing Practice Required", min_value=1, max_value=20, value=3, step=1)
-        target_lp_combo_count = st.sidebar.number_input("Min. Lesson Plan / Voice Note Submissions", min_value=1, max_value=20, value=3, step=1, help="Combined entity: satisfied by either Lesson Plan Pictures or Voice Notes.")
+        target_lp_combo_count = st.sidebar.number_input("Min. Lesson Plan / Voice Note Submissions", min_value=1, max_value=20, value=3, step=1)
     else:
         target_vid_count = 0
         target_writing_count = 0
         target_lp_combo_count = 0
 
-    # --- 4. GRANULARITY & CUSTOM DATE RANGE SELECTOR ---
+    # --- GRANULARITY & CUSTOM DATE RANGE SELECTOR ---
     st.sidebar.subheader("🔍 Review View Level")
     available_month_weeks = sorted(month_filtered_df['Month_Week_Label'].dropna().unique())
     available_dates = sorted(month_filtered_df['Date'].dropna().unique(), reverse=True)
@@ -985,7 +1036,7 @@ else:
     calc_ld_kpi = daily_ld_target * selected_num_days
     calc_lib_kpi = daily_lib_target * selected_num_days
 
-    # --- 5. GLOBAL TEACHER FILTER ---
+    # --- GLOBAL TEACHER FILTER ---
     available_teachers = sorted([str(t) for t in school_master_roster['FullName'].unique() if str(t).strip()])
     selected_teachers = st.sidebar.multiselect("Select Teacher(s)", options=available_teachers, default=available_teachers)
     
