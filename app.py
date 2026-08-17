@@ -740,8 +740,8 @@ st.sidebar.header("📁 Multi-Employee Data Ingestion Portal")
 
 employee_name = st.sidebar.text_input("Enter Consultant Name:", value="Harshit Bhargava")
 employee_state = st.sidebar.selectbox("Select State / Zone (India Region):", [
-    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
-    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh (MP)", 
+    "Madhya Pradesh (MP)", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", 
     "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
     "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
     "Uttarakhand", "West Bengal", "Delhi NCR", "Jammu and Kashmir", "Ladakh"
@@ -824,8 +824,8 @@ if not current_db_check.empty:
         if clean_mode == "By Consultant Name & State/Zone":
             del_emp_name = st.text_input("Enter Exact Consultant Name to Delete:", value="")
             del_state_zone = st.selectbox("Select State/Zone for Cleanup:", [
-                "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
-                "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh (MP)", 
+                "Madhya Pradesh (MP)", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+                "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", 
                 "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
                 "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
                 "Uttarakhand", "West Bengal", "Delhi NCR", "Jammu and Kashmir", "Ladakh"
@@ -934,14 +934,16 @@ else:
     else:
         master_teacher_roster = master_teacher_roster[['Institution', 'FullName', 'Uploaded_By', 'State_Zone']].drop_duplicates()
 
-    # --- HIERARCHICAL GLOBAL FILTERS ---
+    # --- HIERARCHICAL GLOBAL FILTERS (DEFAULT TO MP) ---
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Hierarchical Global Filters")
     
     # 1. State / Zone Level Filter
     all_states = sorted([str(s) for s in df['State_Zone'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
+    default_states = ["Madhya Pradesh (MP)"] if "Madhya Pradesh (MP)" in all_states else all_states
+    
     if all_states:
-        selected_states = st.sidebar.multiselect("Select State(s) / Zone(s)", options=all_states, default=all_states)
+        selected_states = st.sidebar.multiselect("Select State(s) / Zone(s)", options=all_states, default=default_states)
         df_state = df[df['State_Zone'].isin(selected_states)]
     else:
         df_state = df
@@ -2066,7 +2068,7 @@ else:
                 st.markdown("---")
 
             st.subheader("📋 Granular Qualitative Submissions Log")
-            t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
+            t7_display_cols = ['StartTime', 'Institution', 'FullName', 'Grade', 'Section', 'Subject', 'Book', 'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link']
             t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
             
             t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
