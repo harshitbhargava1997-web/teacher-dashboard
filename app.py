@@ -16,7 +16,7 @@ from google import genai
 
 # ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -534,7 +534,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     return buffer
 
 
-def generate_bulk_school_pdf_report(school_name, teachers_list, school_df, filter_desc, calc_ld, calc_lib):
+def generate_bulk_school_360_pdf(school_name, teachers_list, school_filtered_df, all_filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -547,37 +547,150 @@ def generate_bulk_school_pdf_report(school_name, teachers_list, school_df, filte
     accent_color = colors.HexColor('#0F172A')
 
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, leading=18, textColor=primary_color, fontName='Helvetica-Bold')
-    sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=9, leading=12, textColor=dark_neutral)
-    teacher_head = ParagraphStyle('THead', parent=styles['Heading2'], fontSize=11, leading=14, textColor=accent_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=4)
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=dark_neutral)
+    school_style = ParagraphStyle('SchoolHead', parent=styles['Normal'], fontSize=10, leading=14, textColor=accent_color, fontName='Helvetica-Bold')
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, leading=15, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
     normal_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=dark_neutral)
+    link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold')
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
-    story.append(Paragraph(f"<b>Bulk School 360° Teacher Profiles Report</b>", title_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"🏫 <b>Institution:</b> {school_name} | 📅 <b>Window:</b> {filter_desc}", sub_style))
-    story.append(Spacer(1, 8))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
+    for idx, target_teacher in enumerate(teachers_list):
+        if idx > 0:
+            story.append(PageBreak())
 
-    for t_name in teachers_list:
-        story.append(Paragraph(f"<b>Teacher Profile: {t_name}</b>", teacher_head))
-        t_data = school_df[school_df['FullName'] == t_name]
-        t_ld = t_data[t_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not t_data.empty else 0.0
-        t_lib = t_data[t_data['Type'] == 'library']['Duration_Min'].sum() if not t_data.empty else 0.0
+        teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
+        teacher_date_data = all_filtered_df[all_filtered_df['FullName'] == target_teacher]
 
-        story.append(Paragraph(f"• Lesson Prep Logged: <b>{t_ld:.1f} Mins</b> | Library Usage Logged: <b>{t_lib:.1f} Mins</b>", normal_style))
-
-        t_books = t_data[t_data['Book'].str.len() > 0] if not t_data.empty else pd.DataFrame()
-        t_books = t_books[~t_books['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
+        t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
+        t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
         
-        if not t_books.empty:
-            b_sum = t_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
-            story.append(Paragraph("<b>Textbook / Chapter Pacing Breakdown:</b>", normal_style))
-            for _, br in b_sum.iterrows():
-                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;• {br['Book']} ({br['Grade']} - {br['Subject']}): <b>{br['Duration_Min']:.1f} Mins</b>", normal_style))
+        ld_pct = (t_day_ld / calc_ld_kpi) * 100 if calc_ld_kpi > 0 else (100.0 if t_day_ld >= 0 else 0)
+        lib_pct = (t_day_lib / calc_lib_kpi) * 100 if calc_lib_kpi > 0 else (100.0 if t_day_lib >= 0 else 0)
+
+        if calc_ld_kpi > 0:
+            ld_advice = f"Steady Execution ({t_day_ld:.1f}m logged)" if t_day_ld >= calc_ld_kpi else (f"In-Progress ({t_day_ld:.1f}m logged)" if t_day_ld > 0 else "Pending Activity")
         else:
-            story.append(Paragraph("&nbsp;&nbsp;&nbsp;&nbsp;• No textbooks or chapters opened in active window.", normal_style))
-        
-        story.append(Spacer(1, 8))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=10))
+            ld_advice = "Holiday / Scheduled Break"
+
+        if calc_lib_kpi > 0:
+            lib_advice = f"Steady Execution ({t_day_lib:.1f}m logged)" if t_day_lib >= calc_lib_kpi else (f"In-Progress ({t_day_lib:.1f}m logged)" if t_day_lib > 0 else "Pending Activity")
+        else:
+            lib_advice = "Holiday / Scheduled Break"
+
+        t_books_raw = teacher_date_data[teacher_date_data['Book'].str.len() > 0]
+        if t_books_raw.empty:
+            t_books_raw = teacher_all_data[teacher_all_data['Book'].str.len() > 0]
+        teacher_books = t_books_raw[~t_books_raw['Book'].str.match(r'^Lesson Plan', case=False, na=False)]
+
+        evidence_source = teacher_date_data if not teacher_date_data.empty else teacher_all_data
+
+        def extract_evidence_items(df_src, col_name):
+            if col_name not in df_src.columns:
+                return []
+            items = []
+            for _, r in df_src.iterrows():
+                val = str(r[col_name]).strip()
+                if re.match(r'^https?://', val, re.IGNORECASE):
+                    d_str = str(r['Date']) if 'Date' in r and pd.notna(r['Date']) else "Recent"
+                    g_str = f"Grade {r['Grade']}" if 'Grade' in r and str(r['Grade']).strip() else "Grade N/A"
+                    s_str = str(r['Subject']).strip() if 'Subject' in r and str(r['Subject']).strip() else "General Subject"
+                    b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Plan"
+                    items.append({'url': val, 'date': d_str, 'grade': g_str, 'subject': s_str, 'lesson': b_str})
+            seen = set()
+            deduped = []
+            for item in items:
+                if item['url'] not in seen:
+                    seen.add(item['url'])
+                    deduped.append(item)
+            return deduped
+
+        v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
+        v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
+        v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
+
+        v_vid = []
+        for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+            v_vid.extend(extract_evidence_items(evidence_source, col))
+        seen_v = set()
+        deduped_v = []
+        for item in v_vid:
+            if item['url'] not in seen_v:
+                seen_v.add(item['url'])
+                deduped_v.append(item)
+        v_vid = deduped_v
+
+        lp_combo_total = len(v_voice) + len(v_pic)
+        total_artifacts = lp_combo_total + len(v_vid) + len(v_writing)
+
+        pdf_book_items = []
+        if not teacher_books.empty:
+            b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
+            for _, br in b_summary_df.iterrows():
+                pdf_book_items.append(f"Book: {br['Book']} ({br['Grade']} - {br['Subject']}) | Time Spent: {br['Duration_Min']:.1f} Mins")
+        else:
+            pdf_book_items.append("No textbooks or digital modules opened.")
+
+        pdf_link_items = []
+        for item in v_voice:
+            pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_pic:
+            pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_vid:
+            pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_writing:
+            pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+
+        story.append(Paragraph(f"<b>Academic Performance Profile: {target_teacher}</b>", title_style))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(f"Observation Window: {filter_desc}", subtitle_style))
+        story.append(Spacer(1, 6))
+        story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
+
+        # KPI Summary Cards Table
+        summary_metrics = {
+            "Teacher": target_teacher,
+            "Lesson Prep": f"{t_day_ld:.1f}m",
+            "Library Usage": f"{t_day_lib:.1f}m",
+            "Qualitative Artifacts": f"{total_artifacts}"
+        }
+        headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
+        values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
+        col_w = 540 / len(summary_metrics)
+        kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(summary_metrics))
+        kpi_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), light_bg),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(kpi_table)
+        story.append(Spacer(1, 10))
+
+        # Sections
+        sections = {
+            "1. Quantitative Delivery & Planning Highlights": [
+                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
+                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes ({lib_pct:.0f}% of Academic Benchmark)",
+                f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
+            ],
+            "2. Detailed Digital Textbook & Chapter Pacing": pdf_book_items,
+            "3. Qualitative Evidence Submissions & Artifact Links": pdf_link_items if pdf_link_items else ["No qualitative submission links recorded in active window."]
+        }
+
+        for heading, body_items in sections.items():
+            story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
+            for item in body_items:
+                if "http://" in item or "https://" in item:
+                    story.append(Paragraph(f"🔗 {item}", link_style))
+                else:
+                    story.append(Paragraph(f"• {item}", normal_style))
+            story.append(Spacer(1, 8))
 
     doc.build(story)
     buffer.seek(0)
@@ -1309,13 +1422,14 @@ else:
             with col_bulk_btn:
                 st.markdown("<br>", unsafe_allow_html=True)
                 school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
-                bulk_pdf_data = generate_bulk_school_pdf_report(
+                bulk_pdf_data = generate_bulk_school_360_pdf(
                     school_name=teacher_school,
                     teachers_list=school_teachers_list,
-                    school_df=school_filtered_df,
+                    school_filtered_df=school_filtered_df,
+                    all_filtered_df=filtered_df,
                     filter_desc=filter_description_text,
-                    calc_ld=calc_ld_kpi,
-                    calc_lib=calc_lib_kpi
+                    calc_ld_kpi=calc_ld_kpi,
+                    calc_lib_kpi=calc_lib_kpi
                 )
                 st.download_button(
                     label="📥 Download Bulk School 360 Profiles (PDF)",
