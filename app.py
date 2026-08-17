@@ -738,8 +738,14 @@ def load_or_update_master_db(new_upload_dfs=None):
 # --- 2. MULTI-EMPLOYEE HIERARCHY & DATA UPLOAD MANAGER ---
 st.sidebar.header("📁 Multi-Employee Data Ingestion Portal")
 
-employee_name = st.sidebar.selectbox("Select Consultant Name:", ["Harshit Bhargava", "Consultant 2", "Consultant 3", "Consultant 4"])
-employee_state = st.sidebar.selectbox("Select State / Zone:", ["Madhya Pradesh (MP)", "State 2", "State 3"])
+employee_name = st.sidebar.text_input("Enter Consultant Name:", value="Harshit Bhargava")
+employee_state = st.sidebar.selectbox("Select State / Zone (India Region):", [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh (MP)", 
+    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
+    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
+    "Uttarakhand", "West Bengal", "Delhi NCR", "Jammu and Kashmir", "Ladakh"
+])
 
 uploaded_files = st.sidebar.file_uploader("Upload UserMetrics Excel (.xlsx)", type=["xlsx"], accept_multiple_files=True)
 
@@ -799,7 +805,7 @@ if new_processed_dfs:
 else:
     df = load_or_update_master_db()
 
-# --- 3. GRANULAR CLOUD DATABASE MANAGEMENT & SELECTIVE DELETION ---
+# --- 3. GRANULAR CLOUD DATABASE MANAGEMENT & CONSULTANT FILTERED DELETION ---
 st.sidebar.markdown("---")
 st.sidebar.header("🗄️ Granular Cloud Database Management")
 
@@ -813,9 +819,43 @@ if not current_db_check.empty:
     st.sidebar.metric("Cloud DB Total Records", len(current_db_check))
     
     with st.sidebar.expander("🛠️ Selective Database Cleanup"):
-        clean_mode = st.radio("Select Cleanup Scope:", ["By School", "By Consultant (Employee)", "Clear Entire DB"])
+        clean_mode = st.radio("Select Cleanup Scope:", ["By Consultant Name & State/Zone", "By School", "Clear Entire DB"])
         
-        if clean_mode == "By School":
+        if clean_mode == "By Consultant Name & State/Zone":
+            del_emp_name = st.text_input("Enter Exact Consultant Name to Delete:", value="")
+            del_state_zone = st.selectbox("Select State/Zone for Cleanup:", [
+                "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+                "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh (MP)", 
+                "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
+                "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
+                "Uttarakhand", "West Bengal", "Delhi NCR", "Jammu and Kashmir", "Ladakh"
+            ], key="del_state_select")
+            
+            if st.button("🗑️ Delete Consultant Records from Cloud"):
+                try:
+                    if not del_emp_name.strip():
+                        st.error("Please enter the consultant name.")
+                    else:
+                        mask = ~(
+                            (current_db_check['Uploaded_By'].str.casefold() == del_emp_name.strip().casefold()) & 
+                            (current_db_check['State_Zone'] == del_state_zone)
+                        )
+                        updated_db = current_db_check[mask]
+                        parquet_buffer = BytesIO()
+                        updated_db.to_parquet(parquet_buffer, index=False)
+                        parquet_buffer.seek(0)
+                        supabase.storage.from_(BUCKET_NAME).upload(
+                            path=PARQUET_FILE_NAME,
+                            file=parquet_buffer.getvalue(),
+                            file_options={"upsert": "true", "content-type": "application/octet-stream"}
+                        )
+                        fetch_master_db_from_supabase.clear()
+                        st.success(f"Successfully removed records for {del_emp_name} in {del_state_zone}!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting consultant data: {e}")
+                    
+        elif clean_mode == "By School":
             schools_in_db = sorted(current_db_check['Institution'].dropna().unique().tolist()) if 'Institution' in current_db_check.columns else []
             target_del_school = st.selectbox("Select School to Delete:", options=schools_in_db)
             if st.button("🗑️ Delete School Data from Cloud"):
@@ -834,26 +874,6 @@ if not current_db_check.empty:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error deleting school data: {e}")
-                    
-        elif clean_mode == "By Consultant (Employee)":
-            emps_in_db = sorted(current_db_check['Uploaded_By'].dropna().unique().tolist()) if 'Uploaded_By' in current_db_check.columns else []
-            target_del_emp = st.selectbox("Select Consultant to Delete:", options=emps_in_db)
-            if st.button("🗑️ Delete Consultant Data from Cloud"):
-                try:
-                    updated_db = current_db_check[current_db_check['Uploaded_By'] != target_del_emp]
-                    parquet_buffer = BytesIO()
-                    updated_db.to_parquet(parquet_buffer, index=False)
-                    parquet_buffer.seek(0)
-                    supabase.storage.from_(BUCKET_NAME).upload(
-                        path=PARQUET_FILE_NAME,
-                        file=parquet_buffer.getvalue(),
-                        file_options={"upsert": "true", "content-type": "application/octet-stream"}
-                    )
-                    fetch_master_db_from_supabase.clear()
-                    st.success(f"Successfully removed records uploaded by {target_del_emp}!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting employee data: {e}")
                     
         else:
             if st.button("🚨 Clear Entire Cloud Database"):
@@ -2052,6 +2072,7 @@ else:
             t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
             st.dataframe(t7_table, use_container_width=True)
 
+.
             csv_t7 = t7_table.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Evidence Submissions Log (CSV)",
