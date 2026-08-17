@@ -325,7 +325,7 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         name_prefix = f" {input_contact_name}" if input_contact_name and input_contact_name.strip() else ""
         
         default_template_string = (
-            f"Namaste{name_prefix} ji,\n\n"
+            f"Dear {name_prefix} ,\n\n"
             f"Here is the performance update for {target_crm_school} - {current_filter_description}:\n\n"
             f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
