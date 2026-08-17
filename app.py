@@ -269,7 +269,8 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         active_phone = input_phone.strip()
         if active_phone:
             clean_phone = re.sub(r'[^0-9+]', '', active_phone)
-            quick_wa = urllib.parse.quote(f"Namaste {input_contact_name or selected_entity_type} ji, checking in from Onelearn Academic Team regarding {tab_name} metrics for {target_crm_school} ({current_filter_description}).")
+            contact_greeting = input_contact_name if input_contact_name else selected_entity_type
+            quick_wa = urllib.parse.quote(f"Namaste {contact_greeting} ji, checking in from Onelearn Academic Team regarding {tab_name} metrics for {target_crm_school} - {current_filter_description}.")
             st.markdown(f'<a href="tel:{active_phone}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-bottom:6px;width:100%;">📞 Call {selected_entity_type}</button></a>', unsafe_allow_html=True)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={quick_wa}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:8px 14px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">📱 Quick WhatsApp Message</button></a>', unsafe_allow_html=True)
         else:
@@ -326,12 +327,12 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Properly define name_prefix (handling name and entity type gracefully)
+        # Properly define name_prefix so it correctly formats the contact name
         name_prefix = f" {input_contact_name}" if input_contact_name and input_contact_name.strip() else ""
         
         default_template_string = (
             f"Namaste{name_prefix} ji,\n\n"
-            f"Here is the performance update for {target_crm_school} ({current_filter_description}):\n\n"
+            f"Here is the performance update for {target_crm_school} - {current_filter_description}:\n\n"
             f"📊 *Module:* {tab_name}\n"
             f"{metrics_summary_text}\n\n"
             f"Regards,\n"
@@ -912,7 +913,7 @@ else:
             mime="application/pdf"
         )
 
-        teacher_prep_breakdown = "\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
+        teacher_prep_breakdown = "\n\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
         tab1_metrics_summary = (
             f"Total Roster: {total_teachers} teachers | Met Standard: {met_count} | Inactive: {inactive_count} | Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Lesson Prep Logs:\n{teacher_prep_breakdown}"
@@ -992,7 +993,7 @@ else:
             mime="application/pdf"
         )
 
-        teacher_lib_breakdown = "\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
+        teacher_lib_breakdown = "\n\n".join([f"• {r['FullName']}: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
         tab2_metrics_summary = (
             f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
@@ -1115,7 +1116,7 @@ else:
                         mime="application/pdf"
                     )
 
-                book_breakdown_summary = "\n".join([f"• {r['Book']} ({r['Grade']} - {r['Subject']}): {r['Duration_Min']:.1f} mins" for _, r in t3_df.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index().iterrows()])
+                book_breakdown_summary = "\n\n".join([f"• {r['Book']} ({r['Grade']} - {r['Subject']}): {r['Duration_Min']:.1f} mins" for _, r in t3_df.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index().iterrows()])
                 tab3_metrics_summary = (
                     f"Chapters Opened: {t3_df['Book'].nunique()} | Subjects Taught: {t3_df['Subject'].nunique()} | Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins\n\n"
                     f"Chapter Breakdown:\n{book_breakdown_summary}"
