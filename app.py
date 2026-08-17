@@ -522,7 +522,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     return buffer
 
 
-def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_filtered_df, all_filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi, daily_ld_target, daily_lib_target, selected_num_days):
+def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_filtered_df, filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi, daily_ld_target, daily_lib_target, selected_num_days):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -543,7 +543,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
-    # --- PART 1: SCHOOL-LEVEL FEATURE SUMMARY (TAB 1 & TAB 2 AGGREGATES) ---
+    # --- PART 1: SCHOOL-LEVEL FEATURE SUMMARY (TAB 1 & TAB 2 EXACT WINDOW AGGREGATES) ---
     story.append(Paragraph(f"<b>Comprehensive School Audit & Feature-Wise Report</b>", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
@@ -555,10 +555,10 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Paragraph("<b>School-Level Feature Performance Summary</b>", sec_head_style))
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
 
-    ld_df = school_filtered_df[school_filtered_df['Type'] == 'lessonDelivery']
+    ld_df = filtered_df[filtered_df['Type'] == 'lessonDelivery']
     ld_usage = ld_df.groupby('FullName')['Duration_Min'].sum().reset_index()
     
-    lib_df = school_filtered_df[school_filtered_df['Type'] == 'library']
+    lib_df = filtered_df[filtered_df['Type'] == 'library']
     lib_usage = lib_df.groupby('FullName')['Duration_Min'].sum().reset_index()
 
     story.append(Paragraph(f"• <b>Total Active Roster Teachers:</b> {len(teachers_list)}", normal_style))
@@ -566,16 +566,16 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total standard)", normal_style))
     story.append(Spacer(1, 10))
 
-    # Lesson Plan Consolidated Table Section in PDF
+    # Lesson Plan Consolidated Table Section in PDF (Exact Tab 1 Window Data)
     story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report (Teacher-wise)</b>", sec_head_style))
     ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Status"]]
     for t_name in teachers_list:
         t_mins = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
         t_avg = t_mins / selected_num_days if selected_num_days > 0 else 0.0
-        t_stat = "Met Standard" if t_mins >= calc_ld_kpi else ("Active" if t_mins > 0 else "Inactive")
+        t_stat = f"Met Standard (>= {calc_ld_kpi:.0f}m)" if (calc_ld_kpi > 0 and t_mins >= calc_ld_kpi) else ("Active Logged" if t_mins > 0 else "Inactive (0m)")
         ld_summary_table_data.append([t_name, f"{t_mins:.1f}m", f"{t_avg:.1f}m/day", t_stat])
 
-    ld_table_obj = Table(ld_summary_table_data, colWidths=[150, 120, 120, 150])
+    ld_table_obj = Table(ld_summary_table_data, colWidths=[140, 110, 110, 180])
     ld_table_obj.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), primary_color),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -590,16 +590,16 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(ld_table_obj)
     story.append(Spacer(1, 12))
 
-    # Library Usage Consolidated Table Section in PDF
+    # Library Usage Consolidated Table Section in PDF (Exact Tab 2 Window Data)
     story.append(Paragraph("<b>2. Library Usage Consolidated Report (Teacher-wise)</b>", sec_head_style))
     lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Status"]]
     for t_name in teachers_list:
         t_lib_mins = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
         t_lib_avg = t_lib_mins / selected_num_days if selected_num_days > 0 else 0.0
-        t_lib_stat = "Met Standard" if t_lib_mins >= calc_lib_kpi else ("Active" if t_lib_mins > 0 else "Inactive")
+        t_lib_stat = f"Met Standard (>= {calc_lib_kpi:.0f}m)" if (calc_lib_kpi > 0 and t_lib_mins >= calc_lib_kpi) else ("Active Logged" if t_lib_mins > 0 else "Inactive (0m)")
         lib_summary_table_data.append([t_name, f"{t_lib_mins:.1f}m", f"{t_lib_avg:.1f}m/day", t_lib_stat])
 
-    lib_table_obj = Table(lib_summary_table_data, colWidths=[150, 120, 120, 150])
+    lib_table_obj = Table(lib_summary_table_data, colWidths=[140, 110, 110, 180])
     lib_table_obj.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), primary_color),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -1570,7 +1570,7 @@ else:
                     school_name=teacher_school,
                     teachers_list=school_teachers_list,
                     school_filtered_df=school_filtered_df,
-                    all_filtered_df=filtered_df,
+                    filtered_df=filtered_df,
                     filter_desc=filter_description_text,
                     calc_ld_kpi=calc_ld_kpi,
                     calc_lib_kpi=calc_lib_kpi,
