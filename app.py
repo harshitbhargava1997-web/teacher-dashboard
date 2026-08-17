@@ -786,23 +786,23 @@ else:
     if month_filtered_df.empty and view_mode != "Custom Date Range":
         filtered_df = month_filtered_df
         selected_num_days = 1
-        filter_description_text = f"Full Month: {selected_month} - 0 Records"
+        filter_description_text = f"Full Month: {selected_month} (0 Records)"
     elif view_mode == "Full Month Summary":
         filtered_df = month_filtered_df
         selected_num_days = get_working_days(month_filtered_df['Date'].min(), month_filtered_df['Date'].max(), user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Full Month: {selected_month} - {selected_num_days} Working Days"
+        filter_description_text = f"Full Month: {selected_month} ({selected_num_days} Working Day(s))"
     elif view_mode == "Specific Week of Month":
         selected_week_label = st.sidebar.selectbox("Select Week:", options=available_month_weeks)
         filtered_df = month_filtered_df[month_filtered_df['Month_Week_Label'] == selected_week_label]
         w_start = filtered_df['Date'].min() if not filtered_df.empty else selected_month
         w_end = filtered_df['Date'].max() if not filtered_df.empty else selected_month
         selected_num_days = get_working_days(w_start, w_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"{selected_week_label} - {selected_num_days} Working Days"
+        filter_description_text = f"{selected_week_label} ({selected_num_days} Working Day(s))"
     elif view_mode == "Single Day Review":
         selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
         filtered_df = month_filtered_df[month_filtered_df['Date'] == selected_date]
         selected_num_days = get_working_days(selected_date, selected_date, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Single Date: {selected_date} - {selected_num_days} Working Days"
+        filter_description_text = f"Single Date: {selected_date} ({selected_num_days} Working Day(s))"
     else:
         min_avail = school_filtered_df['Date'].dropna().min() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
         max_avail = school_filtered_df['Date'].dropna().max() if not school_filtered_df['Date'].dropna().empty else pd.Timestamp.now().date()
@@ -817,7 +817,7 @@ else:
             
         filtered_df = school_filtered_df[(school_filtered_df['Date'] >= c_start) & (school_filtered_df['Date'] <= c_end)]
         selected_num_days = get_working_days(c_start, c_end, user_excluded_dates, exclude_sundays=exclude_sundays_flag)
-        filter_description_text = f"Custom Range: {c_start} to {c_end} - {selected_num_days} Working Days"
+        filter_description_text = f"Custom Range: {c_start} to {c_end} ({selected_num_days} Working Day(s))"
 
     calc_ld_kpi = daily_ld_target * selected_num_days
     calc_lib_kpi = daily_lib_target * selected_num_days
@@ -915,7 +915,7 @@ else:
 
         teacher_prep_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
         tab1_metrics_summary = (
-            f"🎯 Target KPI: {daily_ld_target:.0f} mins/day × {selected_num_days} working days = {calc_ld_kpi:.0f} mins total standard\n"
+            f"Active KPI Target: At least {calc_ld_kpi:.0f} mins total ({daily_ld_target:.0f} mins/day)\n"
             f"Total Roster: {total_teachers} teachers | Met Standard: {met_count} | Inactive: {inactive_count} | Compliance Rate: {(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Lesson Prep Logs:\n{teacher_prep_breakdown}"
         )
@@ -996,7 +996,7 @@ else:
 
         teacher_lib_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
         tab2_metrics_summary = (
-            f"🎯 Target KPI: {daily_lib_target:.0f} mins/day × {selected_num_days} working days = {calc_lib_kpi:.0f} mins total standard\n"
+            f"Active KPI Target: At least {calc_lib_kpi:.0f} mins total ({daily_lib_target:.0f} mins/day)\n"
             f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
             f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
         )
@@ -1409,7 +1409,7 @@ else:
                         label=f"📥 Download Full CSV Audit for {target_teacher}",
                         data=csv_profile,
                         file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.csv",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="text/csv"
                     )
 
             tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Qualitative Artifacts: {lp_combo_total + len(v_vid) + len(v_writing)}"
