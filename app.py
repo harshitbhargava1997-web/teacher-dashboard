@@ -555,10 +555,10 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     # Filter strictly for this school
     school_curr_df = filtered_df[filtered_df['Institution'] == school_name]
 
-    # PART 1: CONSOLIDATED TABLES (Matching Tab 1 & Tab 2)
+    # PART 1: CONSOLIDATED TABLES (Matching Tab 1 & Tab 2 Clean Headings)
     story.append(Paragraph(f"<b>Comprehensive School Audit & Feature-Wise Report</b>", title_style))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
+    story.append(Paragraph(f"<b>Institution / School Focus:</b> {school_name}", school_style))
     story.append(Spacer(1, 3))
     story.append(Paragraph(f"Observation Window: {filter_desc}", subtitle_style))
     story.append(Spacer(1, 8))
@@ -610,8 +610,8 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total benchmark standard)", normal_style))
     story.append(Spacer(1, 10))
 
-    # 1. Lesson Plan Preparation Consolidated Report
-    story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report (As per Tab 1)</b>", sec_head_style))
+    # 1. Lesson Plan Preparation Consolidated Report (Clean Title, No Emojis in PDF)
+    story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report</b>", sec_head_style))
     ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
         t_mins = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
@@ -619,11 +619,11 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         if calc_ld_kpi == 0:
             t_stat = "Activity Logged" if t_mins > 0 else "No Activity Logged"
         elif t_mins >= calc_ld_kpi:
-            t_stat = f"✅ Met Performance Indicator (>= {calc_ld_kpi:.0f}m)"
+            t_stat = f"Met Performance Indicator (>= {calc_ld_kpi:.0f}m)"
         elif t_mins > 0.0:
-            t_stat = f"⚠️ Below Performance Indicator (< {calc_ld_kpi:.0f}m)"
+            t_stat = f"Below Performance Indicator (< {calc_ld_kpi:.0f}m)"
         else:
-            t_stat = "❌ Inactive (0 Mins)"
+            t_stat = "Inactive (0 Mins)"
         ld_summary_table_data.append([t_name, f"{t_mins:.1f}m", f"{t_avg:.1f}m/day", t_stat])
 
     ld_table_obj = Table(ld_summary_table_data, colWidths=[140, 110, 100, 190])
@@ -641,8 +641,8 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(ld_table_obj)
     story.append(Spacer(1, 14))
 
-    # 2. Library Usage Consolidated Report
-    story.append(Paragraph("<b>2. Library Usage Consolidated Report (As per Tab 2)</b>", sec_head_style))
+    # 2. Library Usage Consolidated Report (Clean Title, No Emojis in PDF)
+    story.append(Paragraph("<b>2. Library Usage Consolidated Report</b>", sec_head_style))
     lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
         t_lib_mins = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
@@ -650,11 +650,11 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         if calc_lib_kpi == 0:
             t_lib_stat = "Activity Logged" if t_lib_mins > 0 else "No Activity Logged"
         elif t_lib_mins >= calc_lib_kpi:
-            t_lib_stat = f"✅ Met Performance Indicator (>= {calc_lib_kpi:.0f}m)"
+            t_lib_stat = f"Met Performance Indicator (>= {calc_lib_kpi:.0f}m)"
         elif t_lib_mins > 0.0:
-            t_lib_stat = f"⚠️ Below Performance Indicator (< {calc_lib_kpi:.0f}m)"
+            t_lib_stat = f"Below Performance Indicator (< {calc_lib_kpi:.0f}m)"
         else:
-            t_lib_stat = "❌ Inactive (0 Mins)"
+            t_lib_stat = "Inactive (0 Mins)"
         lib_summary_table_data.append([t_name, f"{t_lib_mins:.1f}m", f"{t_lib_avg:.1f}m/day", t_lib_stat])
 
     lib_table_obj = Table(lib_summary_table_data, colWidths=[140, 110, 100, 190])
@@ -672,7 +672,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(lib_table_obj)
     story.append(Spacer(1, 12))
 
-    # PART 2: INDIVIDUAL TEACHER 360° PROFILES (WITH UPDATED TERMINOLOGIES)
+    # PART 2: INDIVIDUAL TEACHER 360° PROFILES (WITH CLEAN FORMATTING)
     for target_teacher in teachers_list:
         story.append(PageBreak())
 
@@ -753,13 +753,13 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
 
         story.append(Paragraph(f"<b>Academic Performance Profile: {target_teacher}</b>", title_style))
         story.append(Spacer(1, 4))
-        story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
+        story.append(Paragraph(f"<b>Institution / School Focus:</b> {school_name}", school_style))
         story.append(Spacer(1, 3))
         story.append(Paragraph(f"Observation Window: {filter_desc}", subtitle_style))
         story.append(Spacer(1, 6))
         story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
-        # UPDATED METRIC HEADER TERMINOLOGY
+        # UPDATED METRIC HEADER TERMINOLOGY (Clean without emojis)
         summary_metrics = {
             "Teacher": target_teacher,
             "Lesson Prep": f"{t_day_ld:.1f}m",
@@ -798,7 +798,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
             for item in body_items:
                 if "http://" in item or "https://" in item:
-                    story.append(Paragraph(f"🔗 {item}", link_style))
+                    story.append(Paragraph(f"{item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
             story.append(Spacer(1, 8))
@@ -1589,166 +1589,166 @@ else:
                         s_str = str(r['Subject']).strip() if 'Subject' in r and str(r['Subject']).strip() else "General Subject"
                         b_str = str(r['Book']).strip() if 'Book' in r and str(r['Book']).strip() else "Lesson Plan"
                         items.append({'url': val, 'date': d_str, 'grade': g_str, 'subject': s_str, 'lesson': b_str})
-                seen = set()
-                deduped = []
-                for item in items:
-                    if item['url'] not in seen:
-                        seen.add(item['url'])
-                        deduped.append(item)
-                return deduped
+            seen = set()
+            deduped = []
+            for item in items:
+                if item['url'] not in seen:
+                    seen.add(item['url'])
+                    deduped.append(item)
+            return deduped
 
-            v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
-            v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
-            v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
-            v_phonics = extract_evidence_items(evidence_source, 'Phonics_Evidence_Link')
-            v_portfolio = extract_evidence_items(evidence_source, 'Portfolio_Evidence_Link')
+        v_voice = extract_evidence_items(evidence_source, 'Voice_Note_Link')
+        v_pic = extract_evidence_items(evidence_source, 'Lesson_Plan_Picture')
+        v_writing = extract_evidence_items(evidence_source, 'Writing_Sample_Link')
+        v_phonics = extract_evidence_items(evidence_source, 'Phonics_Evidence_Link')
+        v_portfolio = extract_evidence_items(evidence_source, 'Portfolio_Evidence_Link')
 
-            v_vid = []
-            for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
-                v_vid.extend(extract_evidence_items(evidence_source, col))
-            seen_v = set()
-            deduped_v = []
-            for item in v_vid:
-                if item['url'] not in seen_v:
-                    seen_v.add(item['url'])
-                    deduped_v.append(item)
-            v_vid = deduped_v
+        v_vid = []
+        for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3']:
+            v_vid.extend(extract_evidence_items(evidence_source, col))
+        seen_v = set()
+        deduped_v = []
+        for item in v_vid:
+            if item['url'] not in seen_v:
+                seen_v.add(item['url'])
+                deduped_v.append(item)
+        v_vid = deduped_v
 
-            lp_combo_total = len(v_voice) + len(v_pic)
-            total_artifacts = lp_combo_total + len(v_vid) + len(v_writing) + len(v_phonics) + len(v_portfolio)
+        lp_combo_total = len(v_voice) + len(v_pic)
+        total_artifacts = lp_combo_total + len(v_vid) + len(v_writing) + len(v_phonics) + len(v_portfolio)
 
-            pdf_book_items = []
-            if not teacher_books.empty:
-                b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
-                for _, br in b_summary_df.iterrows():
-                    pdf_book_items.append(f"Book: {br['Book']} ({br['Grade']} - {br['Subject']}) | Time Spent: {br['Duration_Min']:.1f} Mins")
-            else:
-                pdf_book_items.append("No textbooks or digital modules opened.")
+        pdf_book_items = []
+        if not teacher_books.empty:
+            b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
+            for _, br in b_summary_df.iterrows():
+                pdf_book_items.append(f"Book: {br['Book']} ({br['Grade']} - {br['Subject']}) | Time Spent: {br['Duration_Min']:.1f} Mins")
+        else:
+            pdf_book_items.append("No textbooks or digital modules opened.")
 
-            pdf_link_items = []
-            for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
+        pdf_link_items = []
+        for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
 
-            # UPDATED SECTION HEADINGS TERMINOLOGY
-            pdf_custom_sections = {
-                "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
-                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
-                ],
-                "2. Content / Digital Book Content Usage": pdf_book_items,
-                "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
-            }
+        # UPDATED SECTION HEADINGS TERMINOLOGY (Clean without emojis)
+        pdf_custom_sections = {
+            "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
+                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
+            ],
+            "2. Content / Digital Book Content Usage": pdf_book_items,
+            "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
+        }
 
-            pdf_tab4_summary = generate_pdf_report(
-                title_text=f"🏫 Academic Performance Profile: {target_teacher}",
-                subtitle_text=f"Observation Window: {filter_description_text}",
-                school_name=teacher_school,
-                summary_metrics={
-                    "Teacher": target_teacher,
-                    "Lesson Prep": f"{t_day_ld:.1f}m",
-                    "Library Usage": f"{t_day_lib:.1f}m",
-                    "Phonics / Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
-                    "Activity Submissions": f"{total_artifacts}"
-                },
-                dataframe=None,
-                custom_sections=pdf_custom_sections
+        pdf_tab4_summary = generate_pdf_report(
+            title_text=f"🏫 Academic Performance Profile: {target_teacher}",
+            subtitle_text=f"Observation Window: {filter_description_text}",
+            school_name=teacher_school,
+            summary_metrics={
+                "Teacher": target_teacher,
+                "Lesson Prep": f"{t_day_ld:.1f}m",
+                "Library Usage": f"{t_day_lib:.1f}m",
+                "Phonics / Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
+                "Activity Submissions": f"{total_artifacts}"
+            },
+            dataframe=None,
+            custom_sections=pdf_custom_sections
+        )
+
+        with col_btn_top:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.download_button(
+                label="📥 Download 360° Profile (PDF)",
+                data=pdf_tab4_summary,
+                file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
+                mime="application/pdf",
+                key="top_pdf_download_btn"
             )
 
-            with col_btn_top:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.download_button(
-                    label="📥 Download 360° Profile (PDF)",
-                    data=pdf_tab4_summary,
-                    file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
-                    mime="application/pdf",
-                    key="top_pdf_download_btn"
-                )
+        with col_bulk_btn:
+            st.markdown("<br>", unsafe_allow_html=True)
+            school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
+            bulk_pdf_data = generate_comprehensive_school_pdf_report(
+                school_name=teacher_school,
+                teachers_list=school_teachers_list,
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days
+            )
+            st.download_button(
+                label="📥 Download Bulk School 360 Profiles (PDF)",
+                data=bulk_pdf_data,
+                file_name=f"{teacher_school.replace(' ', '_')}_Comprehensive_School_Report.pdf",
+                mime="application/pdf",
+                key="bulk_school_pdf_btn"
+            )
 
-            with col_bulk_btn:
-                st.markdown("<br>", unsafe_allow_html=True)
-                school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
-                bulk_pdf_data = generate_comprehensive_school_pdf_report(
-                    school_name=teacher_school,
-                    teachers_list=school_teachers_list,
-                    school_filtered_df=school_filtered_df,
-                    filtered_df=filtered_df,
-                    filter_desc=filter_description_text,
-                    calc_ld_kpi=calc_ld_kpi,
-                    calc_lib_kpi=calc_lib_kpi,
-                    daily_ld_target=daily_ld_target,
-                    daily_lib_target=daily_lib_target,
-                    selected_num_days=selected_num_days
-                )
-                st.download_button(
-                    label="📥 Download Bulk School 360 Profiles (PDF)",
-                    data=bulk_pdf_data,
-                    file_name=f"{teacher_school.replace(' ', '_')}_Comprehensive_School_Report.pdf",
-                    mime="application/pdf",
-                    key="bulk_school_pdf_btn"
-                )
+        st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
-            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
+        with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
+            if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
+                with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
+                    review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Phonics evidence: {len(v_phonics)}, Portfolio uploads: {len(v_portfolio)}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback."
+                    ai_eval = get_gemini_summary(review_prompt)
+                    st.markdown(ai_eval)
 
-            with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
-                if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
-                    with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
-                        review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Phonics evidence: {len(v_phonics)}, Portfolio uploads: {len(v_portfolio)}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback."
-                        ai_eval = get_gemini_summary(review_prompt)
-                        st.markdown(ai_eval)
+        st.subheader("1. Quantitative Performance Indicator Summary")
+        st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
 
-            st.subheader("1. Quantitative Performance Indicator Summary")
-            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
+        col_sum1, col_sum2 = st.columns([1, 1.2])
 
-            col_sum1, col_sum2 = st.columns([1, 1.2])
+        with col_sum1:
+            st.markdown("##### 📌 Quantitative Performance Indicator Overview")
+            s1, s2 = st.columns(2)
+            s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
+            s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
+            
+            st.markdown("##### 💡 Academic Consultant Observation")
+            if calc_ld_kpi == 0 and calc_lib_kpi == 0:
+                st.info(f"🏖️ **Break Period**: Active filter falls on an excluded calendar break.")
+            elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:
+                st.success(f"👏 **Consistent Delivery**: {target_teacher} maintained steady curriculum prep and library engagement.")
+            elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:
+                st.warning(f"💡 **Growth Opportunity**: Focus on structured digital planning hours and library exploration.")
+            else:
+                st.info(f"📌 **Balanced Usage**: Progress noted with potential to scale integration.")
 
-            with col_sum1:
-                st.markdown("##### 📌 Quantitative Performance Indicator Overview")
-                s1, s2 = st.columns(2)
-                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
-                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
-                
-                st.markdown("##### 💡 Academic Consultant Observation")
-                if calc_ld_kpi == 0 and calc_lib_kpi == 0:
-                    st.info(f"🏖️ **Break Period**: Active filter falls on an excluded calendar break.")
-                elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:
-                    st.success(f"👏 **Consistent Delivery**: {target_teacher} maintained steady curriculum prep and library engagement.")
-                elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:
-                    st.warning(f"💡 **Growth Opportunity**: Focus on structured digital planning hours and library exploration.")
-                else:
-                    st.info(f"📌 **Balanced Usage**: Progress noted with potential to scale integration.")
+            st.write(f"• **Lesson Plan Preparation**: {ld_advice}")
+            st.write(f"• **Library Usage Engagement**: {lib_advice}")
 
-                st.write(f"• **Lesson Plan Preparation**: {ld_advice}")
-                st.write(f"• **Library Usage Engagement**: {lib_advice}")
-
-            with col_sum2:
-                st.markdown("##### 📊 Performance Indicator Achievement Comparison")
-                ach_df = pd.DataFrame({
-                    'Performance Indicator Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
-                                                       f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
-                    'Logged Minutes': [t_day_ld, t_day_lib],
-                    'Performance Indicator Standard': [calc_ld_kpi, calc_lib_kpi]
-                })
-                
-                fig_ach = go.Figure()
+        with col_sum2:
+            st.markdown("##### 📊 Performance Indicator Achievement Comparison")
+            ach_df = pd.DataFrame({
+                'Performance Indicator Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
+                                                   f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
+                'Logged Minutes': [t_day_ld, t_day_lib],
+                'Performance Indicator Standard': [calc_ld_kpi, calc_lib_kpi]
+            })
+            
+            fig_ach = go.Figure()
+            fig_ach.add_trace(go.Bar(
+                x=ach_df['Performance Indicator Category'], y=ach_df['Logged Minutes'],
+                name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
+            ))
+            if enable_quant_kpi:
                 fig_ach.add_trace(go.Bar(
-                    x=ach_df['Performance Indicator Category'], y=ach_df['Logged Minutes'],
-                    name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
+                    x=ach_df['Performance Indicator Category'], y=ach_df['Performance Indicator Standard'],
+                    name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['Performance Indicator Standard']], textposition='auto'
                 ))
-                if enable_quant_kpi:
-                    fig_ach.add_trace(go.Bar(
-                        x=ach_df['Performance Indicator Category'], y=ach_df['Performance Indicator Standard'],
-                        name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['Performance Indicator Standard']], textposition='auto'
-                    ))
-                fig_ach.update_layout(
-                    barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
-                    height=280, margin=dict(l=20, r=20, t=40, b=20)
-                )
-                st.plotly_chart(fig_ach, use_container_width=True)
+            fig_ach.update_layout(
+                barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
+                height=280, margin=dict(l=20, r=20, t=40, b=20)
+            )
+            st.plotly_chart(fig_ach, use_container_width=True)
 
             st.markdown("---")
 
