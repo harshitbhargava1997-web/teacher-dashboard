@@ -15,7 +15,7 @@ from supabase import create_client
 from google import genai
 
 # ReportLab PDF Libraries
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -491,7 +491,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
             for item in body_items:
-                if "http://" in item or "https://" in item or "<a href=" in item:
+                if "http://" in item or "https://" in item:
                     story.append(Paragraph(f"🔗 {item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
@@ -552,6 +552,10 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, leading=14, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
+    # Filter strictly for this school
+    school_curr_df = filtered_df[filtered_df['Institution'] == school_name]
+
+    # PART 1: CONSOLIDATED TABLES (Matching Tab 1 & Tab 2)
     story.append(Paragraph(f"<b>Comprehensive School Audit & Feature-Wise Report</b>", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f"🏫 <b>Institution / School Focus:</b> {school_name}", school_style))
@@ -560,12 +564,120 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
 
-    for idx, target_teacher in enumerate(teachers_list):
-        if idx > 0:
-            story.append(PageBreak())
+    ld_df = school_curr_df[school_curr_df['Type'] == 'lessonDelivery']
+    ld_usage = ld_df.groupby('FullName')['Duration_Min'].sum().reset_index()
+    
+    lib_df = school_curr_df[school_curr_df['Type'] == 'library']
+    lib_usage = lib_df.groupby('FullName')['Duration_Min'].sum().reset_index()
 
-        teacher_all_data = school_filtered_df[school_filtered_df['FullName'] == target_teacher]
-        teacher_date_data = filtered_df[filtered_df['FullName'] == target_teacher]
+    # School Level Summary Cards
+    total_teachers_count = len(teachers_list)
+    met_ld_count = 0
+    met_lib_count = 0
+
+    for t_name in teachers_list:
+        t_ld = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
+        t_lib = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
+        if (calc_ld_kpi > 0 and t_ld >= calc_ld_kpi) or (calc_ld_kpi == 0 and t_ld > 0):
+            met_ld_count += 1
+        if (calc_lib_kpi > 0 and t_lib >= calc_lib_kpi) or (calc_lib_kpi == 0 and t_lib > 0):
+            met_lib_count += 1
+
+    school_summary_metrics = {
+        "Active Roster Teachers": total_teachers_count,
+        "Met Lesson Prep KPI": f"{met_ld_count} / {total_teachers_count}",
+        "Met Library KPI": f"{met_lib_count} / {total_teachers_count}",
+        "Working Days Evaluated": f"{selected_num_days} Days"
+    }
+    headers_row = [Paragraph(k, card_header) for k in school_summary_metrics.keys()]
+    values_row = [Paragraph(str(v), card_value) for v in school_summary_metrics.values()]
+    col_w = 540 / len(school_summary_metrics)
+    kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(school_summary_metrics))
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), light_bg),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>School-Level Feature Performance Summary & Guidelines</b>", sec_head_style))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
+    story.append(Paragraph(f"• <b>Lesson Plan Performance Standard:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total benchmark standard)", normal_style))
+    story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total benchmark standard)", normal_style))
+    story.append(Spacer(1, 10))
+
+    # 1. Lesson Plan Preparation Consolidated Report
+    story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report (As per Tab 1)</b>", sec_head_style))
+    ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
+    for t_name in teachers_list:
+        t_mins = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
+        t_avg = t_mins / selected_num_days if selected_num_days > 0 else 0.0
+        if calc_ld_kpi == 0:
+            t_stat = "Activity Logged" if t_mins > 0 else "No Activity Logged"
+        elif t_mins >= calc_ld_kpi:
+            t_stat = f"✅ Met Performance Indicator (>= {calc_ld_kpi:.0f}m)"
+        elif t_mins > 0.0:
+            t_stat = f"⚠️ Below Performance Indicator (< {calc_ld_kpi:.0f}m)"
+        else:
+            t_stat = "❌ Inactive (0 Mins)"
+        ld_summary_table_data.append([t_name, f"{t_mins:.1f}m", f"{t_avg:.1f}m/day", t_stat])
+
+    ld_table_obj = Table(ld_summary_table_data, colWidths=[140, 110, 100, 190])
+    ld_table_obj.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(ld_table_obj)
+    story.append(Spacer(1, 14))
+
+    # 2. Library Usage Consolidated Report
+    story.append(Paragraph("<b>2. Library Usage Consolidated Report (As per Tab 2)</b>", sec_head_style))
+    lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
+    for t_name in teachers_list:
+        t_lib_mins = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
+        t_lib_avg = t_lib_mins / selected_num_days if selected_num_days > 0 else 0.0
+        if calc_lib_kpi == 0:
+            t_lib_stat = "Activity Logged" if t_lib_mins > 0 else "No Activity Logged"
+        elif t_lib_mins >= calc_lib_kpi:
+            t_lib_stat = f"✅ Met Performance Indicator (>= {calc_lib_kpi:.0f}m)"
+        elif t_lib_mins > 0.0:
+            t_lib_stat = f"⚠️ Below Performance Indicator (< {calc_lib_kpi:.0f}m)"
+        else:
+            t_lib_stat = "❌ Inactive (0 Mins)"
+        lib_summary_table_data.append([t_name, f"{t_lib_mins:.1f}m", f"{t_lib_avg:.1f}m/day", t_lib_stat])
+
+    lib_table_obj = Table(lib_summary_table_data, colWidths=[140, 110, 100, 190])
+    lib_table_obj.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(lib_table_obj)
+    story.append(Spacer(1, 12))
+
+    # PART 2: INDIVIDUAL TEACHER 360° PROFILES (WITH UPDATED TERMINOLOGIES)
+    for target_teacher in teachers_list:
+        story.append(PageBreak())
+
+        teacher_all_data = school_filtered_df[(school_filtered_df['FullName'] == target_teacher) & (school_filtered_df['Institution'] == school_name)]
+        teacher_date_data = school_curr_df[school_curr_df['FullName'] == target_teacher]
 
         t_day_ld = teacher_date_data[teacher_date_data['Type'] == 'lessonDelivery']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
         t_day_lib = teacher_date_data[teacher_date_data['Type'] == 'library']['Duration_Min'].sum() if not teacher_date_data.empty else 0.0
@@ -631,14 +743,13 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         else:
             pdf_book_items.append("No textbooks or digital modules opened.")
 
-        # Clean Clickable Anchor Links for PDF
         pdf_link_items = []
-        for item in v_voice: pdf_link_items.append(f'<a href="{item["url"]}"><u>Voice Note - {item["grade"]} - {item["subject"]}</u></a>')
-        for item in v_pic: pdf_link_items.append(f'<a href="{item["url"]}"><u>Lesson Plan Picture - {item["grade"]} - {item["subject"]}</u></a>')
-        for item in v_vid: pdf_link_items.append(f'<a href="{item["url"]}"><u>Classroom Activity Video - {item["grade"]} - {item["subject"]}</u></a>')
-        for item in v_writing: pdf_link_items.append(f'<a href="{item["url"]}"><u>Student Writing Sample - {item["grade"]} - {item["subject"]}</u></a>')
-        for item in v_phonics: pdf_link_items.append(f'<a href="{item["url"]}"><u>Phonics Evidence - {item["grade"]} - {item["subject"]}</u></a>')
-        for item in v_portfolio: pdf_link_items.append(f'<a href="{item["url"]}"><u>Portfolio Showcase - {item["grade"]} - {item["subject"]}</u></a>')
+        for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
 
         story.append(Paragraph(f"<b>Academic Performance Profile: {target_teacher}</b>", title_style))
         story.append(Spacer(1, 4))
@@ -648,6 +759,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(Spacer(1, 6))
         story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
+        # UPDATED METRIC HEADER TERMINOLOGY
         summary_metrics = {
             "Teacher": target_teacher,
             "Lesson Prep": f"{t_day_ld:.1f}m",
@@ -670,107 +782,26 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(kpi_table)
         story.append(Spacer(1, 10))
 
-        # EXACT 3 SECTIONS
-        story.append(Paragraph("<b>1. Lesson Preparation, Lesson Delivery, and Library Usage</b>", sec_head_style))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=5))
-        story.append(Paragraph(f"• Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)", normal_style))
-        story.append(Paragraph(f"• Library & Digital Resources Duration: {t_day_lib:.1f} Minutes ({lib_pct:.0f}% of Academic Benchmark)", normal_style))
-        story.append(Paragraph(f"• Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration.", normal_style))
-        story.append(Spacer(1, 8))
+        # UPDATED SECTION HEADINGS TERMINOLOGY
+        sections = {
+            "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
+                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
+                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes ({lib_pct:.0f}% of Academic Benchmark)",
+                f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
+            ],
+            "2. Content / Digital Book Content Usage": pdf_book_items,
+            "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
+        }
 
-        story.append(Paragraph("<b>2. Content / Digital Book Content Usage</b>", sec_head_style))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=5))
-        for book_entry in pdf_book_items:
-            story.append(Paragraph(f"• {book_entry}", normal_style))
-        story.append(Spacer(1, 8))
-
-        story.append(Paragraph("<b>3. Activity Evidence, Activity Submission, and Artifact Evidence</b>", sec_head_style))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=5))
-        if pdf_link_items:
-            for link_entry in pdf_link_items:
-                story.append(Paragraph(f"• {link_entry}", link_style))
-        else:
-            story.append(Paragraph("• No activity or evidence submission links recorded in active window.", normal_style))
-        story.append(Spacer(1, 8))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-
-# --- DEDICATED CERTIFICATE OF APPRECIATION ENGINE ---
-def generate_appreciation_certificate(teacher_name, school_name, certificate_title, achievement_subtext, metric_badge_text, observation_window, consultant_name="Harshit Bhargava"):
-    """Generates an elegant, landscape-oriented PDF certificate of appreciation."""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(letter),
-        leftMargin=36,
-        rightMargin=36,
-        topMargin=32,
-        bottomMargin=32
-    )
-    story = []
-    styles = getSampleStyleSheet()
-
-    navy_color = colors.HexColor('#0F172A')
-    primary_blue = colors.HexColor('#2563EB')
-    gold_color = colors.HexColor('#D97706')
-    neutral_dark = colors.HexColor('#334155')
-
-    head_style = ParagraphStyle('CertHead', fontName='Helvetica-Bold', fontSize=22, leading=26, alignment=1, textColor=primary_blue)
-    subhead_style = ParagraphStyle('CertSubHead', fontName='Helvetica-Bold', fontSize=12, leading=16, alignment=1, textColor=gold_color)
-    name_style = ParagraphStyle('CertName', fontName='Helvetica-Bold', fontSize=20, leading=24, alignment=1, textColor=navy_color)
-    body_style = ParagraphStyle('CertBody', fontName='Helvetica', fontSize=10.5, leading=15, alignment=1, textColor=neutral_dark)
-    badge_style = ParagraphStyle('CertBadge', fontName='Helvetica-Bold', fontSize=11, leading=14, alignment=1, textColor=primary_blue)
-    sign_style = ParagraphStyle('CertSign', fontName='Helvetica', fontSize=9, leading=12, alignment=1, textColor=neutral_dark)
-
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("🏆 <b>CERTIFICATE OF APPRECIATION</b>", head_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"<b>{certificate_title.upper()}</b>", subhead_style))
-    story.append(Spacer(1, 8))
-    story.append(HRFlowable(width="85%", thickness=1.5, color=gold_color, spaceAfter=12))
-
-    story.append(Paragraph("This certificate is proudly presented to", body_style))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"<b>{teacher_name}</b>", name_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"of <b>{school_name}</b>", body_style))
-    story.append(Spacer(1, 8))
-
-    story.append(Paragraph(f"{achievement_subtext}", body_style))
-    story.append(Spacer(1, 10))
-
-    # Metric Badge Card
-    badge_table = Table([[Paragraph(f"🎯 <b>Achievement Milestone:</b> {metric_badge_text}", badge_style)]], colWidths=[520])
-    badge_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
-        ('BOX', (0, 0), (-1, -1), 1, primary_blue),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-    ]))
-    story.append(badge_table)
-    story.append(Spacer(1, 20))
-
-    # Dual Signature block
-    sign_data = [
-        [
-            Paragraph(f"<b>Review Period</b><br/>{observation_window}", sign_style),
-            Paragraph(f"<b>{consultant_name}</b><br/>Academic Consultant / Manager", sign_style)
-        ]
-    ]
-    sign_table = Table(sign_data, colWidths=[270, 270])
-    sign_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LINEABOVE', (0, 0), (0, 0), 0.75, colors.HexColor('#94A3B8')),
-        ('LINEABOVE', (1, 0), (1, 0), 0.75, colors.HexColor('#94A3B8')),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-    ]))
-    story.append(sign_table)
+        for heading, body_items in sections.items():
+            story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
+            for item in body_items:
+                if "http://" in item or "https://" in item:
+                    story.append(Paragraph(f"🔗 {item}", link_style))
+                else:
+                    story.append(Paragraph(f"• {item}", normal_style))
+            story.append(Spacer(1, 8))
 
     doc.build(story)
     buffer.seek(0)
@@ -1224,6 +1255,13 @@ else:
         c3.metric("Inactive Teachers (0m)", inactive_count, delta=f"{-inactive_count}" if inactive_count > 0 else "0", delta_color="inverse")
         c4.metric("Compliance Rate", f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%")
 
+        with st.expander("✨ Gemini AI Intelligent Lesson Prep Analysis", expanded=False):
+            if st.button("Generate AI Lesson Prep Summary", key="ai_btn_tab1"):
+                with st.spinner("Analyzing lesson prep metrics with Gemini..."):
+                    summary_prompt = f"Analyze these lesson prep statistics: Total Teachers: {total_teachers}, Met Standard: {met_count}, Inactive: {inactive_count}. Provide 3 key actionable takeaways for the academic manager."
+                    ai_text = get_gemini_summary(summary_prompt)
+                    st.markdown(ai_text)
+
         fig_ld = px.bar(
             ld_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
             title=f"Lesson Prep Minutes per Teacher" + (f" vs. {calc_ld_kpi:.0f} Min Standard" if enable_quant_kpi else ""),
@@ -1269,34 +1307,6 @@ else:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # TAB 1 APPRECIATION CERTIFICATE GENERATOR
-        st.markdown("---")
-        st.subheader("🎓 Generate Tab 1 Appreciation Certificate")
-        c1_t1, c1_t2 = st.columns([3, 1])
-        with c1_t1:
-            award_teacher_t1 = st.selectbox("Select Teacher to Award Certificate:", options=filtered_roster['FullName'].unique(), key="cert_t1_sel")
-        with c1_t2:
-            if award_teacher_t1:
-                t1_mins = ld_daily[ld_daily['FullName'] == award_teacher_t1]['Duration_Min'].values[0] if not ld_daily[ld_daily['FullName'] == award_teacher_t1].empty else 0.0
-                t1_sch = ld_daily[ld_daily['FullName'] == award_teacher_t1]['Institution'].values[0] if not ld_daily[ld_daily['FullName'] == award_teacher_t1].empty else "School"
-                cert_pdf_t1 = generate_appreciation_certificate(
-                    teacher_name=award_teacher_t1,
-                    school_name=t1_sch,
-                    certificate_title="Certificate of Excellence in Lesson Planning & Delivery",
-                    achievement_subtext="For exceptional consistency and dedication in preparing and delivering comprehensive curriculum lesson plans.",
-                    metric_badge_text=f"{t1_mins:.1f} Minutes Prepared ({filter_description_text})",
-                    observation_window=filter_description_text,
-                    consultant_name=employee_name
-                )
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.download_button(
-                    label="🎓 Download Certificate (PDF)",
-                    data=cert_pdf_t1,
-                    file_name=f"{award_teacher_t1.replace(' ', '_')}_Lesson_Prep_Certificate.pdf",
-                    mime="application/pdf",
-                    key="dl_cert_t1"
-                )
-
         teacher_prep_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in ld_daily.iterrows()])
         tab1_metrics_summary = (
             f"🎯 Target KPI: {daily_ld_target:.0f} mins/day × {selected_num_days} working days = {calc_ld_kpi:.0f} mins total standard\n"
@@ -1338,6 +1348,13 @@ else:
         m2.metric(f"Met Standard ({calc_lib_kpi:.0f}m)" if enable_quant_kpi else "Active Teachers", f"{lib_met_count} / {lib_total_teachers}")
         m3.metric("Inactive Teachers (0m)", lib_inactive_count, delta=f"{-lib_inactive_count}" if lib_inactive_count > 0 else "0", delta_color="inverse")
         m4.metric("Engagement Rate", f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%")
+
+        with st.expander("✨ Gemini AI Intelligent Library Usage Analysis", expanded=False):
+            if st.button("Generate AI Library Summary", key="ai_btn_tab2"):
+                with st.spinner("Analyzing library engagement with Gemini..."):
+                    summary_prompt = f"Analyze these library usage statistics: Total Teachers: {lib_total_teachers}, Met Standard: {lib_met_count}, Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%. Provide 3 key recommendations."
+                    ai_text = get_gemini_summary(summary_prompt)
+                    st.markdown(ai_text)
 
         fig_lib = px.bar(
             lib_daily, x="FullName", y="Duration_Min", color="Performance Indicator Status",
@@ -1384,39 +1401,12 @@ else:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # TAB 2 APPRECIATION CERTIFICATE GENERATOR
-        st.markdown("---")
-        st.subheader("🎓 Generate Tab 2 Appreciation Certificate")
-        c2_t1, c2_t2 = st.columns([3, 1])
-        with c2_t1:
-            award_teacher_t2 = st.selectbox("Select Teacher to Award Certificate:", options=filtered_roster['FullName'].unique(), key="cert_t2_sel")
-        with c2_t2:
-            if award_teacher_t2:
-                t2_mins = lib_daily[lib_daily['FullName'] == award_teacher_t2]['Duration_Min'].values[0] if not lib_daily[lib_daily['FullName'] == award_teacher_t2].empty else 0.0
-                t2_sch = lib_daily[lib_daily['FullName'] == award_teacher_t2]['Institution'].values[0] if not lib_daily[lib_daily['FullName'] == award_teacher_t2].empty else "School"
-                cert_pdf_t2 = generate_appreciation_certificate(
-                    teacher_name=award_teacher_t2,
-                    school_name=t2_sch,
-                    certificate_title="Certificate of Distinction in Digital Library Engagement",
-                    achievement_subtext="For remarkable initiative and consistency in utilizing digital library resources and instructional media.",
-                    metric_badge_text=f"{t2_mins:.1f} Minutes Explored ({filter_description_text})",
-                    observation_window=filter_description_text,
-                    consultant_name=employee_name
-                )
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.download_button(
-                    label="🎓 Download Certificate (PDF)",
-                    data=cert_pdf_t2,
-                    file_name=f"{award_teacher_t2.replace(' ', '_')}_Library_Engagement_Certificate.pdf",
-                    mime="application/pdf",
-                    key="dl_cert_t2"
-                )
-
         teacher_lib_breakdown = "\n\n".join([f"• **{r['FullName']}**: {r['Duration_Min']:.1f} mins ({r['Performance Indicator Status']})" for _, r in lib_daily.iterrows()])
         tab2_metrics_summary = (
             f"🎯 Target KPI: {daily_lib_target:.0f} mins/day × {selected_num_days} working days = {calc_lib_kpi:.0f} mins total standard\n"
             f"Total Roster: {lib_total_teachers} teachers | Active Met Standard: {lib_met_count} | Inactive: {lib_inactive_count} | Engagement Rate: {(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%\n\n"
-            f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}"
+            f"Detailed Teacher Library Usage Logs:\n{teacher_lib_breakdown}\n\n"
+            f"Note: Detailed chapter-wise reports are available in the PDF for all teachers."
         )
         render_universal_crm_box("Library Usage Tracker", selected_schools, filter_description_text, tab2_metrics_summary)
 
@@ -1461,6 +1451,13 @@ else:
                 k1.metric("Textbooks / Chapters Opened", t3_df['Book'].nunique())
                 k2.metric("Subjects Taught", t3_df['Subject'].nunique())
                 k3.metric("Total Content Access Time", f"{t3_df['Duration_Min'].sum():.1f} Mins")
+
+                with st.expander("✨ Gemini AI Curriculum Pacing Analysis", expanded=False):
+                    if st.button("Generate AI Content Summary", key="ai_btn_tab3"):
+                        with st.spinner("Analyzing curriculum usage with Gemini..."):
+                            summary_prompt = f"Analyze textbook and subject distribution: Unique Chapters: {t3_df['Book'].nunique()}, Subjects Taught: {t3_df['Subject'].nunique()}, Total Time: {t3_df['Duration_Min'].sum():.1f} mins. Provide pacing insights."
+                            ai_text = get_gemini_summary(summary_prompt)
+                            st.markdown(ai_text)
 
                 col_c1, col_c2 = st.columns(2)
                 with col_c1:
@@ -1532,35 +1529,6 @@ else:
                         mime="application/pdf"
                     )
 
-                # TAB 3 APPRECIATION CERTIFICATE GENERATOR
-                st.markdown("---")
-                st.subheader("🎓 Generate Tab 3 Appreciation Certificate")
-                c3_t1, c3_t2 = st.columns([3, 1])
-                with c3_t1:
-                    award_teacher_t3 = st.selectbox("Select Teacher to Award Certificate:", options=filtered_roster['FullName'].unique(), key="cert_t3_sel")
-                with c3_t2:
-                    if award_teacher_t3:
-                        t3_tch_df = content_df[content_df['FullName'] == award_teacher_t3]
-                        t3_ch_count = t3_tch_df['Book'].nunique()
-                        t3_sch = t3_tch_df['Institution'].iloc[0] if not t3_tch_df.empty else "School"
-                        cert_pdf_t3 = generate_appreciation_certificate(
-                            teacher_name=award_teacher_t3,
-                            school_name=t3_sch,
-                            certificate_title="Certificate of Mastery in Content & Chapter Coverage",
-                            achievement_subtext="For thorough chapter completion and mastery over digital textbooks and curriculum modules.",
-                            metric_badge_text=f"{t3_ch_count} Distinct Chapters Explored ({filter_description_text})",
-                            observation_window=filter_description_text,
-                            consultant_name=employee_name
-                        )
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        st.download_button(
-                            label="🎓 Download Certificate (PDF)",
-                            data=cert_pdf_t3,
-                            file_name=f"{award_teacher_t3.replace(' ', '_')}_Content_Mastery_Certificate.pdf",
-                            mime="application/pdf",
-                            key="dl_cert_t3"
-                        )
-
                 book_breakdown_summary = "\n\n".join([f"• {r['Book']} ({r['Grade']} - {r['Subject']}): {r['Duration_Min']:.1f} mins" for _, r in t3_df.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index().iterrows()])
                 tab3_metrics_summary = (
                     f"Chapters Opened: {t3_df['Book'].nunique()} | Subjects Taught: {t3_df['Subject'].nunique()} | Total Access Time: {t3_df['Duration_Min'].sum():.1f} Mins\n\n"
@@ -1568,7 +1536,7 @@ else:
                 )
                 render_universal_crm_box("Content & Chapters", t3_school if t3_school != "All Selected Schools" else selected_schools, filter_description_text, tab3_metrics_summary)
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH CLEAN CLICKABLE LINKS & DEDICATED CERTIFICATE)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH PHONICS & PORTFOLIO HUB)
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
         st.caption("Review quantitative lesson metrics, detailed textbook time logs, and structured qualitative performance evidence with clickable artifact links.")
@@ -1578,7 +1546,7 @@ else:
         if not all_roster_teachers:
             st.info("No teachers found in roster for the selected school(s).")
         else:
-            col_sel_top, col_btn_top, col_bulk_btn, col_cert_top = st.columns([1.8, 1, 1, 1.2])
+            col_sel_top, col_btn_top, col_bulk_btn = st.columns([2, 1, 1])
             with col_sel_top:
                 target_teacher = st.selectbox("Select Teacher to Audit:", options=all_roster_teachers, key="top_teacher_select")
             
@@ -1654,271 +1622,240 @@ else:
                 b_summary_df = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
                 for _, br in b_summary_df.iterrows():
                     pdf_book_items.append(f"Book: {br['Book']} ({br['Grade']} - {br['Subject']}) | Time Spent: {br['Duration_Min']:.1f} Mins")
-            else:
-                pdf_book_items.append("No textbooks or digital modules opened.")
+        else:
+            pdf_book_items.append("No textbooks or digital modules opened.")
 
-            # Clean Clickable Anchor Links for PDF
-            pdf_link_items = []
-            for item in v_voice: pdf_link_items.append(f'<a href="{item["url"]}"><u>Voice Note - {item["grade"]} - {item["subject"]}</u></a>')
-            for item in v_pic: pdf_link_items.append(f'<a href="{item["url"]}"><u>Lesson Plan Picture - {item["grade"]} - {item["subject"]}</u></a>')
-            for item in v_vid: pdf_link_items.append(f'<a href="{item["url"]}"><u>Classroom Activity Video - {item["grade"]} - {item["subject"]}</u></a>')
-            for item in v_writing: pdf_link_items.append(f'<a href="{item["url"]}"><u>Student Writing Sample - {item["grade"]} - {item["subject"]}</u></a>')
-            for item in v_phonics: pdf_link_items.append(f'<a href="{item["url"]}"><u>Phonics Evidence - {item["grade"]} - {item["subject"]}</u></a>')
-            for item in v_portfolio: pdf_link_items.append(f'<a href="{item["url"]}"><u>Portfolio Showcase - {item["grade"]} - {item["subject"]}</u></a>')
+        pdf_link_items = []
+        for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
+        for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
 
-            # EXACT 3 SECTIONS FOR PDF
-            pdf_custom_sections = {
-                "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
-                    f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
-                    f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
-                ],
-                "2. Content / Digital Book Content Usage": pdf_book_items,
-                "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
-            }
+        # UPDATED SECTION HEADINGS TERMINOLOGY
+        pdf_custom_sections = {
+            "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
+                f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                f"Library & Digital Resources Duration: {t_day_lib:.1f} Minutes" + (f" ({lib_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
+                f"Consultant Assessment: {ld_advice} in lesson preparation, {lib_advice} in library integration."
+            ],
+            "2. Content / Digital Book Content Usage": pdf_book_items,
+            "3. Activity Evidence, Activity Submission, and Artifact Evidence": pdf_link_items if pdf_link_items else ["No activity or evidence submission links recorded in active window."]
+        }
 
-            pdf_tab4_summary = generate_pdf_report(
-                title_text=f"🏫 Academic Performance Profile: {target_teacher}",
-                subtitle_text=f"Observation Window: {filter_description_text}",
-                school_name=teacher_school,
-                summary_metrics={
-                    "Teacher": target_teacher,
-                    "Lesson Prep": f"{t_day_ld:.1f}m",
-                    "Library Usage": f"{t_day_lib:.1f}m",
-                    "Phonics / Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
-                    "Activity Submissions": f"{total_artifacts}"
-                },
-                dataframe=None,
-                custom_sections=pdf_custom_sections
+        pdf_tab4_summary = generate_pdf_report(
+            title_text=f"🏫 Academic Performance Profile: {target_teacher}",
+            subtitle_text=f"Observation Window: {filter_description_text}",
+            school_name=teacher_school,
+            summary_metrics={
+                "Teacher": target_teacher,
+                "Lesson Prep": f"{t_day_ld:.1f}m",
+                "Library Usage": f"{t_day_lib:.1f}m",
+                "Phonics / Portfolio": f"{len(v_phonics)} / {len(v_portfolio)}",
+                "Activity Submissions": f"{total_artifacts}"
+            },
+            dataframe=None,
+            custom_sections=pdf_custom_sections
+        )
+
+        with col_btn_top:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.download_button(
+                label="📥 Download 360° Profile (PDF)",
+                data=pdf_tab4_summary,
+                file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
+                mime="application/pdf",
+                key="top_pdf_download_btn"
             )
 
-            with col_btn_top:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.download_button(
-                    label="📥 Download 360° Profile (PDF)",
-                    data=pdf_tab4_summary,
-                    file_name=f"{target_teacher.replace(' ', '_')}_360_Profile_Report.pdf",
-                    mime="application/pdf",
-                    key="top_pdf_download_btn"
-                )
+        with col_bulk_btn:
+            st.markdown("<br>", unsafe_allow_html=True)
+            school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
+            bulk_pdf_data = generate_comprehensive_school_pdf_report(
+                school_name=teacher_school,
+                teachers_list=school_teachers_list,
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days
+            )
+            st.download_button(
+                label="📥 Download Bulk School 360 Profiles (PDF)",
+                data=bulk_pdf_data,
+                file_name=f"{teacher_school.replace(' ', '_')}_Comprehensive_School_Report.pdf",
+                mime="application/pdf",
+                key="bulk_school_pdf_btn"
+            )
 
-            with col_bulk_btn:
-                st.markdown("<br>", unsafe_allow_html=True)
-                school_teachers_list = sorted(school_master_roster[school_master_roster['Institution'] == teacher_school]['FullName'].unique().tolist())
-                bulk_pdf_data = generate_comprehensive_school_pdf_report(
-                    school_name=teacher_school,
-                    teachers_list=school_teachers_list,
-                    school_filtered_df=school_filtered_df,
-                    filtered_df=filtered_df,
-                    filter_desc=filter_description_text,
-                    calc_ld_kpi=calc_ld_kpi,
-                    calc_lib_kpi=calc_lib_kpi,
-                    daily_ld_target=daily_ld_target,
-                    daily_lib_target=daily_lib_target,
-                    selected_num_days=selected_num_days
-                )
-                st.download_button(
-                    label="📥 Download Bulk School 360 (PDF)",
-                    data=bulk_pdf_data,
-                    file_name=f"{teacher_school.replace(' ', '_')}_Comprehensive_School_Report.pdf",
-                    mime="application/pdf",
-                    key="bulk_school_pdf_btn"
-                )
+        st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
 
-            # TAB 4 APPRECIATION CERTIFICATE
-            with col_cert_top:
-                st.markdown("<br>", unsafe_allow_html=True)
-                cert_pdf_t4 = generate_appreciation_certificate(
-                    teacher_name=target_teacher,
-                    school_name=teacher_school,
-                    certificate_title="Certificate of All-Round Academic Execution and Classroom Practices",
-                    achievement_subtext="For exemplary academic leadership, disciplined classroom delivery, library research, and qualitative pedagogical artifact submissions.",
-                    metric_badge_text=f"Prep: {t_day_ld:.1f}m | Library: {t_day_lib:.1f}m | Artifacts: {total_artifacts} ({filter_description_text})",
-                    observation_window=filter_description_text,
-                    consultant_name=employee_name
-                )
-                st.download_button(
-                    label="🎓 Award 360° Certificate (PDF)",
-                    data=cert_pdf_t4,
-                    file_name=f"{target_teacher.replace(' ', '_')}_All_Round_Excellence_Certificate.pdf",
-                    mime="application/pdf",
-                    key="cert_t4_top_btn"
-                )
+        with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
+            if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
+                with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
+                    review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Phonics evidence: {len(v_phonics)}, Portfolio uploads: {len(v_portfolio)}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback."
+                    ai_eval = get_gemini_summary(review_prompt)
+                    st.markdown(ai_eval)
 
-            st.markdown(f"### 📋 Audit Profile: **{target_teacher}** | School: **{teacher_school}**")
+        st.subheader("1. Quantitative Performance Indicator Summary")
+        st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
 
-            with st.expander("✨ Gemini AI Comprehensive Teacher Evaluation Report", expanded=False):
-                if st.button("Generate AI Teacher 360 Review", key="ai_btn_tab4"):
-                    with st.spinner("Generating comprehensive teacher evaluation with Gemini..."):
-                        review_prompt = f"Write an academic manager review for teacher {target_teacher} at {teacher_school}. Lesson prep: {t_day_ld:.1f} mins, Library usage: {t_day_lib:.1f} mins, Phonics evidence: {len(v_phonics)}, Portfolio uploads: {len(v_portfolio)}, Activity videos: {len(v_vid)}, Writing samples: {len(v_writing)}. Provide constructive feedback."
-                        ai_eval = get_gemini_summary(review_prompt)
-                        st.markdown(ai_eval)
+        col_sum1, col_sum2 = st.columns([1, 1.2])
 
-            st.subheader("1. Quantitative Performance Indicator Summary")
-            st.info(f"📅 **Active Filter**: `{filter_description_text}` | **Performance Indicator Duration**: `{selected_num_days} Working Day(s)`")
+        with col_sum1:
+            st.markdown("##### 📌 Quantitative Performance Indicator Overview")
+            s1, s2 = st.columns(2)
+            s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
+            s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
+            
+            st.markdown("##### 💡 Academic Consultant Observation")
+            if calc_ld_kpi == 0 and calc_lib_kpi == 0:
+                st.info(f"🏖️ **Break Period**: Active filter falls on an excluded calendar break.")
+            elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:
+                st.success(f"👏 **Consistent Delivery**: {target_teacher} maintained steady curriculum prep and library engagement.")
+            elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:
+                st.warning(f"💡 **Growth Opportunity**: Focus on structured digital planning hours and library exploration.")
+            else:
+                st.info(f"📌 **Balanced Usage**: Progress noted with potential to scale integration.")
 
-            col_sum1, col_sum2 = st.columns([1, 1.2])
+            st.write(f"• **Lesson Plan Preparation**: {ld_advice}")
+            st.write(f"• **Library Usage Engagement**: {lib_advice}")
 
-            with col_sum1:
-                st.markdown("##### 📌 Quantitative Performance Indicator Overview")
-                s1, s2 = st.columns(2)
-                s1.metric("Lesson Prep Mins", f"{t_day_ld:.1f} mins", delta=f"{ld_pct:.0f}% of Standard" if enable_quant_kpi else None)
-                s2.metric("Library Usage Mins", f"{t_day_lib:.1f} mins", delta=f"{lib_pct:.0f}% of Standard" if enable_quant_kpi else None)
-                
-                st.markdown("##### 💡 Academic Consultant Observation")
-                if calc_ld_kpi == 0 and calc_lib_kpi == 0:
-                    st.info(f"🏖️ **Break Period**: Active filter falls on an excluded calendar break.")
-                elif t_day_ld >= calc_ld_kpi and t_day_lib >= calc_lib_kpi:
-                    st.success(f"👏 **Consistent Delivery**: {target_teacher} maintained steady curriculum prep and library engagement.")
-                elif t_day_ld < calc_ld_kpi and t_day_lib < calc_lib_kpi:
-                    st.warning(f"💡 **Growth Opportunity**: Focus on structured digital planning hours and library exploration.")
-                else:
-                    st.info(f"📌 **Balanced Usage**: Progress noted with potential to scale integration.")
-
-                st.write(f"• **Lesson Plan Preparation**: {ld_advice}")
-                st.write(f"• **Library Usage Engagement**: {lib_advice}")
-
-            with col_sum2:
-                st.markdown("##### 📊 Performance Indicator Achievement Comparison")
-                ach_df = pd.DataFrame({
-                    'Performance Indicator Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
-                                                       f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
-                    'Logged Minutes': [t_day_ld, t_day_lib],
-                    'Performance Indicator Standard': [calc_ld_kpi, calc_lib_kpi]
-                })
-                
-                fig_ach = go.Figure()
+        with col_sum2:
+            st.markdown("##### 📊 Performance Indicator Achievement Comparison")
+            ach_df = pd.DataFrame({
+                'Performance Indicator Category': [f'Lesson Prep ({calc_ld_kpi:.0f}m)' if enable_quant_kpi else 'Lesson Prep', 
+                                                   f'Library Usage ({calc_lib_kpi:.0f}m)' if enable_quant_kpi else 'Library Usage'],
+                'Logged Minutes': [t_day_ld, t_day_lib],
+                'Performance Indicator Standard': [calc_ld_kpi, calc_lib_kpi]
+            })
+            
+            fig_ach = go.Figure()
+            fig_ach.add_trace(go.Bar(
+                x=ach_df['Performance Indicator Category'], y=ach_df['Logged Minutes'],
+                name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
+            ))
+            if enable_quant_kpi:
                 fig_ach.add_trace(go.Bar(
-                    x=ach_df['Performance Indicator Category'], y=ach_df['Logged Minutes'],
-                    name='Logged Minutes', marker_color='#2CA02C', text=[f"{v:.1f} mins" for v in ach_df['Logged Minutes']], textposition='auto'
+                    x=ach_df['Performance Indicator Category'], y=ach_df['Performance Indicator Standard'],
+                    name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['Performance Indicator Standard']], textposition='auto'
                 ))
-                if enable_quant_kpi:
-                    fig_ach.add_trace(go.Bar(
-                        x=ach_df['Performance Indicator Category'], y=ach_df['Performance Indicator Standard'],
-                        name='Standard Guideline', marker_color='#E5E5E5', opacity=0.6, text=[f"{v:.1f} mins" for v in ach_df['Performance Indicator Standard']], textposition='auto'
-                    ))
-                fig_ach.update_layout(
-                    barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
-                    height=280, margin=dict(l=20, r=20, t=40, b=20)
+            fig_ach.update_layout(
+                barmode='group', title=f"Logged Minutes vs. Standard Guideline ({selected_num_days} Working Day(s))",
+                height=280, margin=dict(l=20, r=20, t=40, b=20)
+            )
+            st.plotly_chart(fig_ach, use_container_width=True)
+
+        st.markdown("---")
+
+        st.subheader("2. Detailed Textbook & Chapter Time Breakdown")
+        if teacher_books.empty:
+            st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
+        else:
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                t_book_summary = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
+                fig_tb_bar = px.bar(
+                    t_book_summary, x="Duration_Min", y="Book", color="Grade", orientation="h",
+                    title=f"Time Spent per Book/Chapter by {target_teacher} (Minutes)",
+                    labels={"Duration_Min": "Time Spent (Minutes)", "Book": "Book / Chapter"},
+                    text_auto=".1f"
                 )
-                st.plotly_chart(fig_ach, use_container_width=True)
+                fig_tb_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=320)
+                st.plotly_chart(fig_tb_bar, use_container_width=True)
+                
+            with col_b2:
+                st.markdown("##### ⏱️ Time Allocation Table")
+                display_book_table = t_book_summary.rename(columns={'Book': 'Textbook / Module', 'Grade': 'Grade', 'Subject': 'Subject', 'Duration_Min': 'Time Spent (Mins)'}).round({'Time Spent (Mins)': 1})
+                st.dataframe(display_book_table, use_container_width=True)
 
-            st.markdown("---")
+        st.markdown("---")
 
-            st.subheader("2. Detailed Textbook & Chapter Time Breakdown")
-            if teacher_books.empty:
-                st.info(f"No digital textbooks or modules recorded for **{target_teacher}**.")
+        st.subheader("3. Qualitative Evidences & Artifact Hub (Phonics & Portfolio Integrated)")
+
+        v_cols = st.columns(5)
+        v_cols[0].metric("📖 LP / Audio Notes", f"{lp_combo_total}", delta=f"{len(v_voice)} Audio | {len(v_pic)} Img")
+        v_cols[1].metric("🎥 Activity Videos", f"{len(v_vid)}")
+        v_cols[2].metric("📝 Writing Samples", f"{len(v_writing)}")
+        v_cols[3].metric("🔤 Phonics Evidence", f"{len(v_phonics)}")
+        v_cols[4].metric("📁 Portfolio Uploads", f"{len(v_portfolio)}")
+
+        st.markdown("##### 📌 Detailed Evidence Submissions & Direct Artifact Links")
+        q_cols1, q_cols2, q_cols3 = st.columns(3)
+        
+        with q_cols1:
+            st.markdown("###### 📖 1. Lesson Plans & Pre-Class Voice Notes")
+            combined_lp_items = []
+            for item in v_voice:
+                combined_lp_items.append(f"🎧 [Audio Note]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            for item in v_pic:
+                combined_lp_items.append(f"🖼️ [LP Picture]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            if combined_lp_items:
+                for line in combined_lp_items: st.markdown(f"• {line}")
             else:
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    t_book_summary = teacher_books.groupby(['Book', 'Grade', 'Subject'])['Duration_Min'].sum().reset_index()
-                    fig_tb_bar = px.bar(
-                        t_book_summary, x="Duration_Min", y="Book", color="Grade", orientation="h",
-                        title=f"Time Spent per Book/Chapter by {target_teacher} (Minutes)",
-                        labels={"Duration_Min": "Time Spent (Minutes)", "Book": "Book / Chapter"},
-                        text_auto=".1f"
-                    )
-                    fig_tb_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=320)
-                    st.plotly_chart(fig_tb_bar, use_container_width=True)
-                    
-                with col_b2:
-                    st.markdown("##### ⏱️ Time Allocation Table")
-                    display_book_table = t_book_summary.rename(columns={'Book': 'Textbook / Module', 'Grade': 'Grade', 'Subject': 'Subject', 'Duration_Min': 'Time Spent (Mins)'}).round({'Time Spent (Mins)': 1})
-                    st.dataframe(display_book_table, use_container_width=True)
+                st.caption("No lesson plans or voice reflections submitted.")
 
-            st.markdown("---")
+        with q_cols2:
+            st.markdown("###### 🎥 2. Classroom Videos & Student Writing")
+            for item in v_vid:
+                st.markdown(f"• 🎥 [Watch Video]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            for item in v_writing:
+                st.markdown(f"• 📝 [View Writing]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            if not v_vid and not v_writing:
+                st.caption("No activity videos or writing samples uploaded.")
 
-            st.subheader("3. Qualitative Evidences & Artifact Hub (Clean Clickable Links)")
+        with q_cols3:
+            st.markdown("###### 🔤 3. Phonics Implementation & Portfolio Showcase")
+            for item in v_phonics:
+                st.markdown(f"• 🔤 [Phonics Evidence]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            for item in v_portfolio:
+                st.markdown(f"• 📁 [Portfolio Artifact]({item['url']}) - **{item['grade']}** | *{item['subject']}* ({item['lesson']}, {item['date']})")
+            if not v_phonics and not v_portfolio:
+                st.caption("No phonics implementation or portfolio files uploaded.")
 
-            v_cols = st.columns(5)
-            v_cols[0].metric("📖 LP / Audio Notes", f"{lp_combo_total}", delta=f"{len(v_voice)} Audio | {len(v_pic)} Img")
-            v_cols[1].metric("🎥 Activity Videos", f"{len(v_vid)}")
-            v_cols[2].metric("📝 Writing Samples", f"{len(v_writing)}")
-            v_cols[3].metric("🔤 Phonics Evidence", f"{len(v_phonics)}")
-            v_cols[4].metric("📁 Portfolio Uploads", f"{len(v_portfolio)}")
+        st.markdown("---")
 
-            st.markdown("##### 📌 Detailed Evidence Submissions & Direct Artifact Links")
-            q_cols1, q_cols2, q_cols3 = st.columns(3)
-            
-            with q_cols1:
-                st.markdown("###### 📖 1. Lesson Plans & Pre-Class Voice Notes")
-                combined_lp_items = []
-                for item in v_voice:
-                    combined_lp_items.append(f"🎧 [Voice Note - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                for item in v_pic:
-                    combined_lp_items.append(f"🖼️ [Lesson Plan Picture - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                if combined_lp_items:
-                    for line in combined_lp_items: st.markdown(f"• {line}")
-                else:
-                    st.caption("No lesson plans or voice reflections submitted.")
+        col_log_head, col_log_filt = st.columns([2, 1])
+        with col_log_head:
+            st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
+        with col_log_filt:
+            available_types = ["All Types"] + sorted(teacher_all_data['Type'].dropna().unique().tolist())
+            selected_type_filter = st.selectbox("Filter Audit Log by Type:", options=available_types)
 
-            with q_cols2:
-                st.markdown("###### 🎥 2. Classroom Videos & Student Writing")
-                for item in v_vid:
-                    st.markdown(f"• 🎥 [Classroom Activity Video - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                for item in v_writing:
-                    st.markdown(f"• 📝 [Student Writing Sample - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                if not v_vid and not v_writing:
-                    st.caption("No activity videos or writing samples uploaded.")
+        if selected_type_filter == "All Types":
+            filtered_audit_log = teacher_all_data
+        else:
+            filtered_audit_log = teacher_all_data[teacher_all_data['Type'] == selected_type_filter]
 
-            with q_cols3:
-                st.markdown("###### 🔤 3. Phonics Implementation & Portfolio Showcase")
-                for item in v_phonics:
-                    st.markdown(f"• 🔤 [Phonics Evidence - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                for item in v_portfolio:
-                    st.markdown(f"• 📁 [Portfolio Showcase - {item['grade']} - {item['subject']}]({item['url']}) *({item['lesson']}, {item['date']})*")
-                if not v_phonics and not v_portfolio:
-                    st.caption("No phonics implementation or portfolio files uploaded.")
+        t_log_cols = ['Date', 'Type', 'Grade', 'Subject', 'Book', 'StartTime', 'Phonics_Evidence_Link', 'Portfolio_Evidence_Link', 'Voice_Note_Link', 'Video_Evidence_1', 'Writing_Sample_Link', 'Duration (HH:MM:SS)', 'Duration_Min']
+        t_avail_cols = [c for c in t_log_cols if c in filtered_audit_log.columns]
+        
+        if filtered_audit_log.empty:
+            st.info(f"No logs found for type `{selected_type_filter}` during `{filter_description_text}`.")
+        else:
+            t_display_log = filtered_audit_log[t_avail_cols].rename(columns={'Duration_Min': 'Minutes'}).sort_values(by='StartTime', ascending=False)
+            t_display_log['Minutes'] = t_display_log['Minutes'].round(1)
+            st.dataframe(t_display_log, use_container_width=True)
 
-            st.markdown("---")
-
-            col_log_head, col_log_filt = st.columns([2, 1])
-            with col_log_head:
-                st.subheader(f"4. Granular Classroom Audit Log for {target_teacher}")
-            with col_log_filt:
-                available_types = ["All Types"] + sorted(teacher_all_data['Type'].dropna().unique().tolist())
-                selected_type_filter = st.selectbox("Filter Audit Log by Type:", options=available_types)
-
-            if selected_type_filter == "All Types":
-                filtered_audit_log = teacher_all_data
-            else:
-                filtered_audit_log = teacher_all_data[teacher_all_data['Type'] == selected_type_filter]
-
-            t_log_cols = ['Date', 'Type', 'Grade', 'Subject', 'Book', 'StartTime', 'Phonics_Evidence_Link', 'Portfolio_Evidence_Link', 'Voice_Note_Link', 'Video_Evidence_1', 'Writing_Sample_Link', 'Duration (HH:MM:SS)', 'Duration_Min']
-            t_avail_cols = [c for c in t_log_cols if c in filtered_audit_log.columns]
-            
-            if filtered_audit_log.empty:
-                st.info(f"No logs found for type `{selected_type_filter}` during `{filter_description_text}`.")
-            else:
-                t_display_log = filtered_audit_log[t_avail_cols].rename(columns={'Duration_Min': 'Minutes'}).sort_values(by='StartTime', ascending=False)
-                t_display_log['Minutes'] = t_display_log['Minutes'].round(1)
-                st.dataframe(
-                    t_display_log,
-                    column_config={
-                        "Phonics_Evidence_Link": st.column_config.LinkColumn("Phonics Evidence", display_text=r"https://.*/(.*)"),
-                        "Portfolio_Evidence_Link": st.column_config.LinkColumn("Portfolio Evidence", display_text=r"https://.*/(.*)"),
-                        "Voice_Note_Link": st.column_config.LinkColumn("Voice Note", display_text=r"https://.*/(.*)"),
-                        "Video_Evidence_1": st.column_config.LinkColumn("Video 1", display_text=r"https://.*/(.*)"),
-                        "Writing_Sample_Link": st.column_config.LinkColumn("Writing Sample", display_text=r"https://.*/(.*)"),
-                    },
-                    use_container_width=True
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                buf_p1_xlsx = BytesIO()
+                with pd.ExcelWriter(buf_p1_xlsx, engine='openpyxl') as writer:
+                    t_display_log.to_excel(writer, index=False, sheet_name='Teacher_Audit')
+                buf_p1_xlsx.seek(0)
+                st.download_button(
+                    label=f"📥 Download Full Excel Audit for {target_teacher}",
+                    data=buf_p1_xlsx,
+                    file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
-                    buf_p1_xlsx = BytesIO()
-                    with pd.ExcelWriter(buf_p1_xlsx, engine='openpyxl') as writer:
-                        t_display_log.to_excel(writer, index=False, sheet_name='Teacher_Audit')
-                    buf_p1_xlsx.seek(0)
-                    st.download_button(
-                        label=f"📥 Download Full Excel Audit for {target_teacher}",
-                        data=buf_p1_xlsx,
-                        file_name=f"{target_teacher.replace(' ', '_')}_{selected_type_filter}_Audit.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-
-            tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Phonics: {len(v_phonics)}, Portfolio: {len(v_portfolio)}, Activity Submissions: {total_artifacts}"
-            render_universal_crm_box("Teacher 360 Profile", teacher_school, filter_description_text, tab4_metrics_summary)
+        tab4_metrics_summary = f"Teacher Audit: {target_teacher} (School: {teacher_school}), Lesson Prep: {t_day_ld:.1f}m, Library Usage: {t_day_lib:.1f}m, Phonics: {len(v_phonics)}, Portfolio: {len(v_portfolio)}, Activity Submissions: {total_artifacts}"
+        render_universal_crm_box("Teacher 360 Profile", teacher_school, filter_description_text, tab4_metrics_summary)
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
@@ -2152,34 +2089,6 @@ else:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            # TAB 6 APPRECIATION CERTIFICATE GENERATOR
-            st.markdown("---")
-            st.subheader("🎓 Generate Tab 6 Progression & Execution Certificate")
-            c6_t1, c6_t2 = st.columns([3, 1])
-            with c6_t1:
-                award_teacher_t6 = st.selectbox("Select Teacher to Award Certificate:", options=school_t6_roster['FullName'].unique(), key="cert_t6_sel")
-            with c6_t2:
-                if award_teacher_t6:
-                    t6_row = t6_teachers[t6_teachers['FullName'] == award_teacher_t6]
-                    t6_tier = t6_row['Execution_Tier'].values[0] if not t6_row.empty else "Active Achiever"
-                    cert_pdf_t6 = generate_appreciation_certificate(
-                        teacher_name=award_teacher_t6,
-                        school_name=target_school_t6,
-                        certificate_title="Certificate of High Progression & Consistent Execution",
-                        achievement_subtext="For stellar pacing, balanced teaching execution, and high compliance across all academic KPIs.",
-                        metric_badge_text=f"Tier: {t6_tier} ({filter_description_text})",
-                        observation_window=filter_description_text,
-                        consultant_name=employee_name
-                    )
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.download_button(
-                        label="🎓 Download Certificate (PDF)",
-                        data=cert_pdf_t6,
-                        file_name=f"{award_teacher_t6.replace(' ', '_')}_Progression_Certificate.pdf",
-                        mime="application/pdf",
-                        key="dl_cert_t6"
-                    )
-
             t6_teacher_breakdown = "\n".join([f"• **{r['Teacher Name']}**: Prep {r['Lesson Prep (m)']}m, Library {r['Library Usage (m)']}m ({r['Execution Tier']})" for _, r in display_t6_table.iterrows()])
             tab6_metrics_summary = (
                 f"School Inspection: {target_school_t6} | Achievers: {num_ach} | Fluctuating: {num_fluc} | Inactive: {num_inact}\n\n"
@@ -2187,7 +2096,7 @@ else:
             )
             render_universal_crm_box("School Inspection", target_school_t6, filter_description_text, tab6_metrics_summary)
 
-    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED (WITH CLEAN LINKS, DOWNLOADS & DEDICATED CERTIFICATE)
+    # TAB 7: GLOBAL LIVE EVIDENCE SUBMISSIONS FEED & QUALITATIVE PERFORMANCE INDICATOR TRACKER
     with tab7:
         st.header("📬 Live Evidence Submissions Feed & Qualitative Performance Indicator Tracker")
         if enable_qual_kpi:
@@ -2302,20 +2211,7 @@ else:
             t7_avail = [c for c in t7_display_cols if c in t7_filtered.columns]
             
             t7_table = t7_filtered[t7_avail].sort_values(by='StartTime', ascending=False)
-            st.dataframe(
-                t7_table,
-                column_config={
-                    "Phonics_Evidence_Link": st.column_config.LinkColumn("Phonics Evidence", display_text=r"https://.*/(.*)"),
-                    "Portfolio_Evidence_Link": st.column_config.LinkColumn("Portfolio Evidence", display_text=r"https://.*/(.*)"),
-                    "Voice_Note_Link": st.column_config.LinkColumn("Voice Note", display_text=r"https://.*/(.*)"),
-                    "Lesson_Plan_Picture": st.column_config.LinkColumn("LP Picture", display_text=r"https://.*/(.*)"),
-                    "Video_Evidence_1": st.column_config.LinkColumn("Video 1", display_text=r"https://.*/(.*)"),
-                    "Video_Evidence_2": st.column_config.LinkColumn("Video 2", display_text=r"https://.*/(.*)"),
-                    "Video_Evidence_3": st.column_config.LinkColumn("Video 3", display_text=r"https://.*/(.*)"),
-                    "Writing_Sample_Link": st.column_config.LinkColumn("Writing Sample", display_text=r"https://.*/(.*)"),
-                },
-                use_container_width=True
-            )
+            st.dataframe(t7_table, use_container_width=True)
 
             col_t7_dl1, col_t7_dl2 = st.columns(2)
             with col_t7_dl1:
@@ -2348,34 +2244,6 @@ else:
                     file_name=f"Evidence_Submissions_Report_{selected_month.replace(' ', '_')}.pdf",
                     mime="application/pdf"
                 )
-
-            # TAB 7 DEDICATED APPRECIATION CERTIFICATE GENERATOR
-            st.markdown("---")
-            st.subheader("🎓 Generate Tab 7 Evidence & Artifact Certificate")
-            c7_t1, c7_t2 = st.columns([3, 1])
-            with c7_t1:
-                award_teacher_t7 = st.selectbox("Select Teacher to Award Evidence Certificate:", options=filtered_roster['FullName'].unique(), key="cert_t7_sel")
-            with c7_t2:
-                if award_teacher_t7:
-                    t7_sub_count = len(all_submissions_df[all_submissions_df['FullName'] == award_teacher_t7])
-                    t7_sch = filtered_roster[filtered_roster['FullName'] == award_teacher_t7]['Institution'].values[0] if not filtered_roster[filtered_roster['FullName'] == award_teacher_t7].empty else "School"
-                    cert_pdf_t7 = generate_appreciation_certificate(
-                        teacher_name=award_teacher_t7,
-                        school_name=t7_sch,
-                        certificate_title="Certificate of Active Classroom Evidence Submission",
-                        achievement_subtext="For active participation, qualitative consistency, and prompt evidence submissions in classroom teaching practices, phonics, and student portfolio work.",
-                        metric_badge_text=f"{t7_sub_count} Artifacts Submitted ({filter_description_text})",
-                        observation_window=filter_description_text,
-                        consultant_name=employee_name
-                    )
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.download_button(
-                        label="🎓 Award Evidence Certificate (PDF)",
-                        data=cert_pdf_t7,
-                        file_name=f"{award_teacher_t7.replace(' ', '_')}_Evidence_Certificate.pdf",
-                        mime="application/pdf",
-                        key="dl_cert_t7"
-                    )
 
             tab7_metrics_summary = (
                 f"Active KPIs: Min {target_vid_count} Vids, {target_writing_count} Writing, {target_lp_combo_count} LP/Audio, {target_phonics_count} Phonics, {target_portfolio_count} Portfolio\n"
