@@ -492,7 +492,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
             for item in body_items:
                 if "http://" in item or "https://" in item:
-                    story.append(Paragraph(f"🔗 {item}", link_style))
+                    story.append(Paragraph(f"{item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
             story.append(Spacer(1, 10))
