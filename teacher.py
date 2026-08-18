@@ -138,10 +138,27 @@ with st.form("evidence_submission_form", clear_on_submit=True):
         grade_options = ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]
         sub_grade = st.selectbox("Select Grade *", options=grade_options)
     with col_a2:
-        subject_options = ["Phonics / Literacy", "Mathematics", "English", "Hindi", "Environmental Studies (EVS)", "Science", "General Knowledge"]
+        subject_options = [
+            "Phonics / Literacy", 
+            "Mathematics", 
+            "Numeracy",
+            "English", 
+            "Hindi", 
+            "Environmental Studies (EVS)", 
+            "Science", 
+            "General Knowledge (GK)",
+            "English Grammar",
+            "Computer",
+            "Play Activity",
+            "Play Time",
+            "Play Based"
+        ]
         sub_subject = st.selectbox("Select Subject *", options=subject_options)
 
-    sub_lesson_num = st.text_input("Lesson Plan / Activity Topic (e.g., Lesson 4 / Letter Sounds) *")
+    sub_lesson_num = st.text_input("Chapter Name and Lesson Plan Number (e.g., Chapter 2 - Plants / Lesson Plan #4) *")
+
+    # --- COMMON INSTRUCTIONAL NOTE FOR EVIDENCE UPLOADS ---
+    st.info("📌 **Note:** Please upload your specific evidence—such as your pre-class voice reflection note, lesson plan picture, classroom activity videos, writing samples, phonics practice, or portfolio artifact. Upload whichever evidence is available using the file upload options given below.")
 
     st.subheader("3. Core Qualitative Evidence Uploads")
     uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note (Audio)", type=["mp3", "wav", "m4a", "ogg"])
@@ -174,7 +191,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
         elif sub_teacher_name == "-- Select Your Name --":
             st.error("Please select your name from the roster above.")
         elif not sub_lesson_num.strip():
-            st.error("Please provide the Lesson Plan / Activity Topic.")
+            st.error("Please provide the Chapter Name and Lesson Plan Number.")
         else:
             try:
                 with st.spinner("Uploading files securely to Supabase storage..."):
@@ -203,7 +220,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                     'Type': 'lessonDelivery',
                     'Grade': sub_grade,
                     'Subject': sub_subject,
-                    'Book': f"Lesson Plan #{sub_lesson_num.strip()}",
+                    'Book': sub_lesson_num.strip(),
                     'StartTime': pd.to_datetime(sub_date).strftime('%Y-%m-%d 09:00:00'),
                     'EndTime': pd.to_datetime(sub_date).strftime('%Y-%m-%d 09:45:00'),
                     'Duration (Minutes)': 0.0,
