@@ -666,7 +666,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
             for item in body_items:
-                if "http://" in item or "https://" in item:
+                if "<a href=" in item:
                     story.append(Paragraph(f"{item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
@@ -706,7 +706,7 @@ def generate_pdf_report(title_text, subtitle_text, school_name, summary_metrics,
     return buffer
 
 
-def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_filtered_df, filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi, daily_ld_target, daily_lib_target, selected_num_days):
+def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_filtered_df, filtered_df, filter_desc, calc_ld_kpi, calc_lib_kpi, daily_ld_target, daily_lib_target, selected_num_days, target_vid_count=3, target_writing_count=3, target_lp_combo_count=3, target_phonics_count=2, target_portfolio_count=1, enable_quant_kpi=True, enable_qual_kpi=True):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -729,6 +729,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
 
     school_curr_df = filtered_df[filtered_df['Institution'] == school_name]
 
+    # PART 1: CONSOLIDATED TABLES
     story.append(Paragraph(f"<b>Comprehensive School Audit & Feature-Wise Report</b>", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f"<b>Institution / School Focus:</b> {school_name}", school_style))
@@ -757,10 +758,12 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
 
     school_summary_metrics = {
         "Active Roster Teachers": total_teachers_count,
-        "Met Lesson Prep KPI": f"{met_ld_count} / {total_teachers_count}",
-        "Met Library KPI": f"{met_lib_count} / {total_teachers_count}",
         "Working Days Evaluated": f"{selected_num_days} Days"
     }
+    if enable_quant_kpi:
+        school_summary_metrics["Met Lesson Prep KPI"] = f"{met_ld_count} / {total_teachers_count}"
+        school_summary_metrics["Met Library KPI"] = f"{met_lib_count} / {total_teachers_count}"
+
     headers_row = [Paragraph(k, card_header) for k in school_summary_metrics.keys()]
     values_row = [Paragraph(str(v), card_value) for v in school_summary_metrics.values()]
     col_w = 540 / len(school_summary_metrics)
@@ -776,18 +779,20 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("<b>School-Level Feature Performance Summary & Guidelines</b>", sec_head_style))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
-    story.append(Paragraph(f"• <b>Lesson Plan Performance Standard:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total benchmark standard)", normal_style))
-    story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total benchmark standard)", normal_style))
-    story.append(Spacer(1, 10))
+    if enable_quant_kpi:
+        story.append(Paragraph("<b>School-Level Feature Performance Summary & Guidelines</b>", sec_head_style))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=6))
+        story.append(Paragraph(f"• <b>Lesson Plan Performance Standard:</b> {daily_ld_target:.0f} mins/day × {selected_num_days} working days ({calc_ld_kpi:.0f} mins total benchmark standard)", normal_style))
+        story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total benchmark standard)", normal_style))
+        story.append(Spacer(1, 10))
 
+    # 1. Lesson Plan Preparation Consolidated Report
     story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report</b>", sec_head_style))
     ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
         t_mins = ld_usage[ld_usage['FullName'] == t_name]['Duration_Min'].values[0] if not ld_usage[ld_usage['FullName'] == t_name].empty else 0.0
         t_avg = t_mins / selected_num_days if selected_num_days > 0 else 0.0
-        if calc_ld_kpi == 0:
+        if not enable_quant_kpi or calc_ld_kpi == 0:
             t_stat = "Activity Logged" if t_mins > 0 else "No Activity Logged"
         elif t_mins >= calc_ld_kpi:
             t_stat = f"Met Performance Indicator (>= {calc_ld_kpi:.0f}m)"
@@ -812,12 +817,13 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(ld_table_obj)
     story.append(Spacer(1, 14))
 
+    # 2. Library Usage Consolidated Report
     story.append(Paragraph("<b>2. Library Usage Consolidated Report</b>", sec_head_style))
     lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
         t_lib_mins = lib_usage[lib_usage['FullName'] == t_name]['Duration_Min'].values[0] if not lib_usage[lib_usage['FullName'] == t_name].empty else 0.0
         t_lib_avg = t_lib_mins / selected_num_days if selected_num_days > 0 else 0.0
-        if calc_lib_kpi == 0:
+        if not enable_quant_kpi or calc_lib_kpi == 0:
             t_lib_stat = "Activity Logged" if t_lib_mins > 0 else "No Activity Logged"
         elif t_lib_mins >= calc_lib_kpi:
             t_lib_stat = f"Met Performance Indicator (>= {calc_lib_kpi:.0f}m)"
@@ -840,8 +846,43 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(lib_table_obj)
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 14))
 
+    # 3. Qualitative Submissions & Evidence Compliance (Consolidated Report Restored!)
+    if enable_qual_kpi:
+        story.append(Paragraph("<b>3. Qualitative Submissions & Evidence Compliance</b>", sec_head_style))
+        qual_summary_table_data = [["Teacher Name", "LP / Audio Notes", "Activity Videos", "Writing Samples", "Phonics Evidences", "Portfolio Artifacts", "Status"]]
+        
+        for t_name in teachers_list:
+            sub_t = school_curr_df[school_curr_df['FullName'] == t_name]
+            v_cnt = sum([len([l for l in sub_t[col].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if col in sub_t.columns])
+            w_cnt = len([l for l in sub_t['Writing_Sample_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in sub_t.columns else 0
+            lp_cnt = len([l for l in sub_t['Lesson_Plan_Picture'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in sub_t.columns else 0
+            vn_cnt = len([l for l in sub_t['Voice_Note_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in sub_t.columns else 0
+            ph_cnt = len([l for l in sub_t['Phonics_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Phonics_Evidence_Link' in sub_t.columns else 0
+            pf_cnt = len([l for l in sub_t['Portfolio_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Portfolio_Evidence_Link' in sub_t.columns else 0
+            
+            is_q_ok = (v_cnt >= target_vid_count and w_cnt >= target_writing_count and (lp_cnt + vn_cnt) >= target_lp_combo_count and ph_cnt >= target_phonics_count and pf_cnt >= target_portfolio_count)
+            q_stat = "Met Standard" if is_q_ok else "In Progress"
+            qual_summary_table_data.append([t_name, str(lp_cnt + vn_cnt), str(v_cnt), str(w_cnt), str(ph_cnt), str(pf_cnt), q_stat])
+
+        qual_table_obj = Table(qual_summary_table_data, colWidths=[130, 80, 70, 70, 75, 75, 40])
+        qual_table_obj.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+            ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        story.append(qual_table_obj)
+        story.append(Spacer(1, 12))
+
+    # PART 2: INDIVIDUAL TEACHER 360° PROFILES (WITH CLICKABLE HYPERLINKS)
     for target_teacher in teachers_list:
         story.append(PageBreak())
 
@@ -912,13 +953,20 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         else:
             pdf_book_items.append("No textbooks or digital modules opened.")
 
+        # Clean, Masked Clickable Hyperlinks for PDF
         pdf_link_items = []
-        for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
-        for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
-        for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
-        for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
-        for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
-        for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
+        for i, item in enumerate(v_voice, 1): 
+            pdf_link_items.append(f'• 🎧 <a href="{item["url"]}"><u><b>Open Voice Reflection #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+        for i, item in enumerate(v_pic, 1): 
+            pdf_link_items.append(f'• 🖼️ <a href="{item["url"]}"><u><b>View Lesson Plan Photo #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+        for i, item in enumerate(v_vid, 1): 
+            pdf_link_items.append(f'• 🎥 <a href="{item["url"]}"><u><b>Watch Classroom Activity Video #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+        for i, item in enumerate(v_writing, 1): 
+            pdf_link_items.append(f'• 📝 <a href="{item["url"]}"><u><b>View Student Writing Sample #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+        for i, item in enumerate(v_phonics, 1): 
+            pdf_link_items.append(f'• 🔤 <a href="{item["url"]}"><u><b>Open Phonics Evidence #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+        for i, item in enumerate(v_portfolio, 1): 
+            pdf_link_items.append(f'• 📁 <a href="{item["url"]}"><u><b>View Teacher Portfolio Showcase #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
 
         story.append(Paragraph(f"<b>Academic Performance Profile: {target_teacher}</b>", title_style))
         story.append(Spacer(1, 4))
@@ -964,7 +1012,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
             story.append(Paragraph(f"<b>{heading}</b>", sec_head_style))
             story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=4))
             for item in body_items:
-                if "http://" in item or "https://" in item:
+                if "<a href=" in item:
                     story.append(Paragraph(f"{item}", link_style))
                 else:
                     story.append(Paragraph(f"• {item}", normal_style))
@@ -1445,16 +1493,24 @@ else:
 
         col_t1_d1, col_t1_d2 = st.columns(2)
         with col_t1_d1:
-            pdf_tab1 = generate_pdf_report(
-                title_text="📘 Lesson Plan Preparation Report",
-                subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {total_teachers}",
-                school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
-                summary_metrics={
-                    "Total Teachers": total_teachers,
-                    "Active Teachers": f"{met_count} / {total_teachers}",
-                    "Compliance Rate": f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
-                },
-                dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
+            pdf_tab1 = generate_comprehensive_school_pdf_report(
+                school_name=selected_schools[0] if len(selected_schools) == 1 else "Multiple Schools Portfolio",
+                teachers_list=filtered_roster['FullName'].unique().tolist(),
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days,
+                target_vid_count=target_vid_count,
+                target_writing_count=target_writing_count,
+                target_lp_combo_count=target_lp_combo_count,
+                target_phonics_count=target_phonics_count,
+                target_portfolio_count=target_portfolio_count,
+                enable_quant_kpi=enable_quant_kpi,
+                enable_qual_kpi=enable_qual_kpi
             )
             st.download_button(
                 label="📄 Download Tab 1 Report (PDF)",
@@ -1539,16 +1595,24 @@ else:
 
         col_t2_d1, col_t2_d2 = st.columns(2)
         with col_t2_d1:
-            pdf_tab2 = generate_pdf_report(
-                title_text="📚 Library Usage Report",
-                subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {lib_total_teachers}",
-                school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
-                summary_metrics={
-                    "Total Teachers": lib_total_teachers,
-                    "Active Teachers": f"{lib_met_count} / {lib_total_teachers}",
-                    "Engagement Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
-                },
-                dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
+            pdf_tab2 = generate_comprehensive_school_pdf_report(
+                school_name=selected_schools[0] if len(selected_schools) == 1 else "Multiple Schools Portfolio",
+                teachers_list=filtered_roster['FullName'].unique().tolist(),
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days,
+                target_vid_count=target_vid_count,
+                target_writing_count=target_writing_count,
+                target_lp_combo_count=target_lp_combo_count,
+                target_phonics_count=target_phonics_count,
+                target_portfolio_count=target_portfolio_count,
+                enable_quant_kpi=enable_quant_kpi,
+                enable_qual_kpi=enable_qual_kpi
             )
             st.download_button(
                 label="📄 Download Tab 2 Report (PDF)",
@@ -1792,13 +1856,20 @@ else:
             else:
                 pdf_book_items.append("No textbooks or digital modules opened.")
 
+            # Clean, Masked Clickable Hyperlinks for PDF
             pdf_link_items = []
-            for item in v_voice: pdf_link_items.append(f"Voice Note Submission: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_pic: pdf_link_items.append(f"Lesson Plan Picture: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_vid: pdf_link_items.append(f"Activity Video Link: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_writing: pdf_link_items.append(f"Writing Sample Link: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
-            for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
+            for i, item in enumerate(v_voice, 1): 
+                pdf_link_items.append(f'• 🎧 <a href="{item["url"]}"><u><b>Open Voice Reflection #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+            for i, item in enumerate(v_pic, 1): 
+                pdf_link_items.append(f'• 🖼️ <a href="{item["url"]}"><u><b>View Lesson Plan Photo #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+            for i, item in enumerate(v_vid, 1): 
+                pdf_link_items.append(f'• 🎥 <a href="{item["url"]}"><u><b>Watch Classroom Activity Video #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+            for i, item in enumerate(v_writing, 1): 
+                pdf_link_items.append(f'• 📝 <a href="{item["url"]}"><u><b>View Student Writing Sample #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+            for i, item in enumerate(v_phonics, 1): 
+                pdf_link_items.append(f'• 🔤 <a href="{item["url"]}"><u><b>Open Phonics Evidence #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
+            for i, item in enumerate(v_portfolio, 1): 
+                pdf_link_items.append(f'• 📁 <a href="{item["url"]}"><u><b>View Teacher Portfolio Showcase #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
 
             # UPDATED SECTION HEADINGS TERMINOLOGY (Clean without emojis)
             pdf_custom_sections = {
@@ -1849,7 +1920,14 @@ else:
                     calc_lib_kpi=calc_lib_kpi,
                     daily_ld_target=daily_ld_target,
                     daily_lib_target=daily_lib_target,
-                    selected_num_days=selected_num_days
+                    selected_num_days=selected_num_days,
+                    target_vid_count=target_vid_count,
+                    target_writing_count=target_writing_count,
+                    target_lp_combo_count=target_lp_combo_count,
+                    target_phonics_count=target_phonics_count,
+                    target_portfolio_count=target_portfolio_count,
+                    enable_quant_kpi=enable_quant_kpi,
+                    enable_qual_kpi=enable_qual_kpi
                 )
                 st.download_button(
                     label="📥 Download Bulk School 360 Profiles (PDF)",
@@ -2067,7 +2145,14 @@ else:
                 calc_lib_kpi=calc_lib_kpi,
                 daily_ld_target=daily_ld_target,
                 daily_lib_target=daily_lib_target,
-                selected_num_days=selected_num_days
+                selected_num_days=selected_num_days,
+                target_vid_count=target_vid_count,
+                target_writing_count=target_writing_count,
+                target_lp_combo_count=target_lp_combo_count,
+                target_phonics_count=target_phonics_count,
+                target_portfolio_count=target_portfolio_count,
+                enable_quant_kpi=enable_quant_kpi,
+                enable_qual_kpi=enable_qual_kpi
             )
             hosted_school_pdf_url = upload_pdf_to_supabase(school_pdf_buf, teacher_school)
             pdf_link_markdown = f"\n\n📄 *Download Full School Audit Report (PDF):*\n{hosted_school_pdf_url}" if hosted_school_pdf_url else ""
