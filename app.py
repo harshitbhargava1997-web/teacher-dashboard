@@ -1323,7 +1323,8 @@ else:
 
             for school in bulk_target_schools:
                 sch_roster = school_master_roster[school_master_roster['Institution'] == school]
-                sch_data = school_filtered_df[school_filtered_df['Institution'] == school]
+                # FIXED: Use filtered_df instead of school_filtered_df to respect active date/granularity window
+                sch_data = filtered_df[filtered_df['Institution'] == school]
                 sch_teachers_list = sorted(sch_roster['FullName'].unique().tolist())
                 tot_teachers = len(sch_teachers_list)
 
@@ -1402,7 +1403,7 @@ else:
                     f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
                 ]
 
-                # Section 1: Quantitative Benchmarks (Only included if enabled)
+                # Section 1: Quantitative Benchmarks (Strictly only if enable_quant_kpi is True)
                 if enable_quant_kpi:
                     msg_parts.append(
                         f"📊 *Quantitative Benchmarks:*\n"
@@ -1410,7 +1411,7 @@ else:
                         f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                     )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Only included if toggle is checked AND enabled)
+                # Section 2: Qualitative Classroom Evidence Submissions (Strictly only if toggle is checked AND enable_qual_kpi is True)
                 if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
                         f"\n📬 *Classroom Evidence Submissions:*\n"
