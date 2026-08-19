@@ -2,12 +2,14 @@ name: Daily OneLern Multi-Consultant Sync
 
 on:
   schedule:
-    - cron: '30 0 * * *'
+    # Runs everyday at 12:00 AM IST (18:30 UTC)
+    - cron: '30 18 * * *'
   workflow_dispatch:
 
 jobs:
   multi-consultant-sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository code
@@ -19,11 +21,11 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies & Playwright Chromium
+      - name: Fast Dependency & Chromium Setup
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install playwright pandas numpy openpyxl pyarrow supabase
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
 
       - name: 🚀 Execute Multi-Consultant Ingestion
         env:
