@@ -86,8 +86,8 @@ def normalize_identity_columns(df):
     return out
 
 
-# --- OPTIMIZED CACHED DATA FETCHER (Increased TTL to 300s & Set Submission Limit to 10,000) ---
-@st.cache_data(ttl=300, show_spinner=False)
+# --- HIGH-PERFORMANCE CACHED DATA FETCHER (3-Hour TTL to Eliminate Latency) ---
+@st.cache_data(ttl=10800, show_spinner="Loading master database from cloud...")
 def fetch_master_db_from_supabase():
     """Reads base master parquet file AND merges isolated teacher JSON submissions efficiently."""
     base_df = pd.DataFrame()
