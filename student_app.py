@@ -1,19 +1,18 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import re
 from io import BytesIO
 from supabase import create_client
 
-# ReportLab PDF Libraries for Grade-Level Student Export
+# ReportLab PDF Libraries
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout configuration
-st.set_page_config(page_title="Student Grade-Level Usage Dashboard", page_icon="👨‍🎓", layout="wide")
+st.set_page_config(page_title="OneLearn - Student Usage Reports", page_icon="📊", layout="wide")
 
 # --- SUPABASE CLOUD SETUP ---
 try:
@@ -55,7 +54,6 @@ def normalize_identity_columns(df):
     out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Student"
     return out
 
-# --- HIGH-PERFORMANCE CACHED DATA FETCHER ---
 @st.cache_data(ttl=10800, show_spinner="Loading student database from cloud...")
 def fetch_master_db_from_supabase():
     base_df = pd.DataFrame()
@@ -68,9 +66,19 @@ def fetch_master_db_from_supabase():
         pass
     return normalize_identity_columns(base_df) if not base_df.empty else base_df
 
+def convert_seconds_to_hms(total_seconds):
+    try:
+        total_seconds = int(float(total_seconds))
+    except:
+        total_seconds = 0
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}", f"{minutes:02d}", f"{seconds:02d}"
 
-# --- GRADE-LEVEL STUDENT PDF REPORT GENERATOR ---
-def generate_grade_student_pdf(school_name, grade_name, filter_desc, summary_metrics, report_df):
+
+# --- PDF REPORT GENERATOR ---
+def generate_student_portal_pdf(title_text, subtitle_text, table_df):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -80,42 +88,20 @@ def generate_grade_student_pdf(school_name, grade_name, filter_desc, summary_met
     dark_neutral = colors.HexColor('#1E293B')
     light_bg = colors.HexColor('#F8FAFC')
     border_color = colors.HexColor('#E2E8F0')
-    
+
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9.5, textColor=dark_neutral)
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4)
-    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
-    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
-    story.append(Paragraph(f"<b>Grade-Level Student Usage Report: {grade_name}</b>", title_style))
+    story.append(Paragraph(f"<b>{title_text}</b>", title_style))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(f"<b>Institution:</b> {school_name} | <b>Period:</b> {filter_desc}", subtitle_style))
-    story.append(Spacer(1, 6))
+    story.append(Paragraph(subtitle_style, subtitle_style) if isinstance(subtitle_style, str) else Paragraph(f"<b>Details:</b> {subtitle_text}", subtitle_style))
+    story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
-    # KPI Metrics Cards
-    headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
-    values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
-    col_w = 540 / len(summary_metrics)
-    kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(summary_metrics))
-    kpi_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), light_bg),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, border_color),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-    ]))
-    story.append(kpi_table)
-    story.append(Spacer(1, 10))
-
-    # Student Table
-    if report_df is not None and not report_df.empty:
-        story.append(Paragraph(f"<b>Student Breakdown for {grade_name} (Library Usage & Book Content)</b>", sec_head_style))
-        table_data = [["Student Name", "Library Usage (Mins)", "Classroom Book Content Used (Mins & Chapters)"]] + report_df.astype(str).values.tolist()
-        
-        rep_table = Table(table_data, colWidths=[130, 110, 300])
-        rep_table.setStyle(TableStyle([
+    if table_df is not None and not table_df.empty:
+        raw_data = [table_df.columns.tolist()] + table_df.astype(str).values.tolist()
+        table = Table(raw_data, colWidths=[40, 70, 230, 65, 65, 70])
+        table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -126,198 +112,141 @@ def generate_grade_student_pdf(school_name, grade_name, filter_desc, summary_met
             ('TOPPADDING', (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
-        story.append(rep_table)
+        story.append(table)
 
     doc.build(story)
     buffer.seek(0)
     return buffer
 
 
-# --- MAIN APP EXECUTION ---
-st.title("👨‍🎓 Grade-Level Student Usage & Content Dashboard")
-st.markdown("Select a specific school and grade level to inspect individual student names, their library usage, and the specific book/content used in class or at home.")
+# --- MAIN APP ---
+st.title("📊 OneLearn - Student Usage Reports")
+st.markdown("Student-wise content and platform utilization tracking matching official project reporting standards.")
 
 df = fetch_master_db_from_supabase()
 
 if df.empty:
-    st.info("No data available in the cloud database. Please ensure data is uploaded via the Admin Portal.")
+    st.info("No data available in the cloud database.")
     st.stop()
 
-# STRICTLY FILTER FOR STUDENTS ONLY
+# Filter strictly for students
 student_master_df = df[df['Role'].str.casefold().str.contains('student', na=False)].copy()
 
 if student_master_df.empty:
-    st.warning("No student records found in the database. Ensure student UserMetrics are uploaded.")
+    st.warning("No student records found.")
     st.stop()
-
-# Prepare Dates
-if 'StartTime' in student_master_df.columns and not student_master_df['StartTime'].isna().all():
-    student_master_df['Date'] = student_master_df['StartTime'].dt.date
-    student_master_df['Month_Name'] = student_master_df['StartTime'].dt.strftime('%B %Y')
-    student_master_df['Month_Sort'] = student_master_df['StartTime'].dt.strftime('%Y-%m')
-    
-    def get_week_of_month(dt):
-        try:
-            first_day = dt.replace(day=1)
-            dom = dt.day
-            adjusted_dom = dom + first_day.weekday()
-            return int(np.ceil(adjusted_dom / 7.0))
-        except:
-            return 1
-
-    student_master_df['Week_Num'] = student_master_df['StartTime'].apply(get_week_of_month)
-    week_ranges = student_master_df.groupby(['Month_Name', 'Week_Num'])['Date'].agg(['min', 'max']).reset_index()
-    week_ranges['Week_Date_Range'] = (
-        week_ranges['min'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '') + " to " + 
-        week_ranges['max'].apply(lambda x: x.strftime('%b %d') if pd.notna(x) else '')
-    )
-    student_master_df = student_master_df.merge(week_ranges[['Month_Name', 'Week_Num', 'Week_Date_Range']], on=['Month_Name', 'Week_Num'], how='left')
-    student_master_df['Month_Week_Label'] = student_master_df['StartTime'].dt.strftime('%b %Y') + " - Week " + student_master_df['Week_Num'].astype(str) + " (" + student_master_df['Week_Date_Range'] + ")"
-else:
-    student_master_df['Date'] = None
-    student_master_df['Month_Name'] = "N/A"
-    student_master_df['Month_Week_Label'] = "N/A"
 
 # --- SIDEBAR FILTERS ---
-st.sidebar.header("🔍 Institutional Filters")
+st.sidebar.header("🔍 Report Filters")
 
-all_states = sorted([str(s) for s in student_master_df['State_Zone'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
-selected_states = st.sidebar.multiselect("1. Select State(s)", options=all_states, default=all_states)
-df_state = student_master_df[student_master_df['State_Zone'].isin(selected_states)] if selected_states else student_master_df
+all_schools = sorted([str(s) for s in student_master_df['Institution'].unique() if str(s).strip()])
+selected_school = st.sidebar.selectbox("Select School / Institution", options=all_schools)
+school_df = student_master_df[student_master_df['Institution'] == selected_school]
 
-all_schools = sorted([str(s) for s in df_state['Institution'].unique() if str(s).strip() and str(s).lower() not in ['nan', 'none']])
-selected_school = st.sidebar.selectbox("2. Select School / Institution", options=all_schools)
+all_grades = sorted([str(g) for g in school_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
+selected_grade = st.sidebar.selectbox("Select Grade", options=all_grades)
+grade_df = school_df[school_df['Grade'] == selected_grade]
 
-df_school = df_state[df_state['Institution'] == selected_school] if selected_school else df_state
-
-st.sidebar.markdown("---")
-st.sidebar.header("📅 Date & Granularity Filters")
-
-available_months = df_school[['Month_Sort', 'Month_Name']].dropna().drop_duplicates().sort_values(by='Month_Sort', ascending=False)['Month_Name'].tolist()
-selected_month = st.sidebar.selectbox("Select Review Month:", options=available_months if available_months else ["No Month Data"])
-month_df = df_school[df_school['Month_Name'] == selected_month]
-
-view_mode = st.sidebar.radio("Granularity:", ["Full Month Summary", "Specific Week of Month", "Single Day Review", "Custom Date Range"])
-
-if month_df.empty and view_mode != "Custom Date Range":
-    filtered_df = month_df
-    filter_description = f"Full Month: {selected_month}"
-elif view_mode == "Full Month Summary":
-    filtered_df = month_df
-    filter_description = f"Full Month: {selected_month}"
-elif view_mode == "Specific Week of Month":
-    available_weeks = sorted(month_df['Month_Week_Label'].dropna().unique())
-    selected_week = st.sidebar.selectbox("Select Week:", options=available_weeks)
-    filtered_df = month_df[month_df['Month_Week_Label'] == selected_week]
-    filter_description = f"{selected_week}"
-elif view_mode == "Single Day Review":
-    available_dates = sorted(month_df['Date'].dropna().unique(), reverse=True)
-    selected_date = st.sidebar.selectbox("Select Day:", options=available_dates)
-    filtered_df = month_df[month_df['Date'] == selected_date]
-    filter_description = f"Single Date: {selected_date}"
-else:
-    min_avail = df_school['Date'].dropna().min() if not df_school['Date'].dropna().empty else pd.Timestamp.now().date()
-    max_avail = df_school['Date'].dropna().max() if not df_school['Date'].dropna().empty else pd.Timestamp.now().date()
-    custom_date = st.sidebar.date_input("Select Custom Date Range:", value=(min_avail, max_avail), min_value=min_avail, max_value=max_avail)
-    if isinstance(custom_date, (tuple, list)) and len(custom_date) == 2:
-        c_start, c_end = custom_date
-    else:
-        c_start = c_end = custom_date[0] if isinstance(custom_date, (tuple, list)) else custom_date
-    filtered_df = df_school[(df_school['Date'] >= c_start) & (df_school['Date'] <= c_end)]
-    filter_description = f"Custom Range: {c_start} to {c_end}"
-
-st.sidebar.markdown("---")
-st.sidebar.header("🎯 Grade Level Selection")
-available_grades = sorted([str(g) for g in filtered_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
-
-if not available_grades:
-    st.warning("No grades found for this school.")
+all_students = sorted([str(s) for s in grade_df['FullName'].unique() if str(s).strip() and str(s).lower() != 'unknown student'])
+if not all_students:
+    st.warning("No students found for this selection.")
     st.stop()
 
-selected_grade = st.sidebar.selectbox("Select Grade Level *", options=available_grades)
-grade_df = filtered_df[filtered_df['Grade'] == selected_grade].copy()
+selected_student = st.sidebar.selectbox("Select Student-wise Report", options=all_students)
+student_df = grade_df[grade_df['FullName'] == selected_student]
 
-# --- MAIN DASHBOARD RENDER FOR SELECTED GRADE ---
-if grade_df.empty:
-    st.warning(f"No student engagement records found for Grade: {selected_grade} in this period.")
-else:
-    st.subheader(f"🏫 School: {selected_school} | Grade Level: {selected_grade}")
-    st.caption(f"Observation Window: {filter_description}")
+# --- TOP HEADER UI (MATCHING PORTAL SCREENSHOT) ---
+st.markdown(f"### **{selected_student.upper()}**")
+st.caption(f"Usage Reports • Grade: {selected_grade} • School: {selected_school}")
 
-    # Separate Library usage from Book usage
-    lib_subset = grade_df[grade_df['Type'].str.casefold() == 'library']
-    book_subset = grade_df[grade_df['Type'].str.casefold() == 'book']
+# --- TABS: CONTENT VS PLATFORM ---
+tab_content, tab_platform = st.tabs(["📚 Content", "🌐 Platform"])
 
-    # Aggregate Library usage per student
-    lib_agg = lib_subset.groupby('FullName')['Duration_Min'].sum().reset_index().rename(columns={'Duration_Min': 'Library_Mins'})
-
-    # Aggregate Book usage and content details per student
-    if not book_subset.empty:
-        book_subset['Book_Detail'] = book_subset['Subject'] + " (" + book_subset['Book'] + "): " + book_subset['Duration_Min'].round(1).astype(str) + "m"
-        book_agg = book_subset.groupby('FullName')['Book_Detail'].apply(lambda x: "; ".join(x.dropna().unique())).reset_index().rename(columns={'Book_Detail': 'Book_Content_Used'})
+with tab_content:
+    st.markdown("#### **Content Usage (Book-wise)**")
+    
+    # Filter for book / content interactions
+    content_sub = student_df[student_df['Type'].str.casefold().isin(['book', 'library'])].copy()
+    
+    if content_sub.empty:
+        st.info("No content usage logs recorded for this student.")
     else:
-        book_agg = pd.DataFrame(columns=['FullName', 'Book_Content_Used'])
+        # Group by Book and calculate total seconds
+        content_agg = content_sub.groupby(['Grade', 'Book']).agg(
+            Total_Seconds=('Duration_Min', lambda x: x.sum() * 60)
+        ).reset_index()
 
-    # Merge student metrics for this grade
-    all_students_in_grade = sorted(grade_df['FullName'].unique().tolist())
-    grade_summary = pd.DataFrame({'FullName': all_students_in_grade})
-    grade_summary = grade_summary.merge(lib_agg, on='FullName', how='left').fillna({'Library_Mins': 0.0})
-    grade_summary = grade_summary.merge(book_agg, on='FullName', how='left').fillna({'Book_Content_Used': 'No textbook activity logged'})
+        table_rows = []
+        for idx, row in content_agg.iterrows():
+            hrs, mins, secs = convert_seconds_to_hms(row['Total_Seconds'])
+            book_name = row['Book'] if pd.notna(row['Book']) and str(row['Book']).strip() != '' else 'General Reading'
+            table_rows.append({
+                'S.NO': idx + 1,
+                'GRADE': row['Grade'],
+                'BOOK': book_name,
+                'HOURS': hrs,
+                'MINUTES': mins,
+                'SECONDS': secs
+            })
 
-    grade_summary['Library_Mins'] = grade_summary['Library_Mins'].round(1)
+        content_display_df = pd.DataFrame(table_rows)
+        st.dataframe(content_display_df, use_container_width=True, hide_index=True)
 
-    # Display Metrics for Grade
-    tot_grade_time = grade_summary['Library_Mins'].sum() + (book_subset['Duration_Min'].sum() if not book_subset.empty else 0.0)
-    g_c1, g_c2, g_c3 = st.columns(3)
-    g_c1.metric("Active Students in Grade", len(all_students_in_grade))
-    g_c2.metric("Total Grade Activity Time", f"{tot_grade_time:.1f} Mins")
-    g_c3.metric("Selected Grade Level", selected_grade)
-
-    st.markdown("---")
-    st.subheader(f"📋 Student-Wise Report for {selected_grade}")
-    
-    display_grade_table = grade_summary.rename(columns={
-        'FullName': 'Student Name',
-        'Library_Mins': 'Library Usage (Mins)',
-        'Book_Content_Used': 'Classroom Book Content Used (Subject & Books)'
-    })
-    st.dataframe(display_grade_table, use_container_width=True)
-
-    # --- EXPORT SECTION ---
-    st.markdown("---")
-    st.subheader(f"📥 Export Report for {selected_grade}")
-    
-    btn_col1, btn_col2 = st.columns(2)
-    
-    with btn_col1:
-        buf_s_xlsx = BytesIO()
-        with pd.ExcelWriter(buf_s_xlsx, engine='openpyxl') as writer:
-            display_grade_table.to_excel(writer, index=False, sheet_name=f"Grade_{selected_grade}_Report")
-            grade_df.rename(columns={'Duration_Min': 'Minutes'}).to_excel(writer, index=False, sheet_name="Raw_Logs")
-        buf_s_xlsx.seek(0)
-        st.download_button(
-            label=f"📥 Download {selected_grade} Report [Excel]",
-            data=buf_s_xlsx,
-            file_name=f"Student_Usage_{selected_school.replace(' ', '_')}_{selected_grade}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-    with btn_col2:
-        metrics_dict = {
-            "Grade Level": selected_grade,
-            "Active Students": str(len(all_students_in_grade)),
-            "Total Time": f"{tot_grade_time:.1f}m"
-        }
-        pdf_buf = generate_grade_student_pdf(
-            school_name=selected_school,
-            grade_name=selected_grade,
-            filter_desc=filter_description,
-            summary_metrics=metrics_dict,
-            report_df=display_grade_table
+        # Print / Export Button
+        pdf_c = generate_student_portal_pdf(
+            title_text=f"Content Usage Report: {selected_student.upper()}",
+            subtitle_text=f"School: {selected_school} | Grade: {selected_grade}",
+            table_df=content_display_df[['S.NO', 'GRADE', 'BOOK', 'HOURS', 'MINUTES', 'SECONDS']]
         )
         st.download_button(
-            label=f"📄 Download {selected_grade} Report [PDF]",
-            data=pdf_buf,
-            file_name=f"Student_Usage_{selected_school.replace(' ', '_')}_{selected_grade}.pdf",
+            label="🖨️ Print Report (PDF)",
+            data=pdf_c,
+            file_name=f"Content_Report_{selected_student.replace(' ', '_')}.pdf",
             mime="application/pdf"
         )
+
+with tab_platform:
+    st.markdown(f"#### **{selected_grade} - Section A**")
+    st.markdown(f"##### **{selected_student.upper()}**")
+
+    standard_features = [
+        "Gradebook", "Messages", "Timetable", "Assessment", "Assignments", 
+        "Attendance", "Doubts", "Library", "Notebook", "Notifications", "Publish Content"
+    ]
+
+    # Map database types to standard portal features
+    platform_agg = student_df.groupby('Type')['Duration_Min'].sum().apply(lambda x: x * 60).to_dict()
+
+    platform_rows = []
+    for idx, feat in enumerate(standard_features, 1):
+        # Match type key
+        match_key = feat.lower()
+        total_secs = 0.0
+        for k, v in platform_agg.items():
+            if match_key in str(k).lower():
+                total_secs += v
+
+        hrs, mins, secs = convert_seconds_to_hms(total_secs)
+        platform_rows.append({
+            'S.NO': idx,
+            'FEATURES': feat,
+            'HOURS': hrs,
+            'MINUTES': mins,
+            'SECONDS': secs
+        })
+
+    platform_display_df = pd.DataFrame(platform_rows)
+    st.dataframe(platform_display_df, use_container_width=True, hide_index=True)
+
+    # Print / Export Button
+    pdf_p = generate_student_portal_pdf(
+        title_text=f"Platform Usage Report: {selected_student.upper()}",
+        subtitle_text=f"School: {selected_school} | Grade: {selected_grade} - Section A",
+        table_df=platform_display_df
+    )
+    st.download_button(
+        label="🖨️ Print Report (PDF)",
+        data=pdf_p,
+        file_name=f"Platform_Report_{selected_student.replace(' ', '_')}.pdf",
+        mime="application/pdf"
+    )
