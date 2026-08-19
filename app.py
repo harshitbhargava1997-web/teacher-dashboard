@@ -1389,7 +1389,7 @@ else:
                     )
                     hosted_url = upload_pdf_to_supabase(clean_pdf_buf, school)
                     if hosted_url:
-                        pdf_link_str = f"\n\n📄 *Download Full School Audit Dossier (PDF):*\n{hosted_url}"
+                        pdf_link_str = f"\n\n📄 *Download Full School Audit Report (PDF):*\n{hosted_url}"
 
                 # Compose Benchmark Annotations Dynamically for Quantitative
                 ld_bench_str = f" [Benchmark: {daily_ld_target:.0f}m/day × {selected_num_days}d = {calc_ld_kpi:.0f} mins total]" if (enable_quant_kpi and calc_ld_kpi > 0) else ""
