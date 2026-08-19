@@ -2,6 +2,7 @@ import os
 import re
 import time
 import json
+import sys
 from datetime import datetime
 from io import BytesIO
 import pandas as pd
@@ -9,9 +10,9 @@ import numpy as np
 from playwright.sync_api import sync_playwright
 from supabase import create_client
 
-# ==============================================================================
-# 1. CLOUD STORAGE & CONFIGURATION
-# ==============================================================================
+# Force instant unbuffered console output
+sys.stdout.reconfigure(line_buffering=True)
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip('/')
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BUCKET_NAME = os.getenv("BUCKET_NAME", "academic-dashboard")
@@ -21,33 +22,64 @@ CONSULTANTS_JSON = os.getenv("CONSULTANTS_JSON", "[]")
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    print(f"Supabase Client Notice: {e}")
+    print(f"Supabase Client Notice: {e}", flush=True)
     supabase = None
 
 os.makedirs("debug_screenshots", exist_ok=True)
 
 
-# ==============================================================================
-# 2. DATA NORMALIZATION & SANITIZATION
-# ==============================================================================
-def normalize_identity_columns(df, consultant_name, state_zone):
-    out = df.copy()
-    for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role", "Uploaded_By", "State_Zone"]:
-        if col not in out.columns:
-            out[col] = ""
-        out[col] = out[col].fillna("").astype(str).str.strip()
+def wait_for_spinners_to_disappear(page, max_wait_sec=25):
+    """Actively waits for portal background loading overlays to complete."""
+    spinner_selectors = [
+        'div[class*="spinner"]', 'div[class*="loader"]', 
+        'div[class*="loading"]', 'mat-spinner', 'mat-progress-spinner', 
+        '[role="progressbar"]', '.ngx-spinner-overlay'
+    ]
+    for _ in range(max_wait_sec):
+        is_spinning = False
+        for selector in spinner_selectors:
+            try:
+                el = page.locator(selector).first
+                if el.is_visible():
+                    is_spinning = True
+                    break
+            except Exception:
+                pass
+        if not is_spinning:
+            return True
+        time.sleep(1)
+    return False
 
-    out.loc[out["State_Zone"].eq(""), "State_Zone"] = state_zone
-    out.loc[out["Uploaded_By"].eq(""), "Uploaded_By"] = consultant_name
 
-    calculated_full = (out["FirstName"].fillna("") + " " + out["LastName"].fillna("")).str.strip()
-    empty_full = out["FullName"].eq("")
-    out.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
-    out.loc[out["FullName"].eq(""), "FullName"] = "Unknown Teacher"
-    return out
+def smart_find_or_refresh(page, primary_locator_func, action_name, max_retries=3):
+    """Finds an element or refreshes the page if the SPA view drops state."""
+    for attempt in range(1, max_retries + 1):
+        wait_for_spinners_to_disappear(page, max_wait_sec=10)
+        try:
+            target_el = primary_locator_func(page)
+            if target_el and target_el.is_visible():
+                return target_el
+        except Exception:
+            pass
+
+        print(f"       ⏳ [Attempt {attempt}/{max_retries}] Waiting for '{action_name}'...", flush=True)
+        time.sleep(2)
+
+        if attempt < max_retries:
+            print(f"       🔄 Refreshing page to reload '{action_name}'...", flush=True)
+            try:
+                page.reload(wait_until="domcontentloaded", timeout=45000)
+            except Exception:
+                pass
+            time.sleep(4)
+            wait_for_spinners_to_disappear(page, max_wait_sec=15)
+
+    page.screenshot(path=f"debug_screenshots/failed_{action_name.replace(' ', '_')}.png")
+    return None
 
 
-def clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, report_type_default="lessonDelivery"):
+def normalize_exported_dataframe(df_raw, school_name, consultant_name, state_zone):
+    """Cleans and standardizes raw exported Excel data exactly as downloaded."""
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
 
@@ -60,7 +92,18 @@ def clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, rep
     else:
         df['Institution'] = df['Institution'].fillna(school_name).replace('', school_name)
 
-    df = normalize_identity_columns(df, consultant_name, state_zone)
+    for col in ["Institution", "Center", "FirstName", "LastName", "FullName", "Role", "Uploaded_By", "State_Zone"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
+    df.loc[df["State_Zone"].eq(""), "State_Zone"] = state_zone
+    df.loc[df["Uploaded_By"].eq(""), "Uploaded_By"] = consultant_name
+
+    calculated_full = (df["FirstName"].fillna("") + " " + df["LastName"].fillna("")).str.strip()
+    empty_full = df["FullName"].eq("")
+    df.loc[empty_full, "FullName"] = calculated_full.loc[empty_full]
+    df.loc[df["FullName"].eq(""), "FullName"] = "Unknown Teacher"
 
     for col in ['Grade', 'Subject', 'Book']:
         if col not in df.columns:
@@ -87,174 +130,181 @@ def clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, rep
     else:
         df['Duration_Min'] = 0.0
 
-    if 'Type' not in df.columns:
-        df['Type'] = report_type_default
-    else:
-        df['Type'] = df['Type'].fillna(report_type_default).astype(str)
-
     for dt_col in ['StartTime', 'EndTime']:
         if dt_col in df.columns:
             df[dt_col] = pd.to_datetime(df[dt_col], errors='coerce')
 
-    for qual_col in [
-        'Voice_Note_Link', 'Lesson_Plan_Picture', 'Video_Evidence_1', 
-        'Video_Evidence_2', 'Video_Evidence_3', 'Writing_Sample_Link', 
-        'Phonics_Evidence_Link', 'Portfolio_Evidence_Link', 'Assessment_Score_Pct'
-    ]:
-        if qual_col not in df.columns:
-            df[qual_col] = None
-
     return df
 
 
-# ==============================================================================
-# 3. PATIENT INTERACTIVE PORTAL ACTIONS (INFINITE WAIT CAPABLE)
-# ==============================================================================
-def human_like_login(page, email, password):
-    print("1. Opening Admin Portal...")
-    page.goto("https://admin.onelern.school", wait_until="domcontentloaded", timeout=0)
-    
-    email_field = page.locator('input[placeholder*="email" i], input[type="email"], input[name="email"]').first
-    email_field.wait_for(state="visible", timeout=0)
-    email_field.click()
-    email_field.fill(email)
-    email_field.press("Tab")
-    time.sleep(1)
-
-    pass_field = page.locator('input[placeholder*="password" i], input[type="password"], input[name="password"]').first
-    pass_field.wait_for(state="visible", timeout=0)
-    pass_field.click()
-    pass_field.fill(password)
-    pass_field.press("Tab")
-    time.sleep(1)
-
-    login_btn = page.locator('button:has-text("Login")').first
-    login_btn.wait_for(state="visible", timeout=0)
-    login_btn.click()
-    print("   Login button clicked. Patiently waiting for dashboard elements to load...")
-
-    # Wait indefinitely for dashboard elements (Welcome banner, Reports menu, or School cards)
-    dashboard_indicator = page.locator('text="Welcome", text="Reports", text="User Management", text="Home"').first
-    dashboard_indicator.wait_for(state="visible", timeout=0)
-    print("   ✅ Successfully authenticated and dashboard loaded!")
+def perform_portal_login(page, email, password):
+    print("1. Opening Admin Portal (https://admin.onelern.school)...", flush=True)
+    page.goto("https://admin.onelern.school", wait_until="domcontentloaded", timeout=60000)
     time.sleep(3)
+    wait_for_spinners_to_disappear(page)
 
+    email_field = smart_find_or_refresh(
+        page,
+        lambda p: p.locator('input[placeholder*="email" i], input[type="email"], input[name="email"]').first,
+        "Email Input Field"
+    )
+    if email_field:
+        print(f"   Entering Email: {email}...", flush=True)
+        email_field.click()
+        email_field.fill(email)
+        email_field.press("Tab")
+        time.sleep(1)
 
-def navigate_sidebar_module(page, module_name):
-    print(f"2. Navigating to Reports -> {module_name}...")
-    reports_menu = page.locator('text="Reports"').first
-    reports_menu.wait_for(state="visible", timeout=0)
-    reports_menu.click()
-    time.sleep(2)
+    pass_field = smart_find_or_refresh(
+        page,
+        lambda p: p.locator('input[placeholder*="password" i], input[type="password"], input[name="password"]').first,
+        "Password Input Field"
+    )
+    if pass_field:
+        print("   Entering Password...", flush=True)
+        pass_field.click()
+        pass_field.fill(password)
+        pass_field.press("Tab")
+        time.sleep(1)
 
-    sub_link = page.locator(f'a:has-text("{module_name}"), span:has-text("{module_name}"), div:has-text("{module_name}")').first
-    sub_link.wait_for(state="visible", timeout=0)
-    sub_link.click()
+    print("   Clicking Login button...", flush=True)
+    login_btn = page.locator('button:has-text("Login"), button[type="submit"]').first
+    if login_btn.is_visible():
+        login_btn.click()
     
-    # Wait for the report top bar controls to appear
-    page.locator('text="Grade", text="Subject", text="Teachers"').first.wait_for(state="visible", timeout=0)
-    print(f"   ✅ Loaded {module_name} report view!")
+    print("   Waiting for authenticated Dashboard...", flush=True)
+    time.sleep(4)
+    wait_for_spinners_to_disappear(page, max_wait_sec=20)
+    print("   ✅ Authenticated successfully.", flush=True)
+
+
+def navigate_to_module(page, module_name):
+    print(f"2. Navigating to Reports -> {module_name}...", flush=True)
+    path = "content" if module_name.lower() == "content" else "platform-reports"
+    target_url = f"https://admin.onelern.school/reports/{path}"
+    
+    page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
     time.sleep(3)
+    wait_for_spinners_to_disappear(page, max_wait_sec=20)
 
 
-def extract_all_schools(page):
-    school_dropdown = page.locator('div[class*="select"], div[role="combobox"]').first
-    school_dropdown.wait_for(state="visible", timeout=0)
-    school_dropdown.click()
-    time.sleep(2)
-
-    options_locator = page.locator('div[role="option"], li[role="option"], div[class*="option"]')
-    options_locator.first.wait_for(state="visible", timeout=0)
-    raw_options = options_locator.all_text_contents()
-    page.keyboard.press("Escape")
-    time.sleep(1)
-
+def extract_school_names(page):
+    print("3. Scanning assigned schools...", flush=True)
     schools = []
-    for opt in raw_options:
-        clean = opt.strip()
-        if clean and "AY2" not in clean and "Academic" not in clean and "Grade" not in clean:
-            schools.append(clean)
+    dropdown = smart_find_or_refresh(
+        page,
+        lambda p: p.locator('div[class*="select"], div[role="combobox"], mat-select').first,
+        "School Dropdown Selector"
+    )
+    if dropdown:
+        try:
+            dropdown.click()
+            time.sleep(2)
+            options = page.locator('div[role="option"], li[role="option"], mat-option, div[class*="option"]').all_text_contents()
+            page.keyboard.press("Escape")
+            for opt in options:
+                clean = opt.strip()
+                if clean and "AY2" not in clean and "Academic" not in clean and "Grade" not in clean and "Select" not in clean:
+                    schools.append(clean)
+        except Exception as e:
+            print(f"   School extraction notice: {e}", flush=True)
 
     schools = list(dict.fromkeys(schools))
     if not schools:
         schools = ["Current School"]
+    print(f"   Detected schools ({len(schools)}): {schools}", flush=True)
     return schools
 
 
-def select_school_and_ay(page, school_name, target_ay="AY26-27"):
+def select_school(page, school_name, target_ay="AY26-27"):
     if school_name != "Current School":
-        school_dropdown = page.locator('div[class*="select"], div[role="combobox"]').first
-        school_dropdown.wait_for(state="visible", timeout=0)
-        school_dropdown.click()
-        time.sleep(1)
-        
-        target_school_opt = page.locator(f'text="{school_name}"').first
-        target_school_opt.wait_for(state="visible", timeout=0)
-        target_school_opt.click()
-        time.sleep(3)
+        dropdown = smart_find_or_refresh(
+            page,
+            lambda p: p.locator('div[class*="select"], div[role="combobox"], mat-select').first,
+            f"School Select ({school_name})"
+        )
+        if dropdown:
+            dropdown.click()
+            time.sleep(1)
+            target = page.locator(f'text="{school_name}"').first
+            if target.is_visible():
+                target.click()
+                time.sleep(2)
+            else:
+                page.keyboard.press("Escape")
 
-    # Set Academic Year if available
     try:
-        ay_box = page.locator('div:has-text("AY")').first
+        ay_box = page.locator('div:has-text("AY"), mat-select:has-text("AY")').first
         if ay_box.is_visible():
             ay_box.click()
             time.sleep(1)
-            target = page.locator(f'text="{target_ay}", div:has-text("{target_ay}")').first
-            if target.is_visible():
-                target.click()
+            ay_opt = page.locator(f'text="{target_ay}"').first
+            if ay_opt.is_visible():
+                ay_opt.click()
             else:
                 page.keyboard.press("Escape")
-            time.sleep(2)
+            time.sleep(1)
     except Exception:
         pass
 
 
-def apply_date_filter_to_today(page, start_date_str="07/01/2026"):
+def apply_date_range(page, start_date_str="07/01/2026"):
     end_date_str = datetime.now().strftime("%m/%d/%Y")
-    date_inputs = page.locator('input[type="text"][placeholder*="202" i], input[type="text"][value*="/"]').all()
-    if len(date_inputs) >= 2:
-        date_inputs[0].wait_for(state="visible", timeout=0)
-        date_inputs[0].click()
-        date_inputs[0].fill(start_date_str)
-        date_inputs[0].press("Enter")
-        time.sleep(1)
+    try:
+        date_inputs = page.locator('input[type="text"][placeholder*="202" i], input[type="text"][value*="/"]').all()
+        if len(date_inputs) >= 2:
+            date_inputs[0].click()
+            date_inputs[0].fill(start_date_str)
+            date_inputs[0].press("Enter")
+            time.sleep(0.5)
 
-        date_inputs[1].wait_for(state="visible", timeout=0)
-        date_inputs[1].click()
-        date_inputs[1].fill(end_date_str)
-        date_inputs[1].press("Enter")
+            date_inputs[1].click()
+            date_inputs[1].fill(end_date_str)
+            date_inputs[1].press("Enter")
+            time.sleep(1)
+            print(f"       Date filter applied: {start_date_str} to {end_date_str}", flush=True)
+    except Exception as e:
+        print(f"       Date filter notice: {e}", flush=True)
+
+
+def switch_to_teachers_tab(page):
+    tab_el = smart_find_or_refresh(
+        page,
+        lambda p: p.locator('button:has-text("Teachers"), div:has-text("Teachers"), span:has-text("Teachers")').first,
+        "Teachers Tab Switcher"
+    )
+    if tab_el:
+        tab_el.click()
         time.sleep(2)
-        print(f"       Date set: {start_date_str} to {end_date_str}")
+        wait_for_spinners_to_disappear(page, max_wait_sec=15)
+        return True
+    return False
 
 
-def click_teachers_tab_and_wait(page):
-    teacher_pill = page.locator('button:has-text("Teachers"), div:has-text("Teachers"), span:has-text("Teachers")').first
-    teacher_pill.wait_for(state="visible", timeout=0)
-    teacher_pill.click()
+def export_report_data(page, school_name, consultant_name, state_zone, report_name):
+    export_btn = smart_find_or_refresh(
+        page,
+        lambda p: p.locator('button:has-text("Export"), div:has-text("Export"), a:has-text("Export")').first,
+        f"Export Button ({school_name} - {report_name})"
+    )
     
-    # Wait for the Teacher table or table headers to render
-    page.locator('text="TEACHER", text="HOURS", text="MINUTES", text="Teacher-Wise Reports"').first.wait_for(state="visible", timeout=0)
-    time.sleep(3)
-    print("       Switched to Teachers view tab.")
+    if not export_btn:
+        print(f"       ⚠️ Export button not accessible for {school_name} ({report_name}).", flush=True)
+        return None
+
+    try:
+        with page.expect_download(timeout=60000) as download_info:
+            export_btn.click()
+        download = download_info.value
+        df_raw = pd.read_excel(download.path())
+        cleaned = normalize_exported_dataframe(df_raw, school_name, consultant_name, state_zone)
+        print(f"       ✅ Successfully extracted {len(cleaned)} rows for {school_name} ({report_name}).", flush=True)
+        return cleaned
+    except Exception as e:
+        print(f"       Export download notice for {school_name} ({report_name}): {e}", flush=True)
+        return None
 
 
-def export_and_capture_file(page, school_name, consultant_name, state_zone, report_type):
-    export_btn = page.locator('button:has-text("Export"), div:has-text("Export")').first
-    export_btn.wait_for(state="visible", timeout=0)
-    
-    with page.expect_download(timeout=0) as download_info:
-        export_btn.click()
-    
-    download = download_info.value
-    df_raw = pd.read_excel(download.path())
-    cleaned = clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, report_type)
-    print(f"       ✅ Successfully exported and parsed {len(cleaned)} rows for {school_name}.")
-    return cleaned
-
-
-# ==============================================================================
-# 4. ORCHESTRATION PIPELINE
-# ==============================================================================
 def download_data_for_consultant(browser, consultant_info):
     consultant_name = consultant_info.get("name", "Consultant")
     state_zone = consultant_info.get("state_zone", "Madhya Pradesh (MP)")
@@ -262,11 +312,12 @@ def download_data_for_consultant(browser, consultant_info):
     password = consultant_info.get("password", "").strip()
 
     if not email or not password:
+        print(f"Skipping {consultant_name}: missing credentials.", flush=True)
         return []
 
-    print(f"\n========================================================")
-    print(f"Executing Multi-School Extraction for: {consultant_name}")
-    print(f"========================================================")
+    print(f"\n========================================================", flush=True)
+    print(f"Extracting Raw Reports for: {consultant_name}", flush=True)
+    print(f"========================================================", flush=True)
 
     context = browser.new_context(
         accept_downloads=True,
@@ -274,72 +325,60 @@ def download_data_for_consultant(browser, consultant_info):
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     )
     page = context.new_page()
-    page.set_default_timeout(0)  # Infinite default timeout for all page operations
     consultant_dfs = []
 
     try:
-        # Step 1: Login & wait for complete load
-        human_like_login(page, email, password)
+        perform_portal_login(page, email, password)
+        navigate_to_module(page, "Content")
+        schools = extract_school_names(page)
 
-        # Step 2: Open Content report to extract school list
-        navigate_sidebar_module(page, "Content")
-        schools = extract_all_schools(page)
-        print(f"Assigned Schools Detected ({len(schools)}): {schools}")
-
-        # Step 3: Loop modules and schools
-        modules = [
-            {"name": "Content", "type": "library"},
-            {"name": "Platform", "type": "lessonDelivery"}
-        ]
+        modules = ["Content", "Platform"]
 
         for school in schools:
-            print(f"\n--- Ingesting School: {school} ---")
+            print(f"\n--- Ingesting School: {school} ---", flush=True)
             for mod in modules:
-                print(f"  -> Module: {mod['name']}...")
-                navigate_sidebar_module(page, mod['name'])
-                select_school_and_ay(page, school, target_ay="AY26-27")
-                apply_date_filter_to_today(page, start_date_str="07/01/2026")
-                click_teachers_tab_and_wait(page)
+                print(f"  -> Module: {mod}...", flush=True)
+                navigate_to_module(page, mod)
+                select_school(page, school, target_ay="AY26-27")
+                apply_date_range(page, start_date_str="07/01/2026")
+                switch_to_teachers_tab(page)
                 
-                df_res = export_and_capture_file(page, school, consultant_name, state_zone, mod['type'])
+                df_res = export_report_data(page, school, consultant_name, state_zone, mod)
                 if df_res is not None and not df_res.empty:
                     consultant_dfs.append(df_res)
 
     except Exception as e:
-        print(f"Extraction Exception: {e}")
-        page.screenshot(path=f"debug_screenshots/error_{consultant_name}.png")
+        print(f"Extraction exception for {consultant_name}: {e}", flush=True)
     finally:
         context.close()
 
     return consultant_dfs
 
 
-# ==============================================================================
-# 5. MERGE & SUPABASE SYNC
-# ==============================================================================
 def update_supabase_master_db(new_dfs):
     if not new_dfs:
-        raise RuntimeError("No data rows collected across consultants. Review debug_screenshots artifact.")
+        print("⚠️ No data rows collected across consultants. Check credentials or portal status.", flush=True)
+        return
 
     if supabase is None:
         raise RuntimeError("Supabase client is not initialized.")
 
-    print("\nMerging all datasets into Supabase Master Parquet...")
+    print("\nMerging raw datasets into Supabase Master Parquet...", flush=True)
     base_df = pd.DataFrame()
     try:
         response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
             base_df = pd.read_parquet(BytesIO(response))
-            print(f"Existing cloud database rows: {len(base_df)}")
+            print(f"Existing cloud database rows: {len(base_df)}", flush=True)
     except Exception:
-        print("Initializing fresh master database.")
+        print("Initializing fresh master database.", flush=True)
 
     combined_new = pd.concat(new_dfs, ignore_index=True)
     all_data = pd.concat([base_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
 
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     avail_cols = [c for c in dedup_cols if c in all_data.columns]
-    master_df = all_data.drop_duplicates(subset=avail_cols, keep='last')
+    master_df = all_data.drop_duplicates(subset=avail_cols, keep='last') if avail_cols else all_data.drop_duplicates()
 
     parquet_buffer = BytesIO()
     master_df.to_parquet(parquet_buffer, index=False)
@@ -351,20 +390,17 @@ def update_supabase_master_db(new_dfs):
             file=parquet_buffer.getvalue(),
             file_options={"upsert": "true", "content-type": "application/octet-stream"}
         )
-        print(f"\n🎉 SUCCESS: All schools synced to Supabase! Total records: {len(master_df)}")
+        print(f"\n🎉 SUCCESS: Direct raw reports synced to Supabase! Total records: {len(master_df)}", flush=True)
     except Exception as e:
         raise RuntimeError(f"Supabase upload error: {e}")
 
 
-# ==============================================================================
-# 6. ENTRYPOINT
-# ==============================================================================
 if __name__ == "__main__":
     t0 = time.time()
     try:
         consultants_list = json.loads(CONSULTANTS_JSON)
         if not consultants_list:
-            print("CONSULTANTS_JSON is empty.")
+            print("CONSULTANTS_JSON is empty.", flush=True)
         else:
             all_batches = []
             with sync_playwright() as p:
@@ -376,4 +412,4 @@ if __name__ == "__main__":
 
             update_supabase_master_db(all_batches)
     finally:
-        print(f"Total pipeline runtime: {time.time() - t0:.2f} seconds.\n")
+        print(f"Total pipeline runtime: {time.time() - t0:.2f} seconds.\n", flush=True)
