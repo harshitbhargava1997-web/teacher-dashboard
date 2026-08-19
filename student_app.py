@@ -6,7 +6,7 @@ import re
 from io import BytesIO
 from supabase import create_client
 
-# ReportLab PDF Libraries for KDM Export
+# ReportLab PDF Libraries for Hierarchical Student Export
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -69,8 +69,8 @@ def fetch_master_db_from_supabase():
     return normalize_identity_columns(base_df) if not base_df.empty else base_df
 
 
-# --- PDF KDM DETAILED REPORT GENERATOR ---
-def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics, type_df, subj_df, student_summary_df):
+# --- HIERARCHICAL STUDENT PDF REPORT GENERATOR ---
+def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics, hierarchical_df):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -87,7 +87,7 @@ def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics,
     card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
     card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
-    story.append(Paragraph("<b>Detailed Student Engagement & Content Usage Report (KDM Review)</b>", title_style))
+    story.append(Paragraph("<b>Student Progression & Detailed Content Usage Report</b>", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f"<b>Institution:</b> {school_name} | <b>Period:</b> {filter_desc}", subtitle_style))
     story.append(Spacer(1, 6))
@@ -109,33 +109,18 @@ def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics,
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    # Subject Table
-    if not subj_df.empty:
-        story.append(Paragraph("<b>Time Allocation by Subject / Theme</b>", sec_head_style))
-        subj_data = [["Subject / Theme", "Total Minutes Logged"]] + subj_df.astype(str).values.tolist()
-        subj_table = Table(subj_data, colWidths=[360, 180])
-        subj_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
-        ]))
-        story.append(subj_table)
-        story.append(Spacer(1, 10))
-
-    # Student-Wise Summary Table
-    if student_summary_df is not None and not student_summary_df.empty:
-        story.append(Paragraph("<b>Grade ➔ Student ➔ Module ➔ Content Usage Breakdown</b>", sec_head_style))
-        table_data = [["Grade", "Student Name", "Module Type", "Subject / Theme", "Time (Mins)"]] + student_summary_df.head(35).astype(str).values.tolist()
-        hier_table = Table(table_data, colWidths=[65, 110, 85, 205, 75])
+    # Hierarchical Table Data
+    if hierarchical_df is not None and not hierarchical_df.empty:
+        story.append(Paragraph("<b>Grade ➔ Student Name ➔ Module ➔ Book Content Usage Details</b>", sec_head_style))
+        table_data = [["Grade", "Student Name", "Module Type", "Subject / Theme", "Book / Chapter", "Time (Mins)"]] + hierarchical_df.head(40).astype(str).values.tolist()
+        
+        hier_table = Table(table_data, colWidths=[55, 105, 75, 120, 115, 70])
         hier_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('FONTSIZE', (0, 0), (-1, -1), 7.5),
             ('GRID', (0, 0), (-1, -1), 0.4, border_color),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
@@ -149,8 +134,8 @@ def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics,
 
 
 # --- MAIN APP EXECUTION ---
-st.title("👨‍🎓 Student Engagement & Detailed Usage Analytics Dashboard")
-st.markdown("Explore grade-level, student-wise, and content-specific usage reports for school principal and KDM reviews.")
+st.title("👨‍🎓 Student Progression & Content Usage Dashboard")
+st.markdown("Analyze student usage ordered by **Grade Progression (Nursery, LKG, UKG, Grades 1–5)**, **Student Name**, and **Specific Books/Chapters Opened**.")
 
 df = fetch_master_db_from_supabase()
 
@@ -242,9 +227,11 @@ else:
     filter_description = f"Custom Range: {c_start} to {c_end}"
 
 st.sidebar.markdown("---")
-st.sidebar.header("🎯 Grade Level Filter")
-all_grades = ["All Grades"] + sorted([str(g) for g in filtered_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
-selected_grade = st.sidebar.selectbox("Filter by Grade", options=all_grades)
+st.sidebar.header("🎯 Grade Progression Filter")
+grade_hierarchy_order = ["Nursery", "LKG", "UKG", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"]
+available_grades = sorted([str(g) for g in filtered_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
+
+selected_grade = st.sidebar.selectbox("Filter by Grade Level", options=["All Grades"] + available_grades)
 if selected_grade != "All Grades":
     filtered_df = filtered_df[filtered_df['Grade'] == selected_grade]
 
@@ -253,7 +240,7 @@ if filtered_df.empty:
     st.warning("No student engagement records match the current filter criteria.")
 else:
     st.subheader(f"Dashboard Overview: {selected_school}")
-    st.caption(f"Observation Window: {filter_description} | Grade Level Filter: {selected_grade}")
+    st.caption(f"Observation Window: {filter_description} | Grade Progression Filter: {selected_grade}")
 
     tot_student_time = filtered_df['Duration_Min'].sum() if 'Duration_Min' in filtered_df.columns else 0.0
     tot_student_sessions = len(filtered_df)
@@ -267,34 +254,13 @@ else:
     s_col4.metric("Avg. Time per Session", f"{avg_time_per_session:.1f} Mins")
 
     st.markdown("---")
-    st.subheader("📊 Module & Subject Engagement Distribution")
+    st.subheader("📚 Detailed Grade ➔ Student Name ➔ Module ➔ Book Content Usage Breakdown")
 
-    sc1, sc2 = st.columns(2)
-    type_summary = pd.DataFrame()
-    subj_summary = pd.DataFrame()
-
-    with sc1:
-        if 'Type' in filtered_df.columns:
-            type_summary = filtered_df.groupby('Type')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1})
-            fig_stype = px.pie(type_summary, names='Type', values='Duration_Min', title="Engagement Time by Module Type")
-            st.plotly_chart(fig_stype, use_container_width=True)
-            
-    with sc2:
-        if 'Subject' in filtered_df.columns:
-            subj_summary = filtered_df.groupby('Subject')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1})
-            fig_ssubj = px.bar(subj_summary, x='Duration_Min', y='Subject', orientation='h', title="Time Spent per Subject (Minutes)", text_auto=".1f")
-            fig_ssubj.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_ssubj, use_container_width=True)
-
-    # --- HIERARCHICAL TABLE DISPLAY ---
-    st.subheader("📚 Detailed Grade ➔ Student ➔ Module ➔ Content Usage Breakdown")
-    
     display_hier_table = pd.DataFrame()
     if not filtered_df.empty and 'FullName' in filtered_df.columns:
-        # Group by Grade, FullName, Type, Subject/Book
-        hier_agg = filtered_df.groupby(['Grade', 'FullName', 'Type', 'Subject']).agg(
-            Total_Time_Mins=('Duration_Min', 'sum'),
-            Content_Items=('Book', lambda x: ", ".join([str(b) for b in x.dropna().unique() if str(b).strip() and str(b).lower() != 'nan']))
+        # Group by Grade, FullName, Type, Subject, Book to get exact content usage
+        hier_agg = filtered_df.groupby(['Grade', 'FullName', 'Type', 'Subject', 'Book']).agg(
+            Total_Time_Mins=('Duration_Min', 'sum')
         ).reset_index().sort_values(by=['Grade', 'FullName', 'Total_Time_Mins'], ascending=[True, True, False])
 
         hier_agg['Total_Time_Mins'] = hier_agg['Total_Time_Mins'].round(1)
@@ -304,7 +270,7 @@ else:
             'FullName': 'Student Name',
             'Type': 'Module Type',
             'Subject': 'Subject / Theme',
-            'Content_Items': 'Books / Chapters Opened',
+            'Book': 'Book / Chapter',
             'Total_Time_Mins': 'Time (Mins)'
         })
         st.dataframe(display_hier_table, use_container_width=True)
@@ -313,7 +279,7 @@ else:
 
     # --- EXPORT SECTION ---
     st.markdown("---")
-    st.subheader("📥 Export Grade-Level & School-Wide Student Reports")
+    st.subheader("📥 Export Grade Progression & Student Content Reports")
     
     btn_col1, btn_col2 = st.columns(2)
     
@@ -321,13 +287,13 @@ else:
         if not display_hier_table.empty:
             buf_s_xlsx = BytesIO()
             with pd.ExcelWriter(buf_s_xlsx, engine='openpyxl') as writer:
-                display_hier_table.to_excel(writer, index=False, sheet_name="Grade_Student_Usage")
-                filtered_df.rename(columns={'Duration_Min': 'Minutes'}).to_excel(writer, index=False, sheet_name="Raw_Student_Logs")
+                display_hier_table.to_excel(writer, index=False, sheet_name="Grade_Student_Content_Usage")
+                filtered_df.rename(columns={'Duration_Min': 'Minutes'}).to_excel(writer, index=False, sheet_name="Raw_Logs")
             buf_s_xlsx.seek(0)
             st.download_button(
-                label=f"📥 Download Grade/Student Usage Report ({selected_grade}) [Excel]",
+                label=f"📥 Download Detailed Student Report ({selected_grade}) [Excel]",
                 data=buf_s_xlsx,
-                file_name=f"Student_Usage_Report_{selected_school.replace(' ', '_')}_{selected_grade}.xlsx",
+                file_name=f"Student_Progression_Report_{selected_school.replace(' ', '_')}_{selected_grade}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
@@ -340,11 +306,9 @@ else:
         }
         pdf_buf = generate_student_hierarchical_pdf(
             school_name=selected_school,
-            filter_desc=f"{filter_description} | Grade Filter: {selected_grade}",
+            filter_desc=f"{filter_description} | Grade Progression: {selected_grade}",
             summary_metrics=metrics_dict,
-            type_df=type_summary,
-            subj_df=subj_summary,
-            student_summary_df=display_hier_table
+            hierarchical_df=display_hier_table
         )
         st.download_button(
             label=f"📄 Download Executive KDM Report ({selected_grade}) [PDF]",
