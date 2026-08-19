@@ -1161,7 +1161,7 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # 7 Active Tabs (Tab 5 hosts individual 360 profile school messaging)
+    # 7 Active Tabs (Tab 4 hosts individual 360 profile school messaging)
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📘 1. Lesson Plan Preparation Tracker", 
         "📚 2. Library Usage Tracker", 
@@ -1810,7 +1810,6 @@ else:
             voice_cnt = len([l for l in sch_data['Voice_Note_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in sch_data.columns else 0
             portfolio_cnt = len([l for l in sch_data['Portfolio_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Portfolio_Evidence_Link' in sch_data.columns else 0
 
-            # Generate and host the PDF report for this specific school automatically
             school_pdf_buf = generate_comprehensive_school_pdf_report(
                 school_name=teacher_school,
                 teachers_list=sch_teachers_list,
@@ -1870,7 +1869,13 @@ else:
             final_school_wa_msg = "\n".join(school_msg_parts)
             edited_school_wa = st.text_area("Review / Edit School Audit WhatsApp Message:", value=final_school_wa_msg, height=180, key=f"school_wa_edit_{teacher_school}")
 
-            render_universal_crm_box("Teacher 360 Profile", teacher_school, filter_description_text, tab4_metrics_summary=f"Audit Profile for {target_teacher} at {teacher_school}")
+            # FIXED: Passed metrics summary positionally matching the function definition
+            render_universal_crm_box(
+                "Teacher 360 Profile", 
+                teacher_school, 
+                filter_description_text, 
+                f"Audit Profile for {target_teacher} at {teacher_school}"
+            )
 
     # TAB 5: MANAGER PORTFOLIO & SCHOOL QUADRANTS
     with tab5:
