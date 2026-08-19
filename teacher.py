@@ -21,7 +21,8 @@ try:
 except Exception as e:
     st.error(f"⚠️ Cloud connection configuration is missing: {e}")
 
-@st.cache_data(ttl=5, show_spinner=False)
+# Optimized caching (TTL increased to 300s to match admin dashboard and avoid redundant network hits)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_master_db_from_supabase():
     """Fetches the existing master parquet file to populate dynamic rosters."""
     try:
@@ -61,7 +62,7 @@ def upload_files_to_supabase(uploaded_files, folder_name="teacher_uploads"):
     return ", ".join(urls) if urls else None
 
 def save_isolated_submission(entry_dict):
-    """Saves submission as an isolated JSON file in Supabase Storage."""
+    """Saves submission as an isolated JSON file in Supabase Storage and clears cache so admin portal sees it instantly."""
     clean_teacher = re.sub(r'[^a-zA-Z0-9]', '_', entry_dict.get('FullName', 'teacher'))
     unique_id = uuid.uuid4().hex[:6]
     file_path = f"submissions/sub_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}_{clean_teacher}_{unique_id}.json"
@@ -73,6 +74,8 @@ def save_isolated_submission(entry_dict):
         file=json_payload,
         file_options={"upsert": "true", "content-type": "application/json"}
     )
+    # Clear cache immediately upon a new submission so the admin portal syncs fresh data on next load
+    fetch_master_db_from_supabase.clear()
 
 # --- LOAD MASTER ROSTER ---
 master_df = fetch_master_db_from_supabase()
@@ -245,7 +248,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                 }
 
                 save_isolated_submission(entry_dict)
-                st.success(f"✅ Success! Multiple evidence files and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded.")
+                st.success(f"✅ Success! Multiple evidence files and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded and synced.")
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
 
