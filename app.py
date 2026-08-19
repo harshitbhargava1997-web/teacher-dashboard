@@ -101,7 +101,7 @@ def fetch_master_db_from_supabase():
 
     sub_records = []
     try:
-        # Submission list limit set to 10,000 to ensure no teacher submission is ever cut off
+        # Submission list limit set to 10,000 to ensure no teacher submission is ever cut off[cite: 4]
         file_list = supabase.storage.from_(BUCKET_NAME).list("submissions", {"limit": 10000})
         if file_list:
             for item in file_list:
@@ -1332,8 +1332,16 @@ else:
                 ld_m = sch_data[sch_data['Type'] == 'lessonDelivery'].groupby('FullName')['Duration_Min'].sum()
                 lib_m = sch_data[sch_data['Type'] == 'library'].groupby('FullName')['Duration_Min'].sum()
 
-                met_ld = sum(1 for t in sch_teachers_list if ld_m.get(t, 0.0) >= calc_ld_kpi) if calc_ld_kpi > 0 else sum(1 for t in sch_teachers_list if ld_m.get(t, 0.0) > 0)
-                met_lib = sum(1 for t in sch_teachers_list if lib_m.get(t, 0.0) >= calc_lib_kpi) if calc_lib_kpi > 0 else sum(1 for t in sch_teachers_list if lib_m.get(t, 0.0) > 0)
+                # FIXED: Synchronized matching exact logic with PDF report generator
+                met_ld = 0
+                met_lib = 0
+                for t in sch_teachers_list:
+                    t_ld_mins = ld_m.get(t, 0.0)
+                    t_lib_mins = lib_m.get(t, 0.0)
+                    if (calc_ld_kpi > 0 and t_ld_mins >= calc_ld_kpi) or (calc_ld_kpi == 0 and t_ld_mins > 0):
+                        met_ld += 1
+                    if (calc_lib_kpi > 0 and t_lib_mins >= calc_lib_kpi) or (calc_lib_kpi == 0 and t_lib_mins > 0):
+                        met_lib += 1
 
                 ld_comp_pct = (met_ld / tot_teachers * 100) if tot_teachers > 0 else 0
                 lib_comp_pct = (met_lib / tot_teachers * 100) if tot_teachers > 0 else 0
