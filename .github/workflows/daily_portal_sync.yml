@@ -22,8 +22,8 @@ jobs:
       - name: Install dependencies & Playwright Chromium
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
+          pip install playwright pandas numpy openpyxl pyarrow supabase
+          python -m playwright install --with-deps chromium
 
       - name: 🚀 Execute Multi-Consultant Ingestion
         env:
