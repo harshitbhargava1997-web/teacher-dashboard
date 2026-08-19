@@ -893,7 +893,7 @@ def load_or_update_master_db(new_upload_dfs=None):
     combined_new = pd.concat(new_upload_dfs, ignore_index=True)
     combined_new = _sanitize_df_for_parquet(combined_new)
 
-    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
+    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
     all_data = _sanitize_df_for_parquet(all_data)
 
@@ -1283,7 +1283,7 @@ else:
     ])
 
     # ==============================================================================
-    # TAB 1: BULK WHATSAPP & AUTOMATED SCHOOL PDF DISPATCH HUB (PROMOTED TO FIRST TAB)
+    # TAB 1: BULK WHATSAPP & AUTOMATED SCHOOL PDF DISPATCH HUB
     # ==============================================================================
     with tab1:
         st.header("🚀 Bulk WhatsApp & School Comprehensive PDF Dispatch Hub")
@@ -1302,9 +1302,16 @@ else:
         else:
             st.markdown(f"#### 📋 Portfolio Action Center ({len(bulk_target_schools)} Schools)")
 
-            selected_bulk_entity = st.radio("Default Recipient Role for Bulk Dispatch:", ["Principal", "Owner", "Coordinator"], horizontal=True, key="bulk_entity_sel_radio")
-
-            auto_upload_pdfs = st.checkbox("🔗 Automatically generate & embed live Supabase PDF download links into WhatsApp drafts", value=True, key="bulk_pdf_check")
+            c_cfg1, c_cfg2 = st.columns([1, 1])
+            with c_cfg1:
+                selected_bulk_entity = st.radio("Default Recipient Role for Bulk Dispatch:", ["Principal", "Owner", "Coordinator"], horizontal=True, key="bulk_entity_sel_radio")
+                auto_upload_pdfs = st.checkbox("🔗 Automatically generate & embed live Supabase PDF download links into WhatsApp drafts", value=True, key="bulk_pdf_check")
+            with c_cfg2:
+                include_qual_evidence_in_wa = st.checkbox(
+                    "📑 Include Qualitative Classroom Evidence Submissions in WhatsApp Message", 
+                    value=bool(enable_qual_kpi), 
+                    key="tab1_include_qual_evidence_check"
+                )
 
             dispatch_records = []
 
@@ -1339,7 +1346,7 @@ else:
                 voice_cnt = len([l for l in sch_data['Voice_Note_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in sch_data.columns else 0
                 portfolio_cnt = len([l for l in sch_data['Portfolio_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Portfolio_Evidence_Link' in sch_data.columns else 0
 
-                # Teacher Level Adoption for Qualitative
+                # Teacher Level Adoption for Qualitative ("Submitted")
                 teachers_with_vids = sum(1 for t in sch_teachers_list if any(re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)][c].dropna().iloc[0]).strip(), re.IGNORECASE) for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in sch_data.columns and not sch_data[(sch_data["FullName"] == t)][c].dropna().empty))
                 teachers_with_ph = sum(1 for t in sch_teachers_list if 'Phonics_Evidence_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
                 teachers_with_w = sum(1 for t in sch_teachers_list if 'Writing_Sample_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
@@ -1394,15 +1401,15 @@ else:
                     f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                 )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Strictly controlled by enable_qual_kpi)
-                if enable_qual_kpi:
+                # Section 2: Qualitative Classroom Evidence Submissions (Strictly controlled by the toggle)
+                if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
                         f"\n📬 *2. Classroom Evidence Submissions:*\n"
-                        f"• Activity Videos: {vids_cnt} Uploaded ({teachers_with_vids}/{tot_teachers} Teachers Active)\n"
-                        f"• Phonics Evidence: {phonics_cnt} Uploaded ({teachers_with_ph}/{tot_teachers} Teachers Active)\n"
-                        f"• Writing Samples: {writing_cnt} Uploaded ({teachers_with_w}/{tot_teachers} Teachers Active)\n"
-                        f"• LP Pictures / Voice Notes: {lp_pic_cnt + voice_cnt} Uploaded ({teachers_with_lp}/{tot_teachers} Teachers Active)\n"
-                        f"• Portfolio Artifacts: {portfolio_cnt} Uploaded ({teachers_with_pf}/{tot_teachers} Teachers Active)"
+                        f"• Activity Videos: {vids_cnt} Uploaded ({teachers_with_vids}/{tot_teachers} Teachers Submitted)\n"
+                        f"• Phonics Evidence: {phonics_cnt} Uploaded ({teachers_with_ph}/{tot_teachers} Teachers Submitted)\n"
+                        f"• Writing Samples: {writing_cnt} Uploaded ({teachers_with_w}/{tot_teachers} Teachers Submitted)\n"
+                        f"• LP Pictures / Voice Notes: {lp_pic_cnt + voice_cnt} Uploaded ({teachers_with_lp}/{tot_teachers} Teachers Submitted)\n"
+                        f"• Portfolio Artifacts: {portfolio_cnt} Uploaded ({teachers_with_pf}/{tot_teachers} Teachers Submitted)"
                     )
 
                 # Focus Follow-up & Closing
@@ -1431,14 +1438,14 @@ else:
 
             # Display Bulk Dispatch Interface
             for idx, r in enumerate(dispatch_records):
-                with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']}" + (f" | Evidence: {r['Evidence Count']} Artifacts" if enable_qual_kpi else ""), expanded=(idx < 2)):
+                with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']}" + (f" | Evidence: {r['Evidence Count']} Artifacts" if (include_qual_evidence_in_wa and enable_qual_kpi) else ""), expanded=(idx < 2)):
                     col_r1, col_r2 = st.columns([1, 2])
                     with col_r1:
                         st.markdown(f"**Target:** {selected_bulk_entity} ({r['Contact Name']})")
                         st.markdown(f"**Phone:** `{r['Phone']}`")
                         st.markdown(f"**Roster Size:** {r['Total Teachers']} Teachers")
                         st.markdown(f"**Quantitative:** {r['Prep Compliance']} Prep / {r['Library Compliance']} Lib")
-                        if enable_qual_kpi:
+                        if include_qual_evidence_in_wa and enable_qual_kpi:
                             st.markdown(f"**Qualitative Evidence:** {r['Evidence Count']} Uploads")
 
                     with col_r2:
