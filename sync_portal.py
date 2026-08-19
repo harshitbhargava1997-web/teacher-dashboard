@@ -22,7 +22,7 @@ CONSULTANTS_JSON = os.getenv("CONSULTANTS_JSON", "[]")
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    print(f"⚠️ Supabase client initialization notice: {e}")
+    print(f"Warning: Supabase client initialization notice: {e}")
     supabase = None
 
 
@@ -114,11 +114,11 @@ def download_data_for_consultant(browser, consultant_info):
     password = consultant_info.get("password", "")
 
     if not email or not password:
-        print(f"⚠️ Skipping {consultant_name}: Email or Password not provided.")
+        print(f"Skipping {consultant_name}: Email or Password not provided.")
         return []
 
     print(f"\n========================================================")
-    print(f"👤 Logging in for Consultant: {consultant_name} ({state_zone})")
+    print(f"Logging in for Consultant: {consultant_name} ({state_zone})")
     print(f"========================================================")
 
     context = browser.new_context(accept_downloads=True)
@@ -148,9 +148,9 @@ def download_data_for_consultant(browser, consultant_info):
 
         try:
             school_list = get_all_school_options()
-            print(f"🏫 Found {len(school_list)} school(s) assigned to {consultant_name}: {school_list}")
+            print(f"Found {len(school_list)} school(s) assigned to {consultant_name}: {school_list}")
         except Exception as e_sch_list:
-            print(f"⚠️ Could not enumerate schools for {consultant_name}: {e_sch_list}")
+            print(f"Could not enumerate schools for {consultant_name}: {e_sch_list}")
             school_list = ["Current School"]
 
         # Step 3: Loop through Content and Platform sections
@@ -160,9 +160,9 @@ def download_data_for_consultant(browser, consultant_info):
         ]
 
         for school in school_list:
-            print(f"\n  🏫 Processing School: {school}")
+            print(f"\n  Processing School: {school}")
             for sec in sections:
-                print(f"     📂 Fetching {sec['name']} [Teachers View]...")
+                print(f"     Fetching {sec['name']} [Teachers View]...")
                 try:
                     page.goto(sec['url'], wait_until="networkidle")
                     time.sleep(2)
@@ -177,7 +177,7 @@ def download_data_for_consultant(browser, consultant_info):
                             page.wait_for_load_state("networkidle")
                             time.sleep(1.5)
                         except Exception as e_drop:
-                            print(f"        ⚠️ Dropdown switch notice: {e_drop}")
+                            print(f"        Dropdown switch notice: {e_drop}")
 
                     # Click 'Teachers' Tab
                     try:
@@ -185,7 +185,7 @@ def download_data_for_consultant(browser, consultant_info):
                         page.wait_for_load_state("networkidle")
                         time.sleep(1.5)
                     except Exception as e_tab:
-                        print(f"        ⚠️ Teachers tab toggle notice: {e_tab}")
+                        print(f"        Teachers tab toggle notice: {e_tab}")
 
                     # Export
                     try:
@@ -201,15 +201,15 @@ def download_data_for_consultant(browser, consultant_info):
                             report_type_default=sec['type']
                         )
                         consultant_dfs.append(cleaned_df)
-                        print(f"        ✅ Downloaded {len(cleaned_df)} rows for {school} ({sec['name']}).")
+                        print(f"        Downloaded {len(cleaned_df)} rows for {school} ({sec['name']}).")
                     except Exception as e_exp:
-                        print(f"        ⚠️ Export failed for {school}: {e_exp}")
+                        print(f"        Export failed for {school}: {e_exp}")
 
                 except Exception as e_nav:
-                    print(f"        ❌ Navigation failed: {e_nav}")
+                    print(f"        Navigation failed: {e_nav}")
 
     except Exception as e_user:
-        print(f"❌ Failed processing for {consultant_name}: {e_user}")
+        print(f"Failed processing for {consultant_name}: {e_user}")
     finally:
         context.close()
 
@@ -221,44 +221,44 @@ def download_data_for_consultant(browser, consultant_info):
 # ==============================================================================
 def update_supabase_master_db(new_dfs):
     if not new_dfs:
-        print("\n❌ No data collected across any consultant. Supabase update aborted.")
+        print("\nNo data collected across any consultant. Supabase update aborted.")
         return
 
     if supabase is None:
-        print("\n❌ Supabase client not available.")
+        print("\nSupabase client not available.")
         return
 
-    print("\n☁️ Merging all consultants' records into Supabase Master Parquet...")
+    print("\nMerging all consultants' records into Supabase Master Parquet...")
     base_df = pd.DataFrame()
     try:
-        response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)[cite: 1]
+        response = supabase.storage.from_(BUCKET_NAME).download(PARQUET_FILE_NAME)
         if response:
-            base_df = pd.read_parquet(BytesIO(response))[cite: 1]
+            base_df = pd.read_parquet(BytesIO(response))
             print(f"   -> Existing cloud database records: {len(base_df)}")
     except Exception:
         print("   -> Creating fresh master database.")
 
     combined_new = pd.concat(new_dfs, ignore_index=True)
-    all_data = pd.concat([base_df, combined_new], ignore_index=True) if not base_df.empty else combined_new[cite: 1]
+    all_data = pd.concat([base_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
 
     # Deduplicate across teachers, timestamps, features, books, and schools
-    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution'][cite: 1]
-    avail_cols = [c for c in dedup_cols if c in all_data.columns][cite: 1]
-    master_df = all_data.drop_duplicates(subset=avail_cols, keep='last')[cite: 1]
+    dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
+    avail_cols = [c for c in dedup_cols if c in all_data.columns]
+    master_df = all_data.drop_duplicates(subset=avail_cols, keep='last')
 
-    parquet_buffer = BytesIO()[cite: 1]
-    master_df.to_parquet(parquet_buffer, index=False)[cite: 1]
-    parquet_buffer.seek(0)[cite: 1]
+    parquet_buffer = BytesIO()
+    master_df.to_parquet(parquet_buffer, index=False)
+    parquet_buffer.seek(0)
 
     try:
-        supabase.storage.from_(BUCKET_NAME).upload([cite: 1]
-            path=PARQUET_FILE_NAME,[cite: 1]
-            file=parquet_buffer.getvalue(),[cite: 1]
-            file_options={"upsert": "true", "content-type": "application/octet-stream"}[cite: 1]
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=PARQUET_FILE_NAME,
+            file=parquet_buffer.getvalue(),
+            file_options={"upsert": "true", "content-type": "application/octet-stream"}
         )
-        print(f"\n🎉 SUCCESS: All consultants' schools successfully synced to Supabase! Total records: {len(master_df)}")
+        print(f"\nSUCCESS: All consultants' schools successfully synced to Supabase! Total records: {len(master_df)}")
     except Exception as e:
-        print(f"\n❌ Error uploading Parquet to Supabase: {e}")
+        print(f"\nError uploading Parquet to Supabase: {e}")
 
 
 # ==============================================================================
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     try:
         consultants_list = json.loads(CONSULTANTS_JSON)
         if not consultants_list:
-            print("⚠️ No consultants defined in CONSULTANTS_JSON environment variable.")
+            print("No consultants defined in CONSULTANTS_JSON environment variable.")
         else:
             all_batches = []
             with sync_playwright() as p:
@@ -281,6 +281,6 @@ if __name__ == "__main__":
             
             update_supabase_master_db(all_batches)
     except Exception as err:
-        print(f"\n💥 Script execution error: {err}")
+        print(f"\nScript execution error: {err}")
     finally:
-        print(f"⏱️ Total runtime: {time.time() - t0:.2f} seconds.\n")
+        print(f"Total runtime: {time.time() - t0:.2f} seconds.\n")
