@@ -70,7 +70,7 @@ def fetch_master_db_from_supabase():
 
 
 # --- PDF KDM DETAILED REPORT GENERATOR ---
-def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics, hierarchical_df):
+def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics, type_df, subj_df, student_summary_df):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -109,11 +109,26 @@ def generate_student_hierarchical_pdf(school_name, filter_desc, summary_metrics,
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    # Hierarchical Table Data
-    if not hierarchical_df.empty:
+    # Subject Table
+    if not subj_df.empty:
+        story.append(Paragraph("<b>Time Allocation by Subject / Theme</b>", sec_head_style))
+        subj_data = [["Subject / Theme", "Total Minutes Logged"]] + subj_df.astype(str).values.tolist()
+        subj_table = Table(subj_data, colWidths=[360, 180])
+        subj_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ]))
+        story.append(subj_table)
+        story.append(Spacer(1, 10))
+
+    # Student-Wise Summary Table
+    if student_summary_df is not None and not student_summary_df.empty:
         story.append(Paragraph("<b>Grade ➔ Student ➔ Module ➔ Content Usage Breakdown</b>", sec_head_style))
-        table_data = [["Grade", "Student Name", "Module Type", "Subject / Book Content", "Time (Mins)"]] + hierarchical_df.head(35).astype(str).values.tolist()
-        
+        table_data = [["Grade", "Student Name", "Module Type", "Subject / Theme", "Time (Mins)"]] + student_summary_df.head(35).astype(str).values.tolist()
         hier_table = Table(table_data, colWidths=[65, 110, 85, 205, 75])
         hier_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
@@ -252,10 +267,31 @@ else:
     s_col4.metric("Avg. Time per Session", f"{avg_time_per_session:.1f} Mins")
 
     st.markdown("---")
-    st.subheader("📚 Detailed Grade ➔ Student ➔ Content Usage Breakdown")
+    st.subheader("📊 Module & Subject Engagement Distribution")
 
-    # Build hierarchical aggregated dataframe for display
+    sc1, sc2 = st.columns(2)
+    type_summary = pd.DataFrame()
+    subj_summary = pd.DataFrame()
+
+    with sc1:
+        if 'Type' in filtered_df.columns:
+            type_summary = filtered_df.groupby('Type')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1})
+            fig_stype = px.pie(type_summary, names='Type', values='Duration_Min', title="Engagement Time by Module Type")
+            st.plotly_chart(fig_stype, use_container_width=True)
+            
+    with sc2:
+        if 'Subject' in filtered_df.columns:
+            subj_summary = filtered_df.groupby('Subject')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1})
+            fig_ssubj = px.bar(subj_summary, x='Duration_Min', y='Subject', orientation='h', title="Time Spent per Subject (Minutes)", text_auto=".1f")
+            fig_ssubj.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_ssubj, use_container_width=True)
+
+    # --- HIERARCHICAL TABLE DISPLAY ---
+    st.subheader("📚 Detailed Grade ➔ Student ➔ Module ➔ Content Usage Breakdown")
+    
+    display_hier_table = pd.DataFrame()
     if not filtered_df.empty and 'FullName' in filtered_df.columns:
+        # Group by Grade, FullName, Type, Subject/Book
         hier_agg = filtered_df.groupby(['Grade', 'FullName', 'Type', 'Subject']).agg(
             Total_Time_Mins=('Duration_Min', 'sum'),
             Content_Items=('Book', lambda x: ", ".join([str(b) for b in x.dropna().unique() if str(b).strip() and str(b).lower() != 'nan']))
@@ -273,7 +309,6 @@ else:
         })
         st.dataframe(display_hier_table, use_container_width=True)
     else:
-        display_hier_table = pd.DataFrame()
         st.info("No detailed student breakdown available.")
 
     # --- EXPORT SECTION ---
@@ -297,9 +332,6 @@ else:
             )
 
     with btn_col2:
-        type_summary = filtered_df.groupby('Type')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1}) if 'Type' in filtered_df.columns else pd.DataFrame()
-        subj_summary = filtered_df.groupby('Subject')['Duration_Min'].sum().reset_index().round({'Duration_Min': 1}) if 'Subject' in filtered_df.columns else pd.DataFrame()
-
         metrics_dict = {
             "Total Time": f"{tot_student_time:.1f}m",
             "Sessions": str(tot_student_sessions),
