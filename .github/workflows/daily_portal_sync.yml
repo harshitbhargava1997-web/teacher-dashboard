@@ -1,0 +1,34 @@
+name: Daily OneLern Multi-Consultant Sync
+
+on:
+  schedule:
+    # Runs automatically every day at 00:30 UTC (6:00 AM IST)
+    - cron: '30 0 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  multi-consultant-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Check out repository code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies & Playwright Chromium
+        run: |
+          pip install pandas openpyxl pyarrow supabase playwright requests
+          playwright install chromium --with-deps
+
+      - name: 🚀 Execute Multi-Consultant Ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+          CONSULTANTS_JSON: ${{ secrets.CONSULTANTS_JSON }}
+        run: python sync_portal.py
