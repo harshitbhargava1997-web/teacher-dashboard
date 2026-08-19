@@ -21,20 +21,23 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Fast Dependency & Chromium Setup
+      - name: Setup Headless Screen & Dependencies
         run: |
+          sudo apt-get update -y
+          sudo apt-get install -y xvfb
           python -m pip install --upgrade pip
           pip install playwright pandas numpy openpyxl pyarrow supabase
           python -m playwright install chromium
 
-      - name: 🚀 Execute Multi-Consultant Ingestion
+      - name: 🚀 Execute Chromium Ingestion
         env:
+          PYTHONUNBUFFERED: "1"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
           CONSULTANTS_JSON: ${{ secrets.CONSULTANTS_JSON }}
         run: |
-          python sync_portal.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python -u sync_portal.py
 
       - name: Upload Debug Screenshots
         if: always()
