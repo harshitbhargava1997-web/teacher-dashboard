@@ -52,6 +52,10 @@ def clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, rep
         return pd.DataFrame()
 
     df = df_raw.copy()
+    
+    if 'TEACHER' in df.columns and 'FullName' not in df.columns:
+        df['FullName'] = df['TEACHER']
+
     if 'Institution' not in df.columns or df['Institution'].fillna('').eq('').all():
         df['Institution'] = school_name
     else:
@@ -105,117 +109,119 @@ def clean_report_dataframe(df_raw, school_name, consultant_name, state_zone, rep
 
 
 # ==============================================================================
-# 3. INTERACTIVE PORTAL ACTIONS
+# 3. UI AUTOMATION FUNCTIONS
 # ==============================================================================
-def set_date_filter_july_to_today(page):
-    """Sets date filter from July 1st of current year to today."""
-    current_year = datetime.now().year
-    start_date_str = f"01-07-{current_year}"
-    end_date_str = datetime.now().strftime("%d-%m-%Y")
-    
+def select_academic_year(page, target_ay="AY26-27"):
     try:
-        date_pickers = page.locator('input[placeholder*="Date" i], input[placeholder*="DD" i], input[type="date"], [class*="datepicker"], [class*="date-range"]').all()
-        if len(date_pickers) >= 2:
-            date_pickers[0].fill(f"{current_year}-07-01")
-            date_pickers[1].fill(datetime.now().strftime("%Y-%m-%d"))
+        ay_dropdown = page.locator('div:has-text("AY"), [class*="select"]:has-text("AY")').first
+        if ay_dropdown.count() > 0 and ay_dropdown.is_visible():
+            ay_dropdown.click()
             time.sleep(1)
-        elif len(date_pickers) == 1:
-            date_pickers[0].click()
+            target_opt = page.locator(f'text="{target_ay}", div:has-text("{target_ay}"), li:has-text("{target_ay}")').first
+            if target_opt.count() > 0 and target_opt.is_visible():
+                target_opt.click()
+            else:
+                alt_opt = page.locator('text="26-27", div:has-text("26-27"), li:has-text("26-27")').first
+                if alt_opt.count() > 0 and alt_opt.is_visible():
+                    alt_opt.click()
+            time.sleep(2)
+            print(f"       ✅ Academic Year set to: {target_ay}")
+    except Exception as e_ay:
+        print(f"       Academic Year select note: {e_ay}")
+
+
+def apply_date_filter(page, start_date_str="07/01/2026"):
+    end_date_str = datetime.now().strftime("%m/%d/%Y")
+    try:
+        date_inputs = page.locator('input[type="text"][placeholder*="202" i], input[type="text"][value*="/"], input[placeholder*="MM" i], input[placeholder*="DD" i]').all()
+        if len(date_inputs) >= 2:
+            date_inputs[0].click()
+            date_inputs[0].fill(start_date_str)
+            date_inputs[0].press("Enter")
             time.sleep(0.5)
-            date_pickers[0].fill(f"{start_date_str} - {end_date_str}")
-            page.keyboard.press("Enter")
+
+            date_inputs[1].click()
+            date_inputs[1].fill(end_date_str)
+            date_inputs[1].press("Enter")
             time.sleep(1)
+            print(f"       ✅ Date filter applied: {start_date_str} to {end_date_str}")
     except Exception as e_dt:
         print(f"       Date filter note: {e_dt}")
 
 
-def switch_school(page, school_name):
-    """Selects a specific school from the active dropdown."""
+def get_all_schools_from_dropdown(page):
+    school_names = []
+    try:
+        school_dropdown = page.locator('div[class*="select"], div[role="combobox"], button[class*="dropdown"]').first
+        school_dropdown.click()
+        time.sleep(1.5)
+
+        options = page.locator('div[role="option"], li[role="option"], div[class*="option"], div[class*="menu"] div').all_text_contents()
+        page.keyboard.press("Escape")
+
+        for opt in options:
+            clean_opt = opt.strip()
+            if clean_opt and "AY2" not in clean_opt and "Academic" not in clean_opt:
+                school_names.append(clean_opt)
+
+        school_names = list(dict.fromkeys(school_names))
+    except Exception as e_sch:
+        print(f"       School discovery note: {e_sch}")
+
+    if not school_names:
+        school_names = ["Current School"]
+    return school_names
+
+
+def select_school(page, school_name):
     if school_name == "Current School":
         return
     try:
-        # Standard select
-        select_tag = page.locator('select').first
-        if select_tag.count() > 0 and select_tag.is_visible():
-            select_tag.select_option(label=school_name)
-            time.sleep(2)
-            return
-
-        # Modern UI dropdown trigger
-        dropdown_triggers = page.locator('.ant-select-selector, .MuiSelect-select, div[role="combobox"], [class*="school-select"], [class*="select__control"]').all()
-        for trg in dropdown_triggers:
-            if trg.is_visible():
-                trg.click()
-                time.sleep(1)
-                page.locator(f'text="{school_name}"').first.click()
-                time.sleep(2)
-                return
-    except Exception as e_sch:
-        print(f"       School switch note for {school_name}: {e_sch}")
+        school_dropdown = page.locator('div[class*="select"], div[role="combobox"], button[class*="dropdown"]').first
+        school_dropdown.click()
+        time.sleep(1)
+        page.locator(f'text="{school_name}"').first.click()
+        time.sleep(2)
+    except Exception as e:
+        print(f"       Error selecting school {school_name}: {e}")
 
 
-def click_teacher_tab(page):
-    """Clicks the 'Teacher' or 'Teachers' view tab."""
+def click_teachers_tab(page):
     try:
-        teacher_tab_locators = [
-            'div[role="tab"]:has-text("Teacher")',
-            'button:has-text("Teacher")',
-            'span:has-text("Teacher")',
-            'a:has-text("Teacher")',
-            'li:has-text("Teacher")'
-        ]
-        for t_loc in teacher_tab_locators:
-            tab = page.locator(t_loc).first
-            if tab.count() > 0 and tab.is_visible():
-                tab.click()
-                time.sleep(2)
-                return True
-    except Exception as e_tab:
-        print(f"       Teacher tab selection note: {e_tab}")
-    return False
+        teacher_pill = page.locator('button:has-text("Teachers"), div:has-text("Teachers"), span:has-text("Teachers")').first
+        teacher_pill.click()
+        time.sleep(3)
+        return True
+    except Exception as e:
+        print(f"       Teachers tab click note: {e}")
+        return False
 
 
 def click_export_download(page, school_name, consultant_name, state_zone, report_type):
-    """Clicks Export, captures the downloaded Excel file, and returns a cleaned DataFrame."""
-    export_locators = [
-        'button:has-text("Export")',
-        'a:has-text("Export")',
-        'span:has-text("Export")',
-        'button:has-text("Download")',
-        '[aria-label*="export" i]',
-        '[title*="export" i]',
-        '.export-btn'
-    ]
-    
-    for exp_loc in export_locators:
-        btn = page.locator(exp_loc).first
-        if btn.count() > 0 and btn.is_visible():
-            try:
-                with page.expect_download(timeout=45000) as download_info:
-                    btn.click()
-                download = download_info.value
-                df_raw = pd.read_excel(download.path())
-                cleaned = clean_report_dataframe(
-                    df_raw, 
-                    school_name=school_name, 
-                    consultant_name=consultant_name, 
-                    state_zone=state_zone, 
-                    report_type_default=report_type
-                )
-                print(f"       ✅ Successfully exported {len(cleaned)} rows for {school_name}.")
-                return cleaned
-            except Exception as e_dl:
-                print(f"       Export download failed for {school_name}: {e_dl}")
-                page.screenshot(path=f"debug_screenshots/export_error_{school_name}_{report_type}.png")
-                return None
-
-    print(f"       ⚠️ Export button not visible for {school_name} ({report_type}).")
-    page.screenshot(path=f"debug_screenshots/no_export_{school_name}_{report_type}.png")
-    return None
+    try:
+        export_btn = page.locator('button:has-text("Export")').first
+        with page.expect_download(timeout=45000) as download_info:
+            export_btn.click()
+        
+        download = download_info.value
+        df_raw = pd.read_excel(download.path())
+        cleaned = clean_report_dataframe(
+            df_raw, 
+            school_name=school_name, 
+            consultant_name=consultant_name, 
+            state_zone=state_zone, 
+            report_type_default=report_type
+        )
+        print(f"       ✅ Exported {len(cleaned)} rows for {school_name} ({report_type}).")
+        return cleaned
+    except Exception as e:
+        print(f"       Export notice for {school_name} ({report_type}): {e}")
+        page.screenshot(path=f"debug_screenshots/export_fail_{school_name}_{report_type}.png")
+        return None
 
 
 # ==============================================================================
-# 4. FULL AUTOMATION WORKFLOW PER CONSULTANT
+# 4. INGESTION PIPELINE (CYCLES THROUGH ALL SCHOOLS & BOTH MODULES)
 # ==============================================================================
 def download_data_for_consultant(browser, consultant_info):
     consultant_name = consultant_info.get("name", "Consultant")
@@ -228,7 +234,7 @@ def download_data_for_consultant(browser, consultant_info):
         return []
 
     print(f"\n========================================================")
-    print(f"Executing Complete Portal Ingestion: {consultant_name}")
+    print(f"Executing Ingestion for: {consultant_name} ({state_zone})")
     print(f"========================================================")
 
     context = browser.new_context(
@@ -240,85 +246,77 @@ def download_data_for_consultant(browser, consultant_info):
     consultant_dfs = []
 
     try:
-        # STEP 1: Login
-        print("1. Logging into Admin Portal...")
+        # 1. Login
+        print("1. Opening Admin Portal...")
         page.goto("https://admin.onelern.school", wait_until="domcontentloaded", timeout=60000)
         time.sleep(3)
 
-        email_input = page.locator('input[type="email"], input[name="email"], input[placeholder*="Email" i], input[type="text"]').first
+        email_input = page.locator('input[placeholder*="email" i], input[type="email"]').first
         email_input.wait_for(state="visible", timeout=20000)
         email_input.fill(email)
 
-        password_input = page.locator('input[type="password"], input[name="password"]').first
+        password_input = page.locator('input[placeholder*="password" i], input[type="password"]').first
         password_input.fill(password)
 
-        page.locator('button[type="submit"], button:has-text("Login"), button:has-text("Sign In")').first.click()
-        print("2. Authenticating session...")
-        time.sleep(6)
+        page.locator('button:has-text("Login")').first.click()
+        print("2. Authenticating session (waiting 30s for full dashboard load)...")
+        time.sleep(25)
 
-        # STEP 2: Navigate: Home -> Reports -> Content
+        # 2. Open Reports -> Content
         print("3. Navigating to Reports -> Content...")
-        reports_nav = page.locator('text="Reports", a:has-text("Reports"), span:has-text("Reports")').first
-        if reports_nav.count() > 0 and reports_nav.is_visible():
-            reports_nav.click()
-            time.sleep(2)
-        
-        page.goto("https://admin.onelern.school/reports/content", wait_until="domcontentloaded", timeout=60000)
-        time.sleep(4)
+        reports_menu = page.locator('text="Reports"').first
+        if reports_menu.count() > 0 and reports_menu.is_visible():
+            reports_menu.click()
+            time.sleep(1)
 
-        # STEP 3: Enumerate all assigned schools
-        school_list = []
-        dropdown_selectors = ['.ant-select-selector', '.MuiSelect-select', 'div[role="combobox"]', '.select__control', '[class*="school-select"]']
-        for selector in dropdown_selectors:
-            trg = page.locator(selector).first
-            if trg.count() > 0 and trg.is_visible():
-                try:
-                    trg.click()
-                    time.sleep(1.5)
-                    opts = page.locator('.ant-select-item-option-content, [role="option"], li[role="option"], .select__option').all_text_contents()
-                    page.keyboard.press("Escape")
-                    found = [o.strip() for o in opts if o.strip() and "select" not in o.lower()]
-                    if found:
-                        school_list = found
-                        break
-                except Exception:
-                    pass
+        content_link = page.locator('a:has-text("Content"), span:has-text("Content")').first
+        if content_link.count() > 0 and content_link.is_visible():
+            content_link.click()
+            time.sleep(3)
+        else:
+            page.goto("https://admin.onelern.school/reports/content", wait_until="domcontentloaded")
+            time.sleep(4)
 
-        if not school_list:
-            select_tag = page.locator('select').first
-            if select_tag.count() > 0 and select_tag.is_visible():
-                opts = select_tag.locator('option').all_text_contents()
-                school_list = [o.strip() for o in opts if o.strip() and "select" not in o.lower()]
+        # 3. Detect all schools assigned to consultant
+        school_list = get_all_schools_from_dropdown(page)
+        print(f"Schools detected to process ({len(school_list)}): {school_list}")
 
-        if not school_list:
-            school_list = ["Current School"]
-
-        school_list = list(dict.fromkeys(school_list))
-        print(f"Schools detected ({len(school_list)}): {school_list}")
-
-        # STEP 4: Ingest Content & Platform Reports for every school
+        # 4. Modules definition
         modules = [
-            {"title": "Content (Library)", "url": "https://admin.onelern.school/reports/content", "type": "library"},
-            {"title": "Platform (Lesson Prep)", "url": "https://admin.onelern.school/platform-reports", "type": "lessonDelivery"}
+            {"title": "Content (Library)", "sidebar_text": "Content", "url_fallback": "https://admin.onelern.school/reports/content", "type": "library"},
+            {"title": "Platform (Lesson Prep)", "sidebar_text": "Platform", "url_fallback": "https://admin.onelern.school/platform-reports", "type": "lessonDelivery"}
         ]
 
+        # 5. Dual-Module Loop per School
         for school in school_list:
-            print(f"\n--- Ingesting Data for School: {school} ---")
+            print(f"\n--- Processing School: {school} ---")
             for mod in modules:
                 print(f"  -> Opening {mod['title']}...")
-                page.goto(mod['url'], wait_until="domcontentloaded", timeout=60000)
-                time.sleep(3)
+                try:
+                    nav_btn = page.locator(f'text="{mod["sidebar_text"]}"').first
+                    if nav_btn.count() > 0 and nav_btn.is_visible():
+                        nav_btn.click()
+                        time.sleep(3)
+                    else:
+                        page.goto(mod["url_fallback"], wait_until="domcontentloaded")
+                        time.sleep(3)
+                except Exception:
+                    page.goto(mod["url_fallback"], wait_until="domcontentloaded")
+                    time.sleep(3)
 
-                # Select School
-                switch_school(page, school)
+                # Step A: Select School
+                select_school(page, school)
 
-                # Select Date Range (1st July to Today)
-                set_date_filter_july_to_today(page)
+                # Step B: Select Academic Year AY26-27
+                select_academic_year(page, target_ay="AY26-27")
 
-                # Click Teacher View
-                click_teacher_tab(page)
+                # Step C: Set Date Range (July 1st, 2026 to Today)
+                apply_date_filter(page, start_date_str="07/01/2026")
 
-                # Export & Ingest
+                # Step D: Click Teachers View Tab
+                click_teachers_tab(page)
+
+                # Step E: Export Data
                 df_out = click_export_download(page, school, consultant_name, state_zone, mod['type'])
                 if df_out is not None and not df_out.empty:
                     consultant_dfs.append(df_out)
@@ -333,16 +331,14 @@ def download_data_for_consultant(browser, consultant_info):
 
 
 # ==============================================================================
-# 5. MERGE & DIRECT SUPABASE SYNC
+# 5. MERGE & CLOUD SUPABASE PARQUET SYNC
 # ==============================================================================
 def update_supabase_master_db(new_dfs):
     if not new_dfs:
-        print("\n⚠️ No new data collected across consultants. Supabase update aborted.")
-        return
+        raise RuntimeError("No data rows collected across consultants. Review debug_screenshots artifact.")
 
     if supabase is None:
-        print("\nSupabase client unavailable.")
-        return
+        raise RuntimeError("Supabase client is not initialized.")
 
     print("\nMerging all datasets into Supabase Master Parquet...")
     base_df = pd.DataFrame()
@@ -357,7 +353,6 @@ def update_supabase_master_db(new_dfs):
     combined_new = pd.concat(new_dfs, ignore_index=True)
     all_data = pd.concat([base_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
 
-    # Deduplicate
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     avail_cols = [c for c in dedup_cols if c in all_data.columns]
     master_df = all_data.drop_duplicates(subset=avail_cols, keep='last')
@@ -372,9 +367,9 @@ def update_supabase_master_db(new_dfs):
             file=parquet_buffer.getvalue(),
             file_options={"upsert": "true", "content-type": "application/octet-stream"}
         )
-        print(f"\n🎉 SUCCESS: All schools successfully synced to Supabase! Total records: {len(master_df)}")
+        print(f"\n🎉 SUCCESS: All schools synced to Supabase! Total records: {len(master_df)}")
     except Exception as e:
-        print(f"\nSupabase upload error: {e}")
+        raise RuntimeError(f"Supabase upload error: {e}")
 
 
 # ==============================================================================
@@ -396,7 +391,5 @@ if __name__ == "__main__":
                 browser.close()
 
             update_supabase_master_db(all_batches)
-    except Exception as err:
-        print(f"Pipeline execution error: {err}")
     finally:
         print(f"Total pipeline runtime: {time.time() - t0:.2f} seconds.\n")
