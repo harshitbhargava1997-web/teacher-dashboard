@@ -16,7 +16,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BUCKET_NAME = os.getenv("BUCKET_NAME", "academic-dashboard")
 PARQUET_FILE_NAME = "master_database.parquet"
 
-# JSON array containing all consultants' credentials and region info
 CONSULTANTS_JSON = os.getenv("CONSULTANTS_JSON", "[]")
 
 try:
@@ -114,30 +113,36 @@ def download_data_for_consultant(browser, consultant_info):
     password = consultant_info.get("password", "")
 
     if not email or not password:
-        print(f"Skipping {consultant_name}: Email or Password not provided.")
+        print(f"Skipping {consultant_name}: Email or Password missing.")
         return []
 
     print(f"\n========================================================")
     print(f"Logging in for Consultant: {consultant_name} ({state_zone})")
     print(f"========================================================")
 
-    context = browser.new_context(accept_downloads=True)
+    context = browser.new_context(
+        accept_downloads=True,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
     page = context.new_page()
     consultant_dfs = []
 
     try:
-        # Step 1: Login
-        page.goto("https://admin.onelern.school", wait_until="networkidle")
+        # Step 1: Login with DOM content loaded
+        page.goto("https://admin.onelern.school", wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector('input[type="email"], input[name="email"], input[placeholder*="Email"]', timeout=30000)
+        
         page.fill('input[type="email"], input[name="email"], input[placeholder*="Email"]', email)
         page.fill('input[type="password"], input[name="password"]', password)
         page.click('button[type="submit"], button:has-text("Login"), button:has-text("Sign In")')
-        page.wait_for_load_state("networkidle")
-        time.sleep(3)
+        
+        # Wait for redirect to dashboard
+        time.sleep(5)
 
-        # Step 2: Extract visible schools for this consultant
+        # Step 2: Extract visible schools
         def get_all_school_options():
-            page.goto("https://admin.onelern.school/reports/content", wait_until="networkidle")
-            time.sleep(2)
+            page.goto("https://admin.onelern.school/reports/content", wait_until="domcontentloaded", timeout=60000)
+            time.sleep(3)
             dropdown_trigger = page.locator('div[class*="select"], div[role="combobox"], div[class*="dropdown"]').first
             dropdown_trigger.click()
             time.sleep(1)
@@ -164,7 +169,7 @@ def download_data_for_consultant(browser, consultant_info):
             for sec in sections:
                 print(f"     Fetching {sec['name']} [Teachers View]...")
                 try:
-                    page.goto(sec['url'], wait_until="networkidle")
+                    page.goto(sec['url'], wait_until="domcontentloaded", timeout=60000)
                     time.sleep(2)
 
                     # Switch School
@@ -174,22 +179,20 @@ def download_data_for_consultant(browser, consultant_info):
                             dropdown_trigger.click()
                             time.sleep(0.5)
                             page.click(f'text="{school}"')
-                            page.wait_for_load_state("networkidle")
-                            time.sleep(1.5)
+                            time.sleep(2)
                         except Exception as e_drop:
                             print(f"        Dropdown switch notice: {e_drop}")
 
                     # Click 'Teachers' Tab
                     try:
                         page.click('button:has-text("Teachers"), div:has-text("Teachers"), span:has-text("Teachers")')
-                        page.wait_for_load_state("networkidle")
-                        time.sleep(1.5)
+                        time.sleep(2)
                     except Exception as e_tab:
                         print(f"        Teachers tab toggle notice: {e_tab}")
 
                     # Export
                     try:
-                        with page.expect_download(timeout=45000) as download_info:
+                        with page.expect_download(timeout=60000) as download_info:
                             page.click('button:has-text("Export")')
                         download = download_info.value
                         df_raw = pd.read_excel(download.path())
@@ -241,7 +244,6 @@ def update_supabase_master_db(new_dfs):
     combined_new = pd.concat(new_dfs, ignore_index=True)
     all_data = pd.concat([base_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
 
-    # Deduplicate across teachers, timestamps, features, books, and schools
     dedup_cols = ['FullName', 'StartTime', 'Book', 'Type', 'Duration_Min', 'Institution']
     avail_cols = [c for c in dedup_cols if c in all_data.columns]
     master_df = all_data.drop_duplicates(subset=avail_cols, keep='last')
