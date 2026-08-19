@@ -5,14 +5,14 @@ import re
 from io import BytesIO
 from supabase import create_client
 
-# ReportLab PDF Libraries for Grade & School Exports
+# ReportLab PDF Libraries for Individual-Student-Per-Page Export
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # Page layout configuration
-st.set_page_config(page_title="OneLearn - Grade & School Student Reports", page_icon="📊", layout="wide")
+st.set_page_config(page_title="OneLearn - Individual Student Reports", page_icon="📊", layout="wide")
 
 # --- SUPABASE CLOUD SETUP ---
 try:
@@ -77,8 +77,9 @@ def convert_seconds_to_hms(total_seconds):
     return f"{hours:02d}", f"{minutes:02d}", f"{seconds:02d}"
 
 
-# --- PDF COMPREHENSIVE REPORT GENERATOR ---
-def generate_comprehensive_student_pdf(school_name, scope_title, filter_desc, content_report_df, platform_report_df):
+# --- MULTI-PAGE INDIVIDUAL STUDENT PDF GENERATOR ---
+def generate_grade_individual_student_pdf(school_name, grade_name, filter_desc, student_data_dict):
+    """Generates a PDF where each student has their own dedicated page containing Content and Platform usage."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -89,57 +90,66 @@ def generate_comprehensive_student_pdf(school_name, scope_title, filter_desc, co
     light_bg = colors.HexColor('#F8FAFC')
     border_color = colors.HexColor('#E2E8F0')
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=15, textColor=primary_color, fontName='Helvetica-Bold')
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9.5, textColor=dark_neutral)
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=6)
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=14, textColor=primary_color, fontName='Helvetica-Bold')
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, textColor=dark_neutral)
+    student_head = ParagraphStyle('StudentHead', parent=styles['Heading2'], fontSize=13, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=8)
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading3'], fontSize=10, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=4)
 
-    story.append(Paragraph(f"<b>Student Usage Report: {scope_title}</b>", title_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"<b>Institution:</b> {school_name} | <b>Period:</b> {filter_desc}", subtitle_style))
-    story.append(Spacer(1, 8))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
+    for idx, (student_name, data) in enumerate(student_data_dict.items()):
+        if idx > 0:
+            story.append(PageBreak())
 
-    # Content Section
-    story.append(Paragraph("<b>1. Student-Wise Content Usage (Books & Chapters)</b>", sec_head_style))
-    if content_report_df is not None and not content_report_df.empty:
-        c_data = [content_report_df.columns.tolist()] + content_report_df.astype(str).values.tolist()
-        c_table = Table(c_data, colWidths=[100, 55, 185, 60, 70, 70])
-        c_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7.5),
-            ('GRID', (0, 0), (-1, -1), 0.4, border_color),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(c_table)
-    else:
-        story.append(Paragraph("No content usage records found.", styles['Normal']))
+        story.append(Paragraph(f"<b>Student Usage Report</b>", title_style))
+        story.append(Spacer(1, 2))
+        story.append(Paragraph(f"<b>Institution:</b> {school_name} | <b>Grade:</b> {grade_name} | <b>Period:</b> {filter_desc}", subtitle_style))
+        story.append(Spacer(1, 4))
+        story.append(HRFlowable(width="100%", thickness=1, color=primary_color, spaceAfter=8))
 
-    story.append(Spacer(1, 14))
+        story.append(Paragraph(f"<b>{student_name.upper()}</b>", student_head))
 
-    # Platform Section
-    story.append(Paragraph("<b>2. Student-Wise Platform Usage (Features & Modules)</b>", sec_head_style))
-    if platform_report_df is not None and not platform_report_df.empty:
-        p_data = [platform_report_df.columns.tolist()] + platform_report_df.astype(str).values.tolist()
-        p_table = Table(p_data, colWidths=[110, 60, 195, 60, 60, 55])
-        p_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7.5),
-            ('GRID', (0, 0), (-1, -1), 0.4, border_color),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(p_table)
-    else:
-        story.append(Paragraph("No platform usage records found.", styles['Normal']))
+        # 1. Content Usage Table
+        story.append(Paragraph("<b>1. Content Usage (Books & Chapters Opened)</b>", sec_head_style))
+        content_df = data['content']
+        if not content_df.empty:
+            c_data = [content_df.columns.tolist()] + content_df.astype(str).values.tolist()
+            c_table = Table(c_data, colWidths=[35, 175, 110, 65, 75, 80])
+            c_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+                ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            story.append(c_table)
+        else:
+            story.append(Paragraph("No content usage records for this period.", styles['Normal']))
+
+        story.append(Spacer(1, 8))
+
+        # 2. Platform Usage Table
+        story.append(Paragraph("<b>2. Platform Usage (Features & Modules)</b>", sec_head_style))
+        platform_df = data['platform']
+        if not platform_df.empty:
+            p_data = [platform_df.columns.tolist()] + platform_df.astype(str).values.tolist()
+            p_table = Table(p_data, colWidths=[35, 205, 80, 75, 75, 70])
+            p_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+                ('GRID', (0, 0), (-1, -1), 0.4, border_color),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            story.append(p_table)
+        else:
+            story.append(Paragraph("No platform usage records for this period.", styles['Normal']))
 
     doc.build(story)
     buffer.seek(0)
@@ -147,8 +157,8 @@ def generate_comprehensive_student_pdf(school_name, scope_title, filter_desc, co
 
 
 # --- MAIN APP ---
-st.title("📊 OneLearn - Grade & School Student Reports")
-st.markdown("Generate comprehensive student-wise content and platform usage reports filtered by Grade Level or Complete School.")
+st.title("📊 OneLearn - Individual Student Reports by Grade")
+st.markdown("Select a school and grade level to generate multi-page executive reports where **each student has their own dedicated page** detailing content and platform usage.")
 
 df = fetch_master_db_from_supabase()
 
@@ -171,103 +181,94 @@ selected_school = st.sidebar.selectbox("Select School / Institution", options=al
 school_df = student_master_df[student_master_df['Institution'] == selected_school]
 
 all_grades = sorted([str(g) for g in school_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
-selected_scope = st.sidebar.selectbox("Select Report Scope", options=["Complete School (All Grades)"] + [f"Grade: {g}" for g in all_grades])
+selected_grade = st.sidebar.selectbox("Select Grade Level", options=all_grades)
+grade_df = school_df[school_df['Grade'] == selected_grade]
 
-if selected_scope == "Complete School (All Grades)":
-    scope_df = school_df
-    scope_title = "Complete School Report"
-else:
-    grade_name = selected_scope.replace("Grade: ", "")
-    scope_df = school_df[school_df['Grade'] == grade_name]
-    scope_title = f"Grade Level: {grade_name}"
+if grade_df.empty:
+    st.warning("No student records found for this grade.")
+    st.stop()
 
-# --- PREPARE DATASETS FOR CONTENT & PLATFORM ---
-st.subheader(f"🏫 **{selected_school}** — *{scope_title}*")
+# --- PREPARE STUDENT-WISE DICTIONARY ---
+all_students_in_grade = sorted([s for s in grade_df['FullName'].unique() if s and str(s).lower() != 'unknown student'])
 
-tab_content, tab_platform = st.tabs(["📚 Student-Wise Content Usage", "🌐 Student-Wise Platform Usage"])
+if not all_students_in_grade:
+    st.warning("No valid student names found in this grade.")
+    st.stop()
 
-with tab_content:
-    st.markdown("#### **Content Usage Report (Books & Chapters Opened)**")
-    
-    content_sub = scope_df[scope_df['Type'].str.casefold().isin(['book', 'library'])].copy()
-    
-    if content_sub.empty:
-        st.info("No content usage records found for this selection.")
-    else:
-        # Aggregate by Student, Grade, and Book/Subject (only including time > 0)
-        content_agg = content_sub.groupby(['Grade', 'FullName', 'Subject', 'Book']).agg(
-            Total_Seconds=('Duration_Min', lambda x: x.sum() * 60)
-        ).reset_index()
+st.subheader(f"🏫 **{selected_school}** — Grade: **{selected_grade}** ({len(all_students_in_grade)} Students)")
 
-        content_agg = content_agg[content_agg['Total_Seconds'] > 0].sort_values(by=['Grade', 'FullName'])
+student_data_dict = {}
 
-        c_rows = []
-        for idx, row in content_agg.iterrows():
-            hrs, mins, secs = convert_seconds_to_hms(row['Total_Seconds'])
-            book_name = row['Book'] if pd.notna(row['Book']) and str(row['Book']).strip() != '' else row['Subject']
-            c_rows.append({
-                'STUDENT NAME': row['FullName'],
-                'GRADE': row['Grade'],
-                'BOOK / CHAPTER': book_name,
-                'HOURS': hrs,
-                'MINUTES': mins,
-                'SECONDS': secs
-            })
+for student_name in all_students_in_grade:
+    st.markdown(f"### 👤 **{student_name}**")
+    s_df = grade_df[grade_df['FullName'] == student_name]
 
-        content_report_df = pd.DataFrame(c_rows)
-        st.dataframe(content_report_df, use_container_width=True, hide_index=True)
+    tab_c, tab_p = st.tabs(["📚 Content Usage", "🌐 Platform Usage"])
 
-with tab_platform:
-    st.markdown("#### **Platform Usage Report (Features & Modules)**")
-    
-    # Filter for platform features
-    platform_sub = scope_df[~scope_df['Type'].str.casefold().isin(['book'])].copy()
-    
-    if platform_sub.empty:
-        st.info("No platform usage records found for this selection.")
-    else:
-        # Aggregate by Student, Grade, and Type/Feature
-        platform_agg = platform_sub.groupby(['Grade', 'FullName', 'Type']).agg(
-            Total_Seconds=('Duration_Min', lambda x: x.sum() * 60)
-        ).reset_index()
+    with tab_c:
+        content_sub = s_df[s_df['Type'].str.casefold().isin(['book', 'library'])].copy()
+        if content_sub.empty:
+            st.info("No content usage recorded.")
+            c_df = pd.DataFrame()
+        else:
+            c_agg = content_sub.groupby(['Subject', 'Book']).agg(Total_Seconds=('Duration_Min', lambda x: x.sum() * 60)).reset_index()
+            c_agg = c_agg[c_agg['Total_Seconds'] > 0].sort_values(by='Total_Seconds', ascending=False)
+            
+            c_rows = []
+            for idx, row in c_agg.iterrows():
+                hrs, mins, secs = convert_seconds_to_hms(row['Total_Seconds'])
+                c_rows.append({
+                    'S.NO': idx + 1,
+                    'SUBJECT': row['Subject'],
+                    'BOOK / CHAPTER': row['Book'] if pd.notna(row['Book']) and str(row['Book']).strip() != '' else 'General Reading',
+                    'HOURS': hrs,
+                    'MINUTES': mins,
+                    'SECONDS': secs
+                })
+            c_df = pd.DataFrame(c_rows)
+            st.dataframe(c_df, use_container_width=True, hide_index=True)
 
-        platform_agg = platform_agg[platform_agg['Total_Seconds'] > 0].sort_values(by=['Grade', 'FullName'])
+    with tab_p:
+        platform_sub = s_df[~s_df['Type'].str.casefold().isin(['book'])].copy()
+        if platform_sub.empty:
+            st.info("No platform usage recorded.")
+            p_df = pd.DataFrame()
+        else:
+            p_agg = platform_sub.groupby('Type').agg(Total_Seconds=('Duration_Min', lambda x: x.sum() * 60)).reset_index()
+            p_agg = p_agg[p_agg['Total_Seconds'] > 0].sort_values(by='Total_Seconds', ascending=False)
 
-        p_rows = []
-        for idx, row in platform_agg.iterrows():
-            hrs, mins, secs = convert_seconds_to_hms(row['Total_Seconds'])
-            feature_name = str(row['Type']).capitalize()
-            p_rows.append({
-                'STUDENT NAME': row['FullName'],
-                'GRADE': row['Grade'],
-                'FEATURE / MODULE': feature_name,
-                'HOURS': hrs,
-                'MINUTES': mins,
-                'SECONDS': secs
-            })
+            p_rows = []
+            for idx, row in p_agg.iterrows():
+                hrs, mins, secs = convert_seconds_to_hms(row['Total_Seconds'])
+                p_rows.append({
+                    'S.NO': idx + 1,
+                    'FEATURE / MODULE': str(row['Type']).capitalize(),
+                    'HOURS': hrs,
+                    'MINUTES': mins,
+                    'SECONDS': secs
+                })
+            p_df = pd.DataFrame(p_rows)
+            st.dataframe(p_df, use_container_width=True, hide_index=True)
 
-        platform_report_df = pd.DataFrame(p_rows)
-        st.dataframe(platform_report_df, use_container_width=True, hide_index=True)
+    student_data_dict[student_name] = {
+        'content': c_df if 'c_df' in locals() else pd.DataFrame(),
+        'platform': p_df if 'p_df' in locals() else pd.DataFrame()
+    }
 
-# --- MASTER DOWNLOAD / PRINT BUTTON ---
+# --- MASTER PDF DOWNLOAD FOR GRADE ---
 st.markdown("---")
-st.subheader("📥 Export Official PDF Report")
+st.subheader(f"📥 Download Multi-Page PDF Report for {selected_grade}")
 
-col_dl1, col_dl2 = st.columns(2)
-with col_dl1:
-    c_df_exp = content_report_df if 'content_report_df' in locals() else pd.DataFrame()
-    p_df_exp = platform_report_df if 'platform_report_df' in locals() else pd.DataFrame()
-    
-    pdf_buffer = generate_comprehensive_student_pdf(
-        school_name=selected_school,
-        scope_title=scope_title,
-        filter_desc="Active Academic Term",
-        content_report_df=c_df_exp,
-        platform_report_df=p_df_exp
-    )
-    st.download_button(
-        label=f"📄 Download Complete Report ({selected_school} - {scope_title}) [PDF]",
-        data=pdf_buffer,
-        file_name=f"Student_Usage_Report_{selected_school.replace(' ', '_')}.pdf",
-        mime="application/pdf"
-    )
+pdf_buffer = generate_grade_individual_student_pdf(
+    school_name=selected_school,
+    grade_name=selected_grade,
+    filter_desc="Active Academic Term",
+    student_data_dict=student_data_dict
+)
+
+st.download_button(
+    label=f"📄 Download All Student Reports for {selected_grade} [PDF]",
+    data=pdf_buffer,
+    file_name=f"Student_Reports_{selected_school.replace(' ', '_')}_{selected_grade}.pdf",
+    mime="application/pdf"
+)
