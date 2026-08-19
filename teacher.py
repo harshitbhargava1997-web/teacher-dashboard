@@ -35,24 +35,30 @@ def fetch_master_db_from_supabase():
         pass
     return pd.DataFrame()
 
-def upload_file_to_supabase(uploaded_file, folder_name="teacher_uploads"):
-    """Uploads a file directly to Supabase storage and returns its clean direct public URL."""
-    if uploaded_file is None:
+def upload_files_to_supabase(uploaded_files, folder_name="teacher_uploads"):
+    """Uploads multiple files directly to Supabase storage and returns comma-separated clean direct public URLs."""
+    if not uploaded_files:
         return None
-    try:
-        clean_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', uploaded_file.name)
-        file_path = f"{folder_name}/{np.random.randint(10000, 99999)}_{clean_filename}"
-        file_bytes = uploaded_file.getvalue()
-        
-        supabase.storage.from_(BUCKET_NAME).upload(
-            path=file_path,
-            file=file_bytes,
-            file_options={"upsert": "true", "content-type": uploaded_file.type}
-        )
-        return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET_NAME}/{file_path}"
-    except Exception as e:
-        st.error(f"Error uploading {uploaded_file.name}: {e}")
-        return None
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+    
+    urls = []
+    for uploaded_file in uploaded_files:
+        try:
+            clean_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', uploaded_file.name)
+            file_path = f"{folder_name}/{np.random.randint(10000, 99999)}_{clean_filename}"
+            file_bytes = uploaded_file.getvalue()
+            
+            supabase.storage.from_(BUCKET_NAME).upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"upsert": "true", "content-type": uploaded_file.type}
+            )
+            urls.append(f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET_NAME}/{file_path}")
+        except Exception as e:
+            st.error(f"Error uploading {uploaded_file.name}: {e}")
+            
+    return ", ".join(urls) if urls else None
 
 def save_isolated_submission(entry_dict):
     """Saves submission as an isolated JSON file in Supabase Storage."""
@@ -159,27 +165,26 @@ with st.form("evidence_submission_form", clear_on_submit=True):
     sub_lesson_num = st.text_input("Chapter Name and Lesson Plan Number (e.g., Chapter 2 - Plants / Lesson Plan #4) *")
 
     # --- COMMON INSTRUCTIONAL NOTE FOR EVIDENCE UPLOADS ---
-    st.info("📌 **Note:** Please upload your specific evidence—such as your pre-class voice reflection note, lesson plan picture, classroom activity videos, writing samples, phonics practice, or portfolio artifact. You can upload PDFs or standard media files for any of the categories below.")
+    st.info("📌 **Note:** You can upload **multiple files** (images, videos, audio notes, or PDFs) across all sections below simultaneously.")
 
     st.subheader("3. Core Qualitative Evidence Uploads")
-    # Added PDF support across general upload categories
-    uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note (Audio / PDF)", type=["mp3", "wav", "m4a", "ogg", "pdf"])
-    uploaded_pic = st.file_uploader("🖼️ Upload Lesson Plan Picture / Document", type=["png", "jpg", "jpeg", "pdf"])
+    uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note(s) (Audio / PDF)", type=["mp3", "wav", "m4a", "ogg", "pdf"], accept_multiple_files=True)
+    uploaded_pic = st.file_uploader("🖼️ Upload Lesson Plan Picture(s) / Document(s)", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
     
     col_v1, col_v2 = st.columns(2)
     with col_v1:
-        uploaded_vid1 = st.file_uploader("🎥 Classroom Activity Video 1 / Document", type=["mp4", "mov", "avi", "pdf"])
-        uploaded_vid2 = st.file_uploader("🎥 Classroom Activity Video 2 / Document", type=["mp4", "mov", "avi", "pdf"])
+        uploaded_vid1 = st.file_uploader("🎥 Classroom Activity Video(s) 1", type=["mp4", "mov", "avi", "pdf"], accept_multiple_files=True)
+        uploaded_vid2 = st.file_uploader("🎥 Classroom Activity Video(s) 2", type=["mp4", "mov", "avi", "pdf"], accept_multiple_files=True)
     with col_v2:
-        uploaded_vid3 = st.file_uploader("🎥 Classroom Activity Video 3 / Document", type=["mp4", "mov", "avi", "pdf"])
-        uploaded_writing = st.file_uploader("📝 Upload Student Writing Sample", type=["pdf", "png", "jpg", "jpeg"])
+        uploaded_vid3 = st.file_uploader("🎥 Classroom Activity Video(s) 3", type=["mp4", "mov", "avi", "pdf"], accept_multiple_files=True)
+        uploaded_writing = st.file_uploader("📝 Upload Student Writing Sample(s)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
     st.subheader("4. Specialized Phonics & Portfolio Evidences")
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        uploaded_phonics = st.file_uploader("🔤 Phonics / Phonetics Implementation Evidence (Video/Audio/Image/PDF)", type=["mp4", "mov", "mp3", "wav", "png", "jpg", "jpeg", "pdf"])
+        uploaded_phonics = st.file_uploader("🔤 Phonics / Phonetics Implementation Evidence(s)", type=["mp4", "mov", "mp3", "wav", "png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
     with col_s2:
-        uploaded_portfolio = st.file_uploader("📁 Teacher Portfolio Evidence (Worksheet/Showcase/Project/PDF)", type=["pdf", "png", "jpg", "jpeg", "mp4"])
+        uploaded_portfolio = st.file_uploader("📁 Teacher Portfolio Evidence(s)", type=["pdf", "png", "jpg", "jpeg", "mp4"], accept_multiple_files=True)
 
     submitted = st.form_submit_button("🚀 Upload Evidence & Submit Log")
 
@@ -196,15 +201,15 @@ with st.form("evidence_submission_form", clear_on_submit=True):
             st.error("Please provide the Chapter Name and Lesson Plan Number.")
         else:
             try:
-                with st.spinner("Uploading files securely to Supabase storage..."):
-                    voice_url = upload_file_to_supabase(uploaded_voice, "voice_notes")
-                    pic_url = upload_file_to_supabase(uploaded_pic, "pictures")
-                    vid1_url = upload_file_to_supabase(uploaded_vid1, "videos")
-                    vid2_url = upload_file_to_supabase(uploaded_vid2, "videos")
-                    vid3_url = upload_file_to_supabase(uploaded_vid3, "videos")
-                    writing_url = upload_file_to_supabase(uploaded_writing, "writing_samples")
-                    phonics_url = upload_file_to_supabase(uploaded_phonics, "phonics_evidences")
-                    portfolio_url = upload_file_to_supabase(uploaded_portfolio, "portfolio_evidences")
+                with st.spinner("Uploading multiple files securely to Supabase storage..."):
+                    voice_url = upload_files_to_supabase(uploaded_voice, "voice_notes")
+                    pic_url = upload_files_to_supabase(uploaded_pic, "pictures")
+                    vid1_url = upload_files_to_supabase(uploaded_vid1, "videos")
+                    vid2_url = upload_files_to_supabase(uploaded_vid2, "videos")
+                    vid3_url = upload_files_to_supabase(uploaded_vid3, "videos")
+                    writing_url = upload_files_to_supabase(uploaded_writing, "writing_samples")
+                    phonics_url = upload_files_to_supabase(uploaded_phonics, "phonics_evidences")
+                    portfolio_url = upload_files_to_supabase(uploaded_portfolio, "portfolio_evidences")
 
                 name_parts = sub_teacher_name.split(" ", 1)
                 f_name = name_parts[0]
@@ -240,7 +245,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
                 }
 
                 save_isolated_submission(entry_dict)
-                st.success(f"✅ Success! Evidence and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded.")
+                st.success(f"✅ Success! Multiple evidence files and lesson log for {sub_teacher_name} ({sub_school}) have been successfully uploaded.")
             except Exception as e:
                 st.error(f"❌ Upload and submission error: {e}")
 
