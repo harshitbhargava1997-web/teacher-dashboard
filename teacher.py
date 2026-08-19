@@ -139,6 +139,7 @@ with st.form("evidence_submission_form", clear_on_submit=True):
         sub_grade = st.selectbox("Select Grade *", options=grade_options)
     with col_a2:
         subject_options = [
+            "All Subjects Together", 
             "Phonics / Literacy", 
             "Mathematics", 
             "Numeracy",
@@ -158,26 +159,27 @@ with st.form("evidence_submission_form", clear_on_submit=True):
     sub_lesson_num = st.text_input("Chapter Name and Lesson Plan Number (e.g., Chapter 2 - Plants / Lesson Plan #4) *")
 
     # --- COMMON INSTRUCTIONAL NOTE FOR EVIDENCE UPLOADS ---
-    st.info("📌 **Note:** Please upload your specific evidence—such as your pre-class voice reflection note, lesson plan picture, classroom activity videos, writing samples, phonics practice, or portfolio artifact. Upload whichever evidence is available using the file upload options given below.")
+    st.info("📌 **Note:** Please upload your specific evidence—such as your pre-class voice reflection note, lesson plan picture, classroom activity videos, writing samples, phonics practice, or portfolio artifact. You can upload PDFs or standard media files for any of the categories below.")
 
     st.subheader("3. Core Qualitative Evidence Uploads")
-    uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note (Audio)", type=["mp3", "wav", "m4a", "ogg"])
-    uploaded_pic = st.file_uploader("🖼️ Upload Lesson Plan Picture", type=["png", "jpg", "jpeg"])
+    # Added PDF support across general upload categories
+    uploaded_voice = st.file_uploader("🎤 Upload Lesson Plan Voice Note (Audio / PDF)", type=["mp3", "wav", "m4a", "ogg", "pdf"])
+    uploaded_pic = st.file_uploader("🖼️ Upload Lesson Plan Picture / Document", type=["png", "jpg", "jpeg", "pdf"])
     
     col_v1, col_v2 = st.columns(2)
     with col_v1:
-        uploaded_vid1 = st.file_uploader("🎥 Classroom Activity Video 1", type=["mp4", "mov", "avi"])
-        uploaded_vid2 = st.file_uploader("🎥 Classroom Activity Video 2", type=["mp4", "mov", "avi"])
+        uploaded_vid1 = st.file_uploader("🎥 Classroom Activity Video 1 / Document", type=["mp4", "mov", "avi", "pdf"])
+        uploaded_vid2 = st.file_uploader("🎥 Classroom Activity Video 2 / Document", type=["mp4", "mov", "avi", "pdf"])
     with col_v2:
-        uploaded_vid3 = st.file_uploader("🎥 Classroom Activity Video 3", type=["mp4", "mov", "avi"])
+        uploaded_vid3 = st.file_uploader("🎥 Classroom Activity Video 3 / Document", type=["mp4", "mov", "avi", "pdf"])
         uploaded_writing = st.file_uploader("📝 Upload Student Writing Sample", type=["pdf", "png", "jpg", "jpeg"])
 
     st.subheader("4. Specialized Phonics & Portfolio Evidences")
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        uploaded_phonics = st.file_uploader("🔤 Phonics / Phonetics Implementation Evidence (Video/Audio/Image)", type=["mp4", "mov", "mp3", "wav", "png", "jpg", "jpeg", "pdf"])
+        uploaded_phonics = st.file_uploader("🔤 Phonics / Phonetics Implementation Evidence (Video/Audio/Image/PDF)", type=["mp4", "mov", "mp3", "wav", "png", "jpg", "jpeg", "pdf"])
     with col_s2:
-        uploaded_portfolio = st.file_uploader("📁 Teacher Portfolio Evidence (Worksheet/Showcase/Project)", type=["pdf", "png", "jpg", "jpeg", "mp4"])
+        uploaded_portfolio = st.file_uploader("📁 Teacher Portfolio Evidence (Worksheet/Showcase/Project/PDF)", type=["pdf", "png", "jpg", "jpeg", "mp4"])
 
     submitted = st.form_submit_button("🚀 Upload Evidence & Submit Log")
 
