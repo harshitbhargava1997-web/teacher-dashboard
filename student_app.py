@@ -8,7 +8,7 @@ from supabase import create_client
 
 # ReportLab PDF Libraries for KDM Export
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -79,7 +79,7 @@ def get_working_days(start_date, end_date, excluded_dates_list, exclude_sundays=
         return 1
 
 # --- PDF KDM REPORT GENERATOR ---
-def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, type_df, subj_df, log_df):
+def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, type_df, subj_df, student_summary_df):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -92,17 +92,17 @@ def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, t
     
     title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, textColor=primary_color, fontName='Helvetica-Bold')
     subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=10, textColor=dark_neutral)
-    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=12, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=6)
-    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
-    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=12, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
+    sec_head_style = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', spaceBefore=12, spaceAfter=6)
+    card_header = ParagraphStyle('CardHead', parent=styles['Normal'], fontSize=7.5, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold', alignment=1)
+    card_value = ParagraphStyle('CardVal', parent=styles['Normal'], fontSize=11, textColor=primary_color, fontName='Helvetica-Bold', alignment=1)
 
-    story.append(Paragraph("<b>Student Platform Engagement & Utilization Report</b>", title_style))
-    story.append(Spacer(1, 6))
+    story.append(Paragraph("<b>Student Platform Engagement & Utilization Report (KDM Review)</b>", title_style))
+    story.append(Spacer(1, 4))
     story.append(Paragraph(f"<b>Institution:</b> {school_name} | <b>Period:</b> {filter_desc}", subtitle_style))
-    story.append(Spacer(1, 10))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=12))
+    story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
-    # KPI Metrics
+    # KPI Metrics Cards
     headers_row = [Paragraph(k, card_header) for k in summary_metrics.keys()]
     values_row = [Paragraph(str(v), card_value) for v in summary_metrics.values()]
     col_w = 540 / len(summary_metrics)
@@ -112,17 +112,17 @@ def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, t
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('GRID', (0, 0), (-1, -1), 0.5, border_color),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
     ]))
     story.append(kpi_table)
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
 
     # Subject Table
     if not subj_df.empty:
         story.append(Paragraph("<b>Time Allocation by Subject / Theme</b>", sec_head_style))
-        subj_data = [["Subject / Theme", "Total Minutes"]] + subj_df.astype(str).values.tolist()
-        subj_table = Table(subj_data, colWidths=[350, 190])
+        subj_data = [["Subject / Theme", "Total Minutes Logged"]] + subj_df.astype(str).values.tolist()
+        subj_table = Table(subj_data, colWidths=[360, 180])
         subj_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -132,7 +132,22 @@ def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, t
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
         ]))
         story.append(subj_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 10))
+
+    # Student-Wise Summary Table
+    if not student_summary_df.empty:
+        story.append(Paragraph("<b>Student-Wise Usage & Books Accessed</b>", sec_head_style))
+        s_data = [["Student Name", "Grade", "Total Time (Mins)", "Sessions", "Books / Chapters Opened"]] + student_summary_df.head(25).astype(str).values.tolist()
+        s_table = Table(s_data, colWidths=[120, 60, 90, 60, 210])
+        s_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_color),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_bg]),
+        ]))
+        story.append(s_table)
 
     doc.build(story)
     buffer.seek(0)
@@ -141,7 +156,7 @@ def generate_student_kdm_pdf_report(school_name, filter_desc, summary_metrics, t
 
 # --- MAIN APP EXECUTION ---
 st.title("👨‍🎓 Student Engagement & Usage Analytics Dashboard")
-st.markdown("Monitor student-level digital platform adoption, module usage, and subject preferences for institutional KDM (Key Decision Maker) reviews.")
+st.markdown("Monitor student-level digital platform adoption, module usage, grade-wise summaries, and student-wise book logs for institutional KDM reviews.")
 
 df = fetch_master_db_from_supabase()
 
@@ -233,7 +248,7 @@ else:
     filter_description = f"Custom Range: {c_start} to {c_end}"
 
 st.sidebar.markdown("---")
-st.sidebar.header("🎯 Deep Drill-Down")
+st.sidebar.header("🎯 Grade Level Filter")
 all_grades = ["All Grades"] + sorted([str(g) for g in filtered_df['Grade'].unique() if str(g).strip() and str(g).lower() != 'nan'])
 selected_grade = st.sidebar.selectbox("Filter by Grade", options=all_grades)
 if selected_grade != "All Grades":
@@ -244,7 +259,7 @@ if filtered_df.empty:
     st.warning("No student engagement records match the current filter criteria.")
 else:
     st.subheader(f"Dashboard Overview: {selected_school}")
-    st.caption(f"Observation Window: {filter_description}")
+    st.caption(f"Observation Window: {filter_description} | Grade: {selected_grade}")
 
     tot_student_time = filtered_df['Duration_Min'].sum() if 'Duration_Min' in filtered_df.columns else 0.0
     tot_student_sessions = len(filtered_df)
@@ -277,37 +292,50 @@ else:
             fig_ssubj.update_layout(yaxis={'categoryorder':'total ascending'})
             st.plotly_chart(fig_ssubj, use_container_width=True)
 
-    st.markdown("---")
-    st.subheader("📋 Granular Student Activity Log")
-    s_log_cols = ['Institution', 'Grade', 'Section', 'FullName', 'Type', 'Subject', 'Book', 'StartTime', 'Duration_Min']
-    s_avail = [c for c in s_log_cols if c in filtered_df.columns]
-    
-    s_display = filtered_df[s_avail].rename(columns={
-        'Institution': 'School', 
-        'FullName': 'Student Name', 
-        'Duration_Min': 'Minutes'
-    }).sort_values(by='StartTime', ascending=False)
-    
-    s_display['Minutes'] = s_display['Minutes'].round(1)
-    st.dataframe(s_display, use_container_width=True)
+    # --- STUDENT-WISE AGGREGATED USAGE TABLE ---
+    st.subheader("👨‍🎓 Student-Wise Usage & Books Accessed at Home")
+    if not filtered_df.empty and 'FullName' in filtered_df.columns:
+        # Aggregate per student
+        student_agg = filtered_df.groupby(['Institution', 'Grade', 'FullName']).agg(
+            Total_Time_Mins=('Duration_Min', 'sum'),
+            Total_Sessions=('Duration_Min', 'count'),
+            Books_Opened=('Book', lambda x: ", ".join([str(b) for b in x.dropna().unique() if str(b).strip() and str(b).lower() != 'nan']))
+        ).reset_index().sort_values(by='Total_Time_Mins', ascending=False)
+
+        student_agg['Total_Time_Mins'] = student_agg['Total_Time_Mins'].round(1)
+        
+        display_student_table = student_agg.rename(columns={
+            'Institution': 'School',
+            'Grade': 'Grade Level',
+            'FullName': 'Student Name',
+            'Total_Time_Mins': 'Total Time (Mins)',
+            'Total_Sessions': 'Sessions',
+            'Books_Opened': 'Books / Chapters Opened'
+        })
+        st.dataframe(display_student_table, use_container_width=True)
+    else:
+        student_agg = pd.DataFrame()
+        st.info("No student roster details found.")
 
     # --- EXPORT SECTION ---
     st.markdown("---")
-    st.subheader("📥 Export Institutional KDM Reports")
+    st.subheader("📥 Export Institutional KDM Reports & Student Usage")
     
     btn_col1, btn_col2 = st.columns(2)
     
     with btn_col1:
-        buf_s_xlsx = BytesIO()
-        with pd.ExcelWriter(buf_s_xlsx, engine='openpyxl') as writer:
-            s_display.to_excel(writer, index=False, sheet_name="Student_Engagement_Log")
-        buf_s_xlsx.seek(0)
-        st.download_button(
-            label="📥 Download Granular Log (Excel)",
-            data=buf_s_xlsx,
-            file_name=f"Student_Engagement_Log_{selected_school.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        if not student_agg.empty:
+            buf_s_xlsx = BytesIO()
+            with pd.ExcelWriter(buf_s_xlsx, engine='openpyxl') as writer:
+                display_student_table.to_excel(writer, index=False, sheet_name="Student_Wise_Usage")
+                filtered_df.rename(columns={'Duration_Min': 'Minutes'}).to_excel(writer, index=False, sheet_name="Granular_Logs")
+            buf_s_xlsx.seek(0)
+            st.download_button(
+                label="📥 Download Complete School & Student-Wise Report (Excel)",
+                data=buf_s_xlsx,
+                file_name=f"Student_Wise_Report_{selected_school.replace(' ', '_')}_{selected_grade}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     with btn_col2:
         metrics_dict = {
@@ -318,11 +346,11 @@ else:
         }
         pdf_buf = generate_student_kdm_pdf_report(
             school_name=selected_school,
-            filter_desc=filter_description,
+            filter_desc=f"{filter_description} | Grade: {selected_grade}",
             summary_metrics=metrics_dict,
             type_df=type_summary,
             subj_df=subj_summary,
-            log_df=s_display.head(30)
+            student_summary_df=display_student_table if not student_agg.empty else pd.DataFrame()
         )
         st.download_button(
             label="📄 Download Executive KDM Report (PDF)",
