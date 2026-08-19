@@ -169,6 +169,23 @@ def save_call_logs_to_supabase(logs_list):
         st.error(f"Could not sync call discussion logs to Supabase: {e}")
 
 
+def upload_pdf_to_supabase(pdf_buffer, school_name):
+    """Uploads a generated school audit PDF to Supabase storage and returns the public download URL."""
+    try:
+        clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', school_name)
+        remote_path = f"reports/{clean_name}_Comprehensive_Audit.pdf"
+        
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=remote_path,
+            file=pdf_buffer.getvalue(),
+            file_options={"upsert": "true", "content-type": "application/pdf"}
+        )
+        public_url = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET_NAME}/{remote_path}"
+        return public_url
+    except Exception:
+        return None
+
+
 def build_teacher_roster(df):
     if df is None or df.empty:
         return pd.DataFrame(columns=["Institution", "Center", "FirstName", "LastName", "FullName", "Role", "Uploaded_By", "State_Zone"])
@@ -225,7 +242,7 @@ def get_gemini_summary(context_prompt, audio_file_obj=None):
 
 
 def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
-    """Universal CRM with multi-entity contact selector, Voice & Text AI generator, and WhatsApp template."""
+    """Universal CRM with robust contact synchronization, Voice & Text AI generator, and WhatsApp template."""
     st.markdown("---")
     st.subheader(f"📞 Universal School & Coordinator CRM, Call Notes & WhatsApp Generators ({tab_name})")
     
@@ -265,10 +282,10 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         
         current_entity_data = crm_data["contacts"][target_crm_school].get(selected_entity_type, {"name": "", "phone": ""})
         
-        input_contact_name = st.text_input(f"{selected_entity_type} Name:", value=current_entity_data.get("name", ""), key=f"cname_{tab_name}_{selected_entity_type}")
-        input_phone = st.text_input(f"{selected_entity_type} Mobile (+91...):", value=current_entity_data.get("phone", ""), key=f"cphone_{tab_name}_{selected_entity_type}")
+        input_contact_name = st.text_input(f"{selected_entity_type} Name:", value=current_entity_data.get("name", ""), key=f"cname_{tab_name}_{target_crm_school}_{selected_entity_type}")
+        input_phone = st.text_input(f"{selected_entity_type} Mobile (+91...):", value=current_entity_data.get("phone", ""), key=f"cphone_{tab_name}_{target_crm_school}_{selected_entity_type}")
 
-        if st.button(f"💾 Save {selected_entity_type} Contact to Supabase", key=f"save_contact_btn_{tab_name}_{selected_entity_type}"):
+        if st.button(f"💾 Save {selected_entity_type} Contact to Supabase", key=f"save_contact_btn_{tab_name}_{target_crm_school}_{selected_entity_type}"):
             crm_data["contacts"][target_crm_school][selected_entity_type] = {
                 "name": input_contact_name,
                 "phone": input_phone
@@ -345,11 +362,11 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             f"Onelern Academic Team"
         )
 
-        if draft_state_key not in st.session_state or st.session_state.get(f"last_name_{tab_name}") != input_contact_name:
+        if draft_state_key not in st.session_state or st.session_state.get(f"last_name_{tab_name}_{target_crm_school}") != input_contact_name:
             st.session_state[draft_state_key] = default_template_string
-            st.session_state[f"last_name_{tab_name}"] = input_contact_name
+            st.session_state[f"last_name_{tab_name}_{target_crm_school}"] = input_contact_name
 
-        editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}_{selected_entity_type}")
+        editable_wa_area = st.text_area("Confirm or Edit Final WhatsApp Message Draft:", value=st.session_state[draft_state_key], height=140, key=f"wa_textarea_{tab_name}_{target_crm_school}_{selected_entity_type}")
         st.session_state[draft_state_key] = editable_wa_area
 
         if active_phone:
@@ -610,7 +627,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(Paragraph(f"• <b>Library Usage Performance Standard:</b> {daily_lib_target:.0f} mins/day × {selected_num_days} working days ({calc_lib_kpi:.0f} mins total benchmark standard)", normal_style))
     story.append(Spacer(1, 10))
 
-    # 1. Lesson Plan Preparation Consolidated Report (Clean Title, No Emojis in PDF)
+    # 1. Lesson Plan Preparation Consolidated Report
     story.append(Paragraph("<b>1. Lesson Plan Preparation Consolidated Report</b>", sec_head_style))
     ld_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
@@ -641,7 +658,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(ld_table_obj)
     story.append(Spacer(1, 14))
 
-    # 2. Library Usage Consolidated Report (Clean Title, No Emojis in PDF)
+    # 2. Library Usage Consolidated Report
     story.append(Paragraph("<b>2. Library Usage Consolidated Report</b>", sec_head_style))
     lib_summary_table_data = [["Teacher Name", "Total Minutes Logged", "Average Mins/Day", "Performance Indicator Status"]]
     for t_name in teachers_list:
@@ -672,7 +689,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(lib_table_obj)
     story.append(Spacer(1, 12))
 
-    # PART 2: INDIVIDUAL TEACHER 360° PROFILES (WITH CLEAN FORMATTING)
+    # PART 2: INDIVIDUAL TEACHER 360° PROFILES
     for target_teacher in teachers_list:
         story.append(PageBreak())
 
@@ -759,7 +776,6 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(Spacer(1, 6))
         story.append(HRFlowable(width="100%", thickness=1.5, color=primary_color, spaceAfter=10))
 
-        # UPDATED METRIC HEADER TERMINOLOGY (Clean without emojis)
         summary_metrics = {
             "Teacher": target_teacher,
             "Lesson Prep": f"{t_day_ld:.1f}m",
@@ -782,7 +798,6 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         story.append(kpi_table)
         story.append(Spacer(1, 10))
 
-        # UPDATED SECTION HEADINGS TERMINOLOGY
         sections = {
             "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
                 f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes ({ld_pct:.0f}% of Academic Benchmark)",
@@ -1210,15 +1225,16 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # 7 Dedicated Active Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    # 8 Dedicated Active Tabs
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📘 1. Lesson Plan Preparation Tracker", 
         "📚 2. Library Usage Tracker", 
         "📖 3. Content & Chapters", 
         "👤 4. Teacher 360° Profile Report",
         "🏛️ 5. Manager Portfolio Quadrants",
         "🏫 6. School Teacher Progression",
-        "📬 7. Live Evidence Submissions Feed"
+        "📬 7. Live Evidence Submissions Feed",
+        "🚀 8. Bulk WhatsApp & Dispatch Hub"
     ])
 
     # TAB 1: LESSON PLAN PREPARATION TRACKER
@@ -1536,7 +1552,7 @@ else:
                 )
                 render_universal_crm_box("Content & Chapters", t3_school if t3_school != "All Selected Schools" else selected_schools, filter_description_text, tab3_metrics_summary)
 
-    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT (WITH PHONICS & PORTFOLIO HUB)
+    # TAB 4: SINGLE TEACHER 360° PROFILE REPORT
     with tab4:
         st.header("👤 Teacher 360° Performance Profile")
         st.caption("Review quantitative lesson metrics, detailed textbook time logs, and structured qualitative performance evidence with clickable artifact links.")
@@ -1633,7 +1649,6 @@ else:
             for item in v_phonics: pdf_link_items.append(f"Phonics Implementation Evidence: {item['url']} ({item['grade']} - {item['subject']})")
             for item in v_portfolio: pdf_link_items.append(f"Teacher Portfolio Showcase: {item['url']} ({item['grade']} - {item['subject']})")
 
-            # UPDATED SECTION HEADINGS TERMINOLOGY (Clean without emojis)
             pdf_custom_sections = {
                 "1. Lesson Preparation, Lesson Delivery, and Library Usage": [
                     f"Lesson Preparation Duration: {t_day_ld:.1f} Minutes" + (f" ({ld_pct:.0f}% of Academic Benchmark)" if enable_quant_kpi else ""),
@@ -2250,3 +2265,135 @@ else:
                 f"Total Submission Logs: {tot_subs} | Phonics: {tot_phonics} | Portfolio: {tot_portfolio} | Videos: {tot_vids}"
             )
             render_universal_crm_box("Live Evidence Feed", t7_selected_school if t7_selected_school != "All Schools" else selected_schools, filter_description_text, tab7_metrics_summary)
+
+    # ==============================================================================
+    # TAB 8: BULK WHATSAPP & AUTOMATED SCHOOL PDF DISPATCH HUB
+    # ==============================================================================
+    with tab8:
+        st.header("🚀 Bulk WhatsApp & School Comprehensive PDF Dispatch Hub")
+        st.caption("Auto-generates multi-module summaries (Lesson Prep, Library, & Evidence Artifacts) + Hosts live PDF reports to send via WhatsApp Web in one click.")
+
+        if "crm_global_data" not in st.session_state:
+            st.session_state["crm_global_data"] = load_crm_data_from_supabase()
+
+        crm_data = st.session_state["crm_global_data"]
+        contacts_dict = crm_data.get("contacts", {})
+
+        bulk_target_schools = sorted(school_filtered_df['Institution'].dropna().unique().tolist())
+
+        if not bulk_target_schools:
+            st.info("No schools available in the selected filters.")
+        else:
+            st.markdown(f"#### 📋 Portfolio Action Center ({len(bulk_target_schools)} Schools)")
+
+            selected_bulk_entity = st.radio("Default Recipient Role for Bulk Dispatch:", ["Principal", "Owner", "Coordinator"], horizontal=True, key="bulk_entity_sel_radio")
+
+            auto_upload_pdfs = st.checkbox("🔗 Automatically generate & embed live Supabase PDF download links into WhatsApp drafts", value=True, key="bulk_pdf_check")
+
+            dispatch_records = []
+
+            for school in bulk_target_schools:
+                sch_roster = school_master_roster[school_master_roster['Institution'] == school]
+                sch_data = school_filtered_df[school_filtered_df['Institution'] == school]
+                sch_teachers_list = sorted(sch_roster['FullName'].unique().tolist())
+                tot_teachers = len(sch_teachers_list)
+
+                # Quantitative Metrics
+                ld_m = sch_data[sch_data['Type'] == 'lessonDelivery'].groupby('FullName')['Duration_Min'].sum()
+                lib_m = sch_data[sch_data['Type'] == 'library'].groupby('FullName')['Duration_Min'].sum()
+
+                met_ld = sum(1 for t in sch_teachers_list if ld_m.get(t, 0.0) >= calc_ld_kpi) if calc_ld_kpi > 0 else sum(1 for t in sch_teachers_list if ld_m.get(t, 0.0) > 0)
+                met_lib = sum(1 for t in sch_teachers_list if lib_m.get(t, 0.0) >= calc_lib_kpi) if calc_lib_kpi > 0 else sum(1 for t in sch_teachers_list if lib_m.get(t, 0.0) > 0)
+
+                ld_comp_pct = (met_ld / tot_teachers * 100) if tot_teachers > 0 else 0
+                lib_comp_pct = (met_lib / tot_teachers * 100) if tot_teachers > 0 else 0
+
+                # Inactive Teachers List
+                inactive_teachers = [t for t in sch_teachers_list if (ld_m.get(t, 0.0) == 0 and lib_m.get(t, 0.0) == 0)]
+                inactive_str = ", ".join(inactive_teachers[:3]) + ("..." if len(inactive_teachers) > 3 else "") if inactive_teachers else "None (All Active)"
+
+                # Qualitative Evidence Metrics (Tab 7)
+                vids_cnt = len([l for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if col in sch_data.columns for l in sch_data[col].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
+                phonics_cnt = len([l for l in sch_data['Phonics_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Phonics_Evidence_Link' in sch_data.columns else 0
+                writing_cnt = len([l for l in sch_data['Writing_Sample_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in sch_data.columns else 0
+                lp_pic_cnt = len([l for l in sch_data['Lesson_Plan_Picture'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Lesson_Plan_Picture' in sch_data.columns else 0
+                voice_cnt = len([l for l in sch_data['Voice_Note_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in sch_data.columns else 0
+                portfolio_cnt = len([l for l in sch_data['Portfolio_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Portfolio_Evidence_Link' in sch_data.columns else 0
+
+                # Contact Lookup
+                contact_info = contacts_dict.get(school, {}).get(selected_bulk_entity, {"name": "", "phone": ""})
+                c_name = contact_info.get("name", "")
+                c_phone = contact_info.get("phone", "")
+
+                # Generate Hosted PDF Link if enabled
+                pdf_link_str = ""
+                if auto_upload_pdfs:
+                    clean_pdf_buf = generate_comprehensive_school_pdf_report(
+                        school_name=school,
+                        teachers_list=sch_teachers_list,
+                        school_filtered_df=school_filtered_df,
+                        filtered_df=filtered_df,
+                        filter_desc=filter_description_text,
+                        calc_ld_kpi=calc_ld_kpi,
+                        calc_lib_kpi=calc_lib_kpi,
+                        daily_ld_target=daily_ld_target,
+                        daily_lib_target=daily_lib_target,
+                        selected_num_days=selected_num_days
+                    )
+                    hosted_url = upload_pdf_to_supabase(clean_pdf_buf, school)
+                    if hosted_url:
+                        pdf_link_str = f"\n\n📄 *Download Full School Audit Dossier (PDF):*\n{hosted_url}"
+
+                # Compose Consolidated WhatsApp Message
+                greeting = f"Dear {c_name} ji" if c_name else f"Respected {selected_bulk_entity}"
+                wa_msg = (
+                    f"{greeting},\n\n"
+                    f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n\n"
+                    f"📊 *1. Quantitative Benchmarks:*\n"
+                    f"• Lesson Plan Prep Compliance: {ld_comp_pct:.0f}% ({met_ld}/{tot_teachers} Teachers)\n"
+                    f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers)\n\n"
+                    f"📬 *2. Classroom Evidence Submissions (Tab 7):*\n"
+                    f"• Activity Videos: {vids_cnt}\n"
+                    f"• Phonics Evidence: {phonics_cnt}\n"
+                    f"• Writing Samples: {writing_cnt}\n"
+                    f"• LP Pictures / Voice Notes: {lp_pic_cnt + voice_cnt}\n"
+                    f"• Portfolio Artifacts: {portfolio_cnt}\n\n"
+                    f"⚠️ *Inactive / Follow-up Teachers:* {inactive_str}"
+                    f"{pdf_link_str}\n\n"
+                    f"Let us connect for a 5-minute review to support your teachers in scaling classroom outcomes.\n\n"
+                    f"Regards,\n"
+                    f"Harshit Bhargava,\n"
+                    f"OneLearn Academic Team"
+                )
+
+                dispatch_records.append({
+                    "School": school,
+                    "Total Teachers": tot_teachers,
+                    "Prep Compliance": f"{ld_comp_pct:.0f}%",
+                    "Library Compliance": f"{lib_comp_pct:.0f}%",
+                    "Evidence Count": vids_cnt + phonics_cnt + writing_cnt + lp_pic_cnt + voice_cnt + portfolio_cnt,
+                    "Contact Name": c_name or "Not Set",
+                    "Phone": c_phone or "Not Set",
+                    "Raw_Phone": re.sub(r'[^0-9+]', '', c_phone),
+                    "Draft_Message": wa_msg
+                })
+
+            # Display Bulk Dispatch Interface
+            for idx, r in enumerate(dispatch_records):
+                with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']} | Evidence: {r['Evidence Count']} Artifacts", expanded=(idx < 2)):
+                    col_r1, col_r2 = st.columns([1, 2])
+                    with col_r1:
+                        st.markdown(f"**Target:** {selected_bulk_entity} ({r['Contact Name']})")
+                        st.markdown(f"**Phone:** `{r['Phone']}`")
+                        st.markdown(f"**Roster Size:** {r['Total Teachers']} Teachers")
+                        st.markdown(f"**Quantitative:** {r['Prep Compliance']} Prep / {r['Library Compliance']} Lib")
+                        st.markdown(f"**Qualitative Evidence:** {r['Evidence Count']} Uploads")
+
+                    with col_r2:
+                        edited_msg = st.text_area("Review / Edit Message Draft:", value=r["Draft_Message"], height=160, key=f"bulk_wa_text_{idx}")
+                        clean_ph = r["Raw_Phone"]
+                        if clean_ph:
+                            encoded_url = urllib.parse.quote(edited_msg)
+                            st.markdown(f'<a href="https://wa.me/{clean_ph}?text={encoded_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;width:100%;font-size:15px;">🚀 Open in WhatsApp Web (With PDF Link)</button></a>', unsafe_allow_html=True)
+                        else:
+                            st.warning(f"⚠️ No phone number saved for {selected_bulk_entity} in {r['School']}. Add it in CRM to enable 1-click send.")
