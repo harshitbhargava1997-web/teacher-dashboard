@@ -694,7 +694,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
     story.append(lib_table_obj)
     story.append(Spacer(1, 14))
 
-    # 3. Qualitative Classroom Evidence Submissions Consolidated Table (New Section Added)
+    # 3. Qualitative Classroom Evidence Submissions Consolidated Table
     story.append(Paragraph("<b>3. Qualitative Submissions & Evidence Compliance</b>", sec_head_style))
     qual_summary_table_data = [["Teacher Name", "LP / Audio Notes", "Activity Videos", "Writing Samples", "Phonics Evidences", "Portfolio Artifacts", "Status"]]
     
@@ -798,7 +798,7 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
         else:
             pdf_book_items.append("No textbooks or digital modules opened.")
 
-        # Clean, Masked Hyperlinks (Clickable labels instead of long broken links)
+        # Clean, Masked Hyperlinks
         pdf_link_items = []
         for i, item in enumerate(v_voice, 1): 
             pdf_link_items.append(f'• 🎧 <a href="{item["url"]}"><u><b>Open Voice Reflection #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
@@ -1375,31 +1375,47 @@ else:
                     if hosted_url:
                         pdf_link_str = f"\n\n📄 *Download Full School Audit Dossier (PDF):*\n{hosted_url}"
 
-                # Compose Benchmark Annotations Dynamically
+                # Compose Benchmark Annotations Dynamically for Quantitative
                 ld_bench_str = f" [Benchmark: {daily_ld_target:.0f}m/day × {selected_num_days}d = {calc_ld_kpi:.0f} mins total]" if (enable_quant_kpi and calc_ld_kpi > 0) else ""
                 lib_bench_str = f" [Benchmark: {daily_lib_target:.0f}m/day × {selected_num_days}d = {calc_lib_kpi:.0f} mins total]" if (enable_quant_kpi and calc_lib_kpi > 0) else ""
 
-                # Compose Consolidated WhatsApp Message
+                # Build Structured WhatsApp Message Sections
                 greeting = f"Dear {c_name} ji" if c_name else f"Respected {selected_bulk_entity}"
-                wa_msg = (
+                
+                msg_parts = [
                     f"{greeting},\n\n"
-                    f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n\n"
+                    f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
+                ]
+
+                # Section 1: Quantitative Benchmarks
+                msg_parts.append(
                     f"📊 *1. Quantitative Benchmarks:*\n"
                     f"• Lesson Plan Prep Compliance: {ld_comp_pct:.0f}% ({met_ld}/{tot_teachers} Teachers){ld_bench_str}\n"
-                    f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}\n\n"
-                    f"📬 *2. Classroom Evidence Submissions:*\n"
-                    f"• Activity Videos: {vids_cnt} Uploaded ({teachers_with_vids}/{tot_teachers} Teachers Active)\n"
-                    f"• Phonics Evidence: {phonics_cnt} Uploaded ({teachers_with_ph}/{tot_teachers} Teachers Active)\n"
-                    f"• Writing Samples: {writing_cnt} Uploaded ({teachers_with_w}/{tot_teachers} Teachers Active)\n"
-                    f"• LP Pictures / Voice Notes: {lp_pic_cnt + voice_cnt} Uploaded ({teachers_with_lp}/{tot_teachers} Teachers Active)\n"
-                    f"• Portfolio Artifacts: {portfolio_cnt} Uploaded ({teachers_with_pf}/{tot_teachers} Teachers Active)\n\n"
-                    f"⚠️ *Inactive / Follow-up Teachers:* {inactive_str}"
+                    f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
+                )
+
+                # Section 2: Qualitative Classroom Evidence Submissions (Strictly controlled by enable_qual_kpi)
+                if enable_qual_kpi:
+                    msg_parts.append(
+                        f"\n📬 *2. Classroom Evidence Submissions:*\n"
+                        f"• Activity Videos: {vids_cnt} Uploaded ({teachers_with_vids}/{tot_teachers} Teachers Active)\n"
+                        f"• Phonics Evidence: {phonics_cnt} Uploaded ({teachers_with_ph}/{tot_teachers} Teachers Active)\n"
+                        f"• Writing Samples: {writing_cnt} Uploaded ({teachers_with_w}/{tot_teachers} Teachers Active)\n"
+                        f"• LP Pictures / Voice Notes: {lp_pic_cnt + voice_cnt} Uploaded ({teachers_with_lp}/{tot_teachers} Teachers Active)\n"
+                        f"• Portfolio Artifacts: {portfolio_cnt} Uploaded ({teachers_with_pf}/{tot_teachers} Teachers Active)"
+                    )
+
+                # Focus Follow-up & Closing
+                msg_parts.append(
+                    f"\n⚠️ *Inactive / Follow-up Teachers:* {inactive_str}"
                     f"{pdf_link_str}\n\n"
                     f"Let us connect for a 5-minute review to support your teachers in scaling classroom outcomes.\n\n"
                     f"Regards,\n"
                     f"Harshit Bhargava,\n"
                     f"OneLearn Academic Team"
                 )
+
+                wa_msg = "\n".join(msg_parts)
 
                 dispatch_records.append({
                     "School": school,
@@ -1415,23 +1431,32 @@ else:
 
             # Display Bulk Dispatch Interface
             for idx, r in enumerate(dispatch_records):
-                with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']} | Evidence: {r['Evidence Count']} Artifacts", expanded=(idx < 2)):
+                with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']}" + (f" | Evidence: {r['Evidence Count']} Artifacts" if enable_qual_kpi else ""), expanded=(idx < 2)):
                     col_r1, col_r2 = st.columns([1, 2])
                     with col_r1:
                         st.markdown(f"**Target:** {selected_bulk_entity} ({r['Contact Name']})")
                         st.markdown(f"**Phone:** `{r['Phone']}`")
                         st.markdown(f"**Roster Size:** {r['Total Teachers']} Teachers")
                         st.markdown(f"**Quantitative:** {r['Prep Compliance']} Prep / {r['Library Compliance']} Lib")
-                        st.markdown(f"**Qualitative Evidence:** {r['Evidence Count']} Uploads")
+                        if enable_qual_kpi:
+                            st.markdown(f"**Qualitative Evidence:** {r['Evidence Count']} Uploads")
 
                     with col_r2:
                         edited_msg = st.text_area("Review / Edit Message Draft:", value=r["Draft_Message"], height=160, key=f"bulk_wa_text_{idx}")
                         clean_ph = r["Raw_Phone"]
                         if clean_ph:
+                            btn_c1, btn_c2 = st.columns(2)
                             encoded_url = urllib.parse.quote(edited_msg)
-                            st.markdown(f'<a href="https://wa.me/{clean_ph}?text={encoded_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;width:100%;font-size:15px;">🚀 Open in WhatsApp Web (With PDF Link)</button></a>', unsafe_allow_html=True)
+                            with btn_c1:
+                                st.markdown(f'<a href="https://wa.me/{clean_ph}?text={encoded_url}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;width:100%;font-size:15px;">🚀 Open in WhatsApp Web</button></a>', unsafe_allow_html=True)
+                            with btn_c2:
+                                st.markdown(f'<a href="tel:{clean_ph}" target="_blank" style="text-decoration:none;"><button style="background-color:#2CA02C;color:white;padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;width:100%;font-size:15px;">📞 Call {selected_bulk_entity}</button></a>', unsafe_allow_html=True)
                         else:
                             st.warning(f"⚠️ No phone number saved for {selected_bulk_entity} in {r['School']}. Add it in CRM to enable 1-click send.")
+
+            # Universal Global CRM Box Integrated at the Bottom of Tab 1
+            tab1_crm_summary = f"Bulk Action Center: {len(bulk_target_schools)} schools in view ({filter_description_text})."
+            render_universal_crm_box("Bulk Dispatch Hub", bulk_target_schools, filter_description_text, tab1_crm_summary)
 
     # TAB 2: LESSON PLAN PREPARATION TRACKER
     with tab2:
@@ -1836,6 +1861,7 @@ else:
             else:
                 pdf_book_items.append("No textbooks or digital modules opened.")
 
+            # Clean, Masked Hyperlinks
             pdf_link_items = []
             for i, item in enumerate(v_voice, 1): 
                 pdf_link_items.append(f'• 🎧 <a href="{item["url"]}"><u><b>Open Voice Reflection #{i}</b></u></a> — <i>{item["grade"]} | {item["subject"]} ({item["lesson"]}, {item["date"]})</i>')
