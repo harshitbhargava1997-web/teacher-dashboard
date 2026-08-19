@@ -617,8 +617,8 @@ def generate_comprehensive_school_pdf_report(school_name, teachers_list, school_
 
     headers_row = [Paragraph(k, card_header) for k in school_summary_metrics.keys()]
     values_row = [Paragraph(str(v), card_value) for v in school_summary_metrics.values()]
-    col_w = 540 / len(school_summary_metrics)
-    kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(school_summary_metrics))
+    col_w = 540 / len(summary_metrics)
+    kpi_table = Table([headers_row, values_row], colWidths=[col_w] * len(summary_metrics))
     kpi_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), light_bg),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -1301,10 +1301,10 @@ else:
         crm_data = st.session_state["crm_global_data"]
         contacts_dict = crm_data.get("contacts", {})
 
-        bulk_target_schools = sorted(school_filtered_df['Institution'].dropna().unique().tolist())
+        bulk_target_schools = sorted(filtered_df['Institution'].dropna().unique().tolist())
 
         if not bulk_target_schools:
-            st.info("No schools available in the selected filters.")
+            st.info("No schools available in the selected weekly/date filters.")
         else:
             st.markdown(f"#### 📋 Portfolio Action Center ({len(bulk_target_schools)} Schools)")
 
@@ -1322,20 +1322,17 @@ else:
             dispatch_records = []
 
             for school in bulk_target_schools:
-                sch_roster = school_master_roster[school_master_roster['Institution'] == school]
-                # FIXED: Use filtered_df instead of school_filtered_df to respect active date/granularity window
+                sch_roster_teachers = sorted(filtered_df[filtered_df['Institution'] == school]['FullName'].dropna().unique().tolist())
                 sch_data = filtered_df[filtered_df['Institution'] == school]
-                sch_teachers_list = sorted(sch_roster['FullName'].unique().tolist())
-                tot_teachers = len(sch_teachers_list)
+                tot_teachers = len(sch_roster_teachers)
 
                 # Quantitative Metrics
                 ld_m = sch_data[sch_data['Type'] == 'lessonDelivery'].groupby('FullName')['Duration_Min'].sum()
                 lib_m = sch_data[sch_data['Type'] == 'library'].groupby('FullName')['Duration_Min'].sum()
 
-                # FIXED: Synchronized matching exact logic with PDF report generator
                 met_ld = 0
                 met_lib = 0
-                for t in sch_teachers_list:
+                for t in sch_roster_teachers:
                     t_ld_mins = ld_m.get(t, 0.0)
                     t_lib_mins = lib_m.get(t, 0.0)
                     if (calc_ld_kpi > 0 and t_ld_mins >= calc_ld_kpi) or (calc_ld_kpi == 0 and t_ld_mins > 0):
@@ -1346,14 +1343,12 @@ else:
                 ld_comp_pct = (met_ld / tot_teachers * 100) if tot_teachers > 0 else 0
                 lib_comp_pct = (met_lib / tot_teachers * 100) if tot_teachers > 0 else 0
 
-                # Accurate Inactive Teachers Evaluation
-                inactive_teachers = [t for t in sch_teachers_list if (ld_m.get(t, 0.0) == 0.0 and lib_m.get(t, 0.0) == 0.0)]
+                inactive_teachers = [t for t in sch_roster_teachers if (ld_m.get(t, 0.0) == 0.0 and lib_m.get(t, 0.0) == 0.0)]
                 if inactive_teachers:
                     inactive_str = ", ".join(inactive_teachers[:3]) + (f" (+{len(inactive_teachers)-3} more)" if len(inactive_teachers) > 3 else "")
                 else:
                     inactive_str = "None (All Active)"
 
-                # Qualitative Evidence Metrics
                 vids_cnt = len([l for col in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if col in sch_data.columns for l in sch_data[col].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)])
                 phonics_cnt = len([l for l in sch_data['Phonics_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Phonics_Evidence_Link' in sch_data.columns else 0
                 writing_cnt = len([l for l in sch_data['Writing_Sample_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Writing_Sample_Link' in sch_data.columns else 0
@@ -1361,24 +1356,21 @@ else:
                 voice_cnt = len([l for l in sch_data['Voice_Note_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Voice_Note_Link' in sch_data.columns else 0
                 portfolio_cnt = len([l for l in sch_data['Portfolio_Evidence_Link'].dropna() if re.match(r'^https?://', str(l).strip(), re.IGNORECASE)]) if 'Portfolio_Evidence_Link' in sch_data.columns else 0
 
-                # Teacher Level Adoption for Qualitative ("Submitted")
-                teachers_with_vids = sum(1 for t in sch_teachers_list if any(re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)][c].dropna().iloc[0]).strip(), re.IGNORECASE) for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in sch_data.columns and not sch_data[(sch_data["FullName"] == t)][c].dropna().empty))
-                teachers_with_ph = sum(1 for t in sch_teachers_list if 'Phonics_Evidence_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
-                teachers_with_w = sum(1 for t in sch_teachers_list if 'Writing_Sample_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
-                teachers_with_lp = sum(1 for t in sch_teachers_list if ('Lesson_Plan_Picture' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Lesson_Plan_Picture'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Lesson_Plan_Picture'].dropna().iloc[0]).strip(), re.IGNORECASE)) or ('Voice_Note_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Voice_Note_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Voice_Note_Link'].dropna().iloc[0]).strip(), re.IGNORECASE)))
-                teachers_with_pf = sum(1 for t in sch_teachers_list if 'Portfolio_Evidence_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Portfolio_Evidence_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Portfolio_Evidence_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
+                teachers_with_vids = sum(1 for t in sch_roster_teachers if any(re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)][c].dropna().iloc[0]).strip(), re.IGNORECASE) for c in ['Video_Evidence_1', 'Video_Evidence_2', 'Video_Evidence_3'] if c in sch_data.columns and not sch_data[(sch_data["FullName"] == t)][c].dropna().empty))
+                teachers_with_ph = sum(1 for t in sch_roster_teachers if 'Phonics_Evidence_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Phonics_Evidence_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
+                teachers_with_w = sum(1 for t in sch_roster_teachers if 'Writing_Sample_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Writing_Sample_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
+                teachers_with_lp = sum(1 for t in sch_roster_teachers if ('Lesson_Plan_Picture' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Lesson_Plan_Picture'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Lesson_Plan_Picture'].dropna().iloc[0]).strip(), re.IGNORECASE)) or ('Voice_Note_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Voice_Note_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Voice_Note_Link'].dropna().iloc[0]).strip(), re.IGNORECASE)))
+                teachers_with_pf = sum(1 for t in sch_roster_teachers if 'Portfolio_Evidence_Link' in sch_data.columns and not sch_data[(sch_data["FullName"] == t)]['Portfolio_Evidence_Link'].dropna().empty and re.match(r'^https?://', str(sch_data[(sch_data["FullName"] == t)]['Portfolio_Evidence_Link'].dropna().iloc[0]).strip(), re.IGNORECASE))
 
-                # Contact Lookup
                 contact_info = contacts_dict.get(school, {}).get(selected_bulk_entity, {"name": "", "phone": ""})
                 c_name = contact_info.get("name", "")
                 c_phone = contact_info.get("phone", "")
 
-                # Generate Hosted PDF Link if enabled
                 pdf_link_str = ""
                 if auto_upload_pdfs:
                     clean_pdf_buf = generate_comprehensive_school_pdf_report(
                         school_name=school,
-                        teachers_list=sch_teachers_list,
+                        teachers_list=sch_roster_teachers,
                         school_filtered_df=school_filtered_df,
                         filtered_df=filtered_df,
                         filter_desc=filter_description_text,
@@ -1399,11 +1391,9 @@ else:
                     if hosted_url:
                         pdf_link_str = f"\n\n📄 *Download Full School Audit Report (PDF):*\n{hosted_url}"
 
-                # Compose Benchmark Annotations Dynamically for Quantitative
                 ld_bench_str = f" [Benchmark: {daily_ld_target:.0f}m/day × {selected_num_days}d = {calc_ld_kpi:.0f} mins total]" if (enable_quant_kpi and calc_ld_kpi > 0) else ""
                 lib_bench_str = f" [Benchmark: {daily_lib_target:.0f}m/day × {selected_num_days}d = {calc_lib_kpi:.0f} mins total]" if (enable_quant_kpi and calc_lib_kpi > 0) else ""
 
-                # Build Structured WhatsApp Message Sections
                 greeting = f"Dear {c_name} ji" if c_name else f"Respected {selected_bulk_entity}"
                 
                 msg_parts = [
@@ -1411,7 +1401,6 @@ else:
                     f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
                 ]
 
-                # Section 1: Quantitative Benchmarks (Strictly only if enable_quant_kpi is True)
                 if enable_quant_kpi:
                     msg_parts.append(
                         f"📊 *Quantitative Benchmarks:*\n"
@@ -1419,7 +1408,6 @@ else:
                         f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                     )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Strictly only if toggle is checked AND enable_qual_kpi is True)
                 if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
                         f"\n📬 *Classroom Evidence Submissions:*\n"
@@ -1430,7 +1418,6 @@ else:
                         f"• Portfolio Artifacts: {portfolio_cnt} Uploaded ({teachers_with_pf}/{tot_teachers} Teachers Submitted)"
                     )
 
-                # Focus Follow-up & Closing
                 msg_parts.append(
                     f"\n⚠️ *Inactive / Follow-up Teachers:* {inactive_str}"
                     f"{pdf_link_str}\n\n"
@@ -1454,7 +1441,6 @@ else:
                     "Draft_Message": wa_msg
                 })
 
-            # Display Bulk Dispatch Interface
             for idx, r in enumerate(dispatch_records):
                 with st.expander(f"🏫 **{r['School']}** — Prep: {r['Prep Compliance']} | Library: {r['Library Compliance']}" + (f" | Evidence: {r['Evidence Count']} Artifacts" if (include_qual_evidence_in_wa and enable_qual_kpi) else ""), expanded=(idx < 2)):
                     col_r1, col_r2 = st.columns([1, 2])
@@ -1479,7 +1465,6 @@ else:
                         else:
                             st.warning(f"⚠️ No phone number saved for {selected_bulk_entity} in {r['School']}. Add it in CRM to enable 1-click send.")
 
-            # Universal Global CRM Box Integrated at the Bottom of Tab 1
             tab1_crm_summary = f"Bulk Action Center: {len(bulk_target_schools)} schools in view ({filter_description_text})."
             render_universal_crm_box("Bulk Dispatch Hub", bulk_target_schools, filter_description_text, tab1_crm_summary)
 
