@@ -1400,18 +1400,18 @@ else:
                     f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
                 ]
 
-                # Section 1: Quantitative Benchmarks (Only if enabled)
+                # Section 1: Quantitative Benchmarks (Only included if `enable_quant_kpi` is True)
                 if enable_quant_kpi:
                     msg_parts.append(
-                        f"📊 *1. Quantitative Benchmarks:*\n"
+                        f"📊 *Quantitative Benchmarks:*\n"
                         f"• Lesson Plan Prep Compliance: {ld_comp_pct:.0f}% ({met_ld}/{tot_teachers} Teachers){ld_bench_str}\n"
                         f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                     )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Strictly controlled by the toggle and qualitative switch)
+                # Section 2: Qualitative Classroom Evidence Submissions (Only included if toggle is checked AND `enable_qual_kpi` is True)
                 if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
-                        f"\n📬 *2. Classroom Evidence Submissions:*\n"
+                        f"\n📬 *Classroom Evidence Submissions:*\n"
                         f"• Activity Videos: {vids_cnt} Uploaded ({teachers_with_vids}/{tot_teachers} Teachers Submitted)\n"
                         f"• Phonics Evidence: {phonics_cnt} Uploaded ({teachers_with_ph}/{tot_teachers} Teachers Submitted)\n"
                         f"• Writing Samples: {writing_cnt} Uploaded ({teachers_with_w}/{tot_teachers} Teachers Submitted)\n"
@@ -1529,16 +1529,24 @@ else:
 
         col_t1_d1, col_t1_d2 = st.columns(2)
         with col_t1_d1:
-            pdf_tab1 = generate_pdf_report(
-                title_text="📘 Lesson Plan Preparation Report",
-                subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {total_teachers}",
-                school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
-                summary_metrics={
-                    "Total Teachers": total_teachers,
-                    "Active Teachers": f"{met_count} / {total_teachers}",
-                    "Compliance Rate": f"{(met_count/total_teachers*100 if total_teachers>0 else 0):.1f}%"
-                },
-                dataframe=display_ld_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
+            pdf_tab1 = generate_comprehensive_school_pdf_report(
+                school_name=selected_schools[0] if len(selected_schools) == 1 else "Multiple Schools Portfolio",
+                teachers_list=filtered_roster['FullName'].unique().tolist(),
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days,
+                target_vid_count=target_vid_count,
+                target_writing_count=target_writing_count,
+                target_lp_combo_count=target_lp_combo_count,
+                target_phonics_count=target_phonics_count,
+                target_portfolio_count=target_portfolio_count,
+                enable_quant_kpi=enable_quant_kpi,
+                enable_qual_kpi=enable_qual_kpi
             )
             st.download_button(
                 label="📄 Download Tab 2 Report (PDF)",
@@ -1623,16 +1631,24 @@ else:
 
         col_t2_d1, col_t2_d2 = st.columns(2)
         with col_t2_d1:
-            pdf_tab2 = generate_pdf_report(
-                title_text="📚 Library Usage Report",
-                subtitle_text=f"Filter: {filter_description_text} | Total Teachers: {lib_total_teachers}",
-                school_name=", ".join(selected_schools) if len(selected_schools) <= 2 else f"{len(selected_schools)} Selected Schools",
-                summary_metrics={
-                    "Total Teachers": lib_total_teachers,
-                    "Active Teachers": f"{lib_met_count} / {lib_total_teachers}",
-                    "Engagement Rate": f"{(lib_met_count/lib_total_teachers*100 if lib_total_teachers>0 else 0):.1f}%"
-                },
-                dataframe=display_lib_table[['School', 'Teacher Name', 'Minutes Logged', 'Performance Indicator Status']]
+            pdf_tab2 = generate_comprehensive_school_pdf_report(
+                school_name=selected_schools[0] if len(selected_schools) == 1 else "Multiple Schools Portfolio",
+                teachers_list=filtered_roster['FullName'].unique().tolist(),
+                school_filtered_df=school_filtered_df,
+                filtered_df=filtered_df,
+                filter_desc=filter_description_text,
+                calc_ld_kpi=calc_ld_kpi,
+                calc_lib_kpi=calc_lib_kpi,
+                daily_ld_target=daily_ld_target,
+                daily_lib_target=daily_lib_target,
+                selected_num_days=selected_num_days,
+                target_vid_count=target_vid_count,
+                target_writing_count=target_writing_count,
+                target_lp_combo_count=target_lp_combo_count,
+                target_phonics_count=target_phonics_count,
+                target_portfolio_count=target_portfolio_count,
+                enable_quant_kpi=enable_quant_kpi,
+                enable_qual_kpi=enable_qual_kpi
             )
             st.download_button(
                 label="📄 Download Tab 3 Report (PDF)",
@@ -2323,16 +2339,24 @@ else:
 
             col_t6_d1, col_t6_d2 = st.columns(2)
             with col_t6_d1:
-                pdf_tab6 = generate_pdf_report(
-                    title_text=f"🏫 School Inspection Report",
-                    subtitle_text=f"Period: {filter_description_text} | Total Roster: {len(school_t6_roster)} Teachers",
+                pdf_tab6 = generate_comprehensive_school_pdf_report(
                     school_name=target_school_t6,
-                    summary_metrics={
-                        "Consistent Achievers": num_ach,
-                        "Fluctuating/Partial": num_fluc,
-                        "Persistent Inactive": num_inact
-                    },
-                    dataframe=display_t6_table[['Teacher Name', 'Lesson Prep (m)', 'Library Usage (m)', 'Execution Tier']]
+                    teachers_list=school_t6_roster['FullName'].unique().tolist(),
+                    school_filtered_df=school_filtered_df,
+                    filtered_df=filtered_df,
+                    filter_desc=filter_description_text,
+                    calc_ld_kpi=calc_ld_kpi,
+                    calc_lib_kpi=calc_lib_kpi,
+                    daily_ld_target=daily_ld_target,
+                    daily_lib_target=daily_lib_target,
+                    selected_num_days=selected_num_days,
+                    target_vid_count=target_vid_count,
+                    target_writing_count=target_writing_count,
+                    target_lp_combo_count=target_lp_combo_count,
+                    target_phonics_count=target_phonics_count,
+                    target_portfolio_count=target_portfolio_count,
+                    enable_quant_kpi=enable_quant_kpi,
+                    enable_qual_kpi=enable_qual_kpi
                 )
                 st.download_button(
                     label=f"📄 Download {target_school_t6} Report (PDF)",
@@ -2489,17 +2513,24 @@ else:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             with col_t7_dl2:
-                pdf_t7 = generate_pdf_report(
-                    title_text="📬 Live Evidence Submissions Report",
-                    subtitle_text=f"Filter Window: {filter_description_text} | Total Submissions: {tot_subs}",
-                    school_name=t7_selected_school if t7_selected_school != "All Schools" else "All Portfolio Schools",
-                    summary_metrics={
-                        "Total Logs": tot_subs,
-                        "Phonics Uploads": tot_phonics,
-                        "Portfolio Uploads": tot_portfolio,
-                        "Videos": tot_vids
-                    },
-                    dataframe=t7_table[['Institution', 'FullName', 'Grade', 'Subject', 'Book']].head(35)
+                pdf_t7 = generate_comprehensive_school_pdf_report(
+                    school_name=t7_selected_school if t7_selected_school != "All Schools" else "Multiple Schools Portfolio",
+                    teachers_list=filtered_roster['FullName'].unique().tolist(),
+                    school_filtered_df=school_filtered_df,
+                    filtered_df=filtered_df,
+                    filter_desc=filter_description_text,
+                    calc_ld_kpi=calc_ld_kpi,
+                    calc_lib_kpi=calc_lib_kpi,
+                    daily_ld_target=daily_ld_target,
+                    daily_lib_target=daily_lib_target,
+                    selected_num_days=selected_num_days,
+                    target_vid_count=target_vid_count,
+                    target_writing_count=target_writing_count,
+                    target_lp_combo_count=target_lp_combo_count,
+                    target_phonics_count=target_phonics_count,
+                    target_portfolio_count=target_portfolio_count,
+                    enable_quant_kpi=enable_quant_kpi,
+                    enable_qual_kpi=enable_qual_kpi
                 )
                 st.download_button(
                     label="📄 Download Evidence Feed Summary (PDF)",
