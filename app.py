@@ -101,7 +101,7 @@ def fetch_master_db_from_supabase():
 
     sub_records = []
     try:
-        # Updated limit parameter set to 10,000 to ensure no teacher submission is ever cut off
+        # Submission list limit set to 10,000 to ensure no teacher submission is ever cut off
         file_list = supabase.storage.from_(BUCKET_NAME).list("submissions", {"limit": 10000})
         if file_list:
             for item in file_list:
@@ -899,7 +899,7 @@ def load_or_update_master_db(new_upload_dfs=None):
     combined_new = pd.concat(new_upload_dfs, ignore_index=True)
     combined_new = _sanitize_df_for_parquet(combined_new)
 
-    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not base_df.empty else combined_new
+    all_data = pd.concat([master_df, combined_new], ignore_index=True) if not master_df.empty else combined_new
     all_data = normalize_identity_columns(all_data)
     all_data = _sanitize_df_for_parquet(all_data)
 
@@ -1402,7 +1402,7 @@ else:
                     f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
                 ]
 
-                # Section 1: Quantitative Benchmarks (Only if enabled)
+                # Section 1: Quantitative Benchmarks (Only included if enabled)
                 if enable_quant_kpi:
                     msg_parts.append(
                         f"📊 *Quantitative Benchmarks:*\n"
@@ -1410,7 +1410,7 @@ else:
                         f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                     )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Only if toggle is checked AND enabled)
+                # Section 2: Qualitative Classroom Evidence Submissions (Only included if toggle is checked AND enabled)
                 if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
                         f"\n📬 *Classroom Evidence Submissions:*\n"
