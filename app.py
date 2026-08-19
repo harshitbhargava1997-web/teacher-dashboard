@@ -296,11 +296,21 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
 
     with c_col2:
         st.markdown("##### 💬 WhatsApp & Calling Generators (Indian Context)")
+        
         custom_tone = st.selectbox("Select Message Tone:", ["Encouraging & Supportive", "Constructive & Corrective", "Executive Summary"], key=f"tone_{tab_name}")
         
         with st.expander("✨ AI-Driven Calling Script & Smart Message Generator (Voice & Text)"):
-            manager_voice_audio = st.audio_input("🎙️ Record Voice Instructions:", key=f"voice_input_{tab_name}_{target_crm_school}")
-            user_custom_instruction = st.text_area("Or Type Custom Instructions:", placeholder="e.g., Focus heavily on improving library engagement...", key=f"ai_custom_prompt_{tab_name}_{target_crm_school}")
+            
+            manager_voice_audio = st.audio_input(
+                "🎙️ Record Voice Instructions (Speak your custom prompt):",
+                key=f"voice_input_{tab_name}_{target_crm_school}"
+            )
+            
+            user_custom_instruction = st.text_area(
+                "Or Type Custom Instructions (Alternative to voice):",
+                placeholder="e.g., Focus heavily on improving library engagement and phonics submissions...",
+                key=f"ai_custom_prompt_{tab_name}_{target_crm_school}"
+            )
             
             if st.button("Generate AI Script & Message", key=f"gen_ai_both_{tab_name}"):
                 if not ai_client:
@@ -312,10 +322,13 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
                     Metrics & Breakdown: {school_audit_whatsapp_message}
                     Target Entity: {selected_entity_type} named {input_contact_name or 'Sir/Madam'}
                     Tone: {custom_tone}
+                    Text Instructions Provided: {user_custom_instruction if user_custom_instruction else 'None'}
                     
-                    Generate two outputs: 1. Calling Script, 2. AI WhatsApp Follow-up Message. Sign off with 'Onelearn Academic Team'.
+                    Generate two distinct outputs:
+                    1. **Calling Script**: A structured phone conversation script calling out specific teacher data points, praises, and areas of concern to discuss with this {selected_entity_type}.
+                    2. **AI WhatsApp Follow-up Message**: A concise, professional message summarizing these exact findings and action items to send on WhatsApp afterward. Sign off with 'Onelearn Academic Team'.
                     """
-                    with st.spinner("Processing with Gemini..."):
+                    with st.spinner("Processing voice/text instructions with Gemini..."):
                         try:
                             ai_result = get_gemini_summary(ai_prompt, audio_file_obj=manager_voice_audio)
                             st.session_state[f"ai_gen_output_{tab_name}_{target_crm_school}"] = ai_result
@@ -329,7 +342,6 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
         
         draft_state_key = f"wa_draft_text_{tab_name}_{target_crm_school}_{selected_entity_type}"
         
-        # Pre-load the complete school audit message into the draft if not already set
         if draft_state_key not in st.session_state:
             st.session_state[draft_state_key] = school_audit_whatsapp_message
 
@@ -341,7 +353,7 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
             encoded_final_text = urllib.parse.quote(editable_wa_area)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Final WhatsApp Message</button></a>', unsafe_allow_html=True)
 
-    # --- CALL DISCUSSION NOTES & FOLLOW-UP SYNC TO SUPABASE (STRICTLY SCOPED TO ACTIVE SCHOOL) ---
+    # --- CALL DISCUSSION NOTES & FOLLOW-UP SYNC TO SUPABASE ---
     st.markdown("---")
     st.markdown(f"##### 📝 Post-Call Discussion Notes & Follow-up Scheduler ({target_crm_school} - {selected_entity_type})")
     
@@ -380,7 +392,6 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
         st.markdown(f"##### 📊 Filterable Call Discussion Logs & Audit Trail for {target_crm_school}")
         logs_df = pd.DataFrame(st.session_state["crm_call_logs_store"])
         
-        # STRICTLY SCOPE LOGS TO THE ACTIVE SCHOOL CURRENTLY SELECTED
         if 'School' in logs_df.columns:
             logs_df = logs_df[logs_df['School'] == target_crm_school]
 
@@ -414,7 +425,6 @@ def render_school_audit_crm_box(tab_name, active_school, current_filter_descript
             st.info(f"No call discussion logs recorded yet for {target_crm_school}.")
 
 
-# --- STANDARD CRM BOX FOR OTHER TABS ---
 def render_universal_crm_box(tab_name, active_selected_schools, current_filter_description, metrics_summary_text):
     """Universal CRM for other tabs with strict school scoping on logs."""
     st.markdown("---")
@@ -534,7 +544,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
             encoded_final_text = urllib.parse.quote(editable_wa_area)
             st.markdown(f'<a href="https://wa.me/{clean_phone}?text={encoded_final_text}" target="_blank" style="text-decoration:none;"><button style="background-color:#25D366;color:white;padding:10px 18px;border:none;border-radius:4px;cursor:pointer;font-weight:bold;width:100%;">🚀 Send Final WhatsApp Message</button></a>', unsafe_allow_html=True)
 
-    # --- CALL DISCUSSION NOTES & FOLLOW-UP SYNC TO SUPABASE (STRICTLY SCOPED TO ACTIVE SCHOOL) ---
     st.markdown("---")
     st.markdown(f"##### 📝 Post-Call Discussion Notes & Follow-up Scheduler ({target_crm_school} - {selected_entity_type})")
     
@@ -573,7 +582,6 @@ def render_universal_crm_box(tab_name, active_selected_schools, current_filter_d
         st.markdown(f"##### 📊 Filterable Call Discussion Logs & Audit Trail for {target_crm_school}")
         logs_df = pd.DataFrame(st.session_state["crm_call_logs_store"])
         
-        # STRICTLY SCOPE LOGS TO THE ACTIVE SCHOOL CURRENTLY SELECTED
         if 'School' in logs_df.columns:
             logs_df = logs_df[logs_df['School'] == target_crm_school]
 
@@ -2100,7 +2108,6 @@ else:
 
             final_school_wa_msg = "\n".join(school_msg_parts)
 
-            # Pass the complete school audit message into the specialized CRM box so it populates the quick WhatsApp message draft box
             render_school_audit_crm_box(
                 "Teacher 360 Profile", 
                 teacher_school, 
