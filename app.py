@@ -86,7 +86,7 @@ def normalize_identity_columns(df):
     return out
 
 
-# --- OPTIMIZED CACHED DATA FETCHER (Increased TTL to 300s to eliminate lag) ---
+# --- OPTIMIZED CACHED DATA FETCHER (Increased TTL to 300s & Set Submission Limit to 10,000) ---
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_master_db_from_supabase():
     """Reads base master parquet file AND merges isolated teacher JSON submissions efficiently."""
@@ -101,7 +101,8 @@ def fetch_master_db_from_supabase():
 
     sub_records = []
     try:
-        file_list = supabase.storage.from_(BUCKET_NAME).list("submissions")
+        # Updated limit parameter set to 10,000 to ensure no teacher submission is ever cut off
+        file_list = supabase.storage.from_(BUCKET_NAME).list("submissions", {"limit": 10000})
         if file_list:
             for item in file_list:
                 fname = item.get('name', '')
@@ -1401,7 +1402,7 @@ else:
                     f"Greetings from OneLearn Academic Team! Here is the latest performance & classroom implementation summary for *{school}* ({filter_description_text}):\n"
                 ]
 
-                # Section 1: Quantitative Benchmarks (Only included if `enable_quant_kpi` is True)
+                # Section 1: Quantitative Benchmarks (Only if enabled)
                 if enable_quant_kpi:
                     msg_parts.append(
                         f"📊 *Quantitative Benchmarks:*\n"
@@ -1409,7 +1410,7 @@ else:
                         f"• Library Digital Usage Compliance: {lib_comp_pct:.0f}% ({met_lib}/{tot_teachers} Teachers){lib_bench_str}"
                     )
 
-                # Section 2: Qualitative Classroom Evidence Submissions (Only included if toggle is checked AND enabled)
+                # Section 2: Qualitative Classroom Evidence Submissions (Only if toggle is checked AND enabled)
                 if include_qual_evidence_in_wa and enable_qual_kpi:
                     msg_parts.append(
                         f"\n📬 *Classroom Evidence Submissions:*\n"
