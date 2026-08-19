@@ -2,27 +2,27 @@ name: Daily OneLern Multi-Consultant Sync
 
 on:
   schedule:
-    # Runs automatically every day at 00:30 UTC (6:00 AM IST)
     - cron: '30 0 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   multi-consultant-sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Check out repository code
+      - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python 3.11
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: 📦 Install dependencies & Playwright Chromium
+      - name: Install dependencies & Playwright Chromium
         run: |
-          pip install pandas openpyxl pyarrow supabase playwright requests
+          pip install --upgrade pip
+          pip install -r requirements.txt
           playwright install chromium --with-deps
 
       - name: 🚀 Execute Multi-Consultant Ingestion
@@ -31,4 +31,13 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
           CONSULTANTS_JSON: ${{ secrets.CONSULTANTS_JSON }}
-        run: python sync_portal.py
+        run: |
+          python sync_portal.py
+
+      - name: Upload Debug Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-debug-screenshots
+          path: debug_screenshots/
+          if-no-files-found: ignore
